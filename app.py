@@ -3,6 +3,7 @@ import json
 import os
 import time
 from collections import deque
+from pathlib import Path
 from typing import Deque, Dict
 
 from fastapi import FastAPI, Header, Request
@@ -10,7 +11,38 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 MAX_MESSAGES = 200
+BASE_DIR = Path(__file__).resolve().parent
+LOG_PATH = BASE_DIR / "text.txt"
+HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
+
+
+def load_text_messages():
+    global messages
+    try:
+        with LOG_PATH.open("r", encoding="utf-8") as f:
+            lines = [line.strip() for line in f.read().splitlines() if line.strip()]
+    except FileNotFoundError:
+        return
+
+    parsed = []
+    for line in lines:
+        if "|" not in line:
+            continue
+        ts, text = line.split("|", 1)
+        try:
+            parsed.append({"id": int(ts), "text": text.strip(), "time": int(ts)})
+        except ValueError:
+            continue
+    messages = deque(parsed[-MAX_MESSAGES:], maxlen=MAX_MESSAGES)
+
+
+def write_text_log():
+    line_text = "\n".join(
+        f"{int(item['time'])}|{item['text']}" for item in list(messages)
+    )
+    with LOG_PATH.open("w", encoding="utf-8") as f:
+        f.write(line_text)
 
 
 class MessageInput(BaseModel):
@@ -18,11 +50,12 @@ class MessageInput(BaseModel):
 
 
 app = FastAPI(title="Live Key Feed")
+load_text_messages()
 
 
 @app.get("/")
 async def root():
-    return FileResponse("index.html")
+    return FileResponse(HTML_PATH)
 
 
 @app.get("/messages")
@@ -42,6 +75,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
 
     item = {"id": int(time.time() * 1000), "text": text, "time": int(time.time() * 1000)}
     messages.append(item)
+    write_text_log()
     return JSONResponse({"ok": True, "message": item})
 
 
