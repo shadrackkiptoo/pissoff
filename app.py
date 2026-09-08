@@ -9,6 +9,7 @@ from typing import Deque, Dict
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
+import psycopg
 
 MAX_MESSAGES = 200
 BASE_DIR = Path(__file__).resolve().parent
@@ -16,15 +17,15 @@ LOG_PATH = BASE_DIR / "text.txt"
 HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 
-def load_text_messages():
-    global messages
+def load_file_messages():
     try:
         with LOG_PATH.open("r", encoding="utf-8") as f:
             lines = [line.strip() for line in f.read().splitlines() if line.strip()]
     except FileNotFoundError:
-        return
+        return []
 
     parsed = []
     for line in lines:
@@ -49,7 +50,70 @@ def load_text_messages():
             )
         except ValueError:
             continue
+    return parsed
+
+
+def load_text_messages():
+    global messages
+    parsed = []
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT id, text, device_id, device_name, time
+                        FROM messages
+                        ORDER BY time DESC
+                        LIMIT %s
+                        """,
+                        (MAX_MESSAGES,),
+                    )
+                    rows = cursor.fetchall()
+            parsed = [
+                {
+                    "id": row[0],
+                    "text": row[1],
+                    "device_id": row[2],
+                    "device_name": row[3],
+                    "time": row[4],
+                }
+                for row in reversed(rows)
+            ]
+        except Exception as error:
+            print(f"Could not load Supabase messages: {error}")
+
+    if not parsed:
+        parsed = load_file_messages()
     messages = deque(parsed[-MAX_MESSAGES:], maxlen=MAX_MESSAGES)
+    for item in messages:
+        devices[str(item["device_id"])] = {
+            "id": item["device_id"],
+            "name": item["device_name"],
+            "last_seen": item["time"],
+        }
+
+
+def save_message(item):
+    if not DATABASE_URL:
+        write_text_log()
+        return
+
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO messages (id, text, device_id, device_name, time)
+                VALUES (%s, %s, %s, %s, %s)
+                """,
+                (
+                    item["id"],
+                    item["text"],
+                    item["device_id"],
+                    item["device_name"],
+                    item["time"],
+                ),
+            )
 
 
 def write_text_log():
@@ -111,8 +175,14 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "device_id": device_id,
         "device_name": device_name,
     }
+    try:
+        save_message(item)
+    except Exception as error:
+        print(f"Could not save message: {error}")
+        return JSONResponse(
+            {"ok": False, "error": "message storage unavailable"}, status_code=503
+        )
     messages.append(item)
-    write_text_log()
     return JSONResponse({"ok": True, "message": item})
 
 
