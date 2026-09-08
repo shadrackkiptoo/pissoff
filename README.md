@@ -157,16 +157,35 @@ create table public.devices (
    device_id text primary key,
    device_name text not null default 'Unknown device',
    last_seen bigint not null,
-   started_at bigint not null
+   started_at bigint not null,
+   joined_at bigint not null default (extract(epoch from now()) * 1000)::bigint
 );
 
 create index devices_last_seen_idx on public.devices (last_seen desc);
 ```
 
+If the `devices` table already exists, add the permanent first-joined date:
+
+```sql
+alter table public.devices
+add column if not exists joined_at bigint;
+
+update public.devices d
+set joined_at = coalesce(
+   (select min(m.time) from public.messages m where m.device_id = d.device_id),
+   d.started_at
+)
+where d.joined_at is null;
+
+alter table public.devices
+alter column joined_at set not null;
+```
+
 The desktop client sends a heartbeat every 30 seconds. `GET /api/devices`
 returns all known devices with `online: true` when the last heartbeat was within
-90 seconds, plus `uptime_seconds` for each client's current session. Offline
-devices retain the uptime from their last session.
+90 seconds, plus `uptime_seconds` for each client's current session and
+`joined_at` for the first recorded registration. Offline devices retain the
+uptime from their last session.
 
 ## API Endpoints
 

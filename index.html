@@ -6,38 +6,39 @@
   <title>Live Key Feed</title>
   <style>
     :root {
-      --bg-1: #06131d;
-      --bg-2: #101b2e;
-      --panel: rgba(9, 15, 24, 0.88);
-      --bubble: linear-gradient(135deg, #2563eb, #38bdf8);
-      --pasted-bubble: linear-gradient(135deg, #b45309, #f59e0b);
-      --text: #edf7ff;
-      --muted: #9bb7d4;
-      --accent: #7dd3fc;
-      --border: rgba(148, 163, 184, 0.18);
-      --shadow: rgba(0, 0, 0, 0.35);
+      --bg-1: #07131f;
+      --bg-2: #17243a;
+      --panel: rgba(9, 17, 29, 0.92);
+      --bubble: linear-gradient(135deg, #1769aa, #159aab);
+      --pasted-bubble: linear-gradient(135deg, #9a4d18, #c9791a);
+      --text: #eff8ff;
+      --muted: #9db4c9;
+      --accent: #78d9d1;
+      --border: rgba(157, 190, 209, 0.18);
+      --shadow: rgba(0, 0, 0, 0.42);
     }
 
     * { box-sizing: border-box; }
     html, body {
       margin: 0;
       height: 100%;
-      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-      background: radial-gradient(circle at top, rgba(56, 189, 248, 0.18), transparent 32%), linear-gradient(135deg, var(--bg-1), var(--bg-2));
+      font-family: "Trebuchet MS", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 15% 0%, rgba(120, 217, 209, 0.18), transparent 28%), radial-gradient(circle at 100% 100%, rgba(52, 115, 190, 0.18), transparent 34%), linear-gradient(135deg, var(--bg-1), var(--bg-2));
       color: var(--text);
     }
     body {
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 32px;
+      min-height: 100dvh;
+      padding: 24px;
     }
     .app {
-      width: min(100%, 980px);
-      height: min(88vh, 760px);
+      width: min(100%, 1180px);
+      height: min(90dvh, 820px);
       background: var(--panel);
       border: 1px solid var(--border);
-      border-radius: 28px;
+      border-radius: 24px;
       overflow: hidden;
       box-shadow: 0 28px 80px var(--shadow);
       display: flex;
@@ -46,14 +47,14 @@
     }
     .workspace {
       display: grid;
-      grid-template-columns: 230px minmax(0, 1fr) 220px;
+      grid-template-columns: 210px minmax(0, 1fr) 270px;
       flex: 1;
       min-height: 0;
     }
     .sidebar {
       padding: 20px 16px;
       border-right: 1px solid var(--border);
-      background: rgba(10, 15, 24, 0.56);
+      background: rgba(10, 19, 31, 0.58);
     }
     .sidebar h2 {
       margin: 0 0 18px;
@@ -90,7 +91,7 @@
       min-width: 0;
       padding: 20px 16px;
       border-left: 1px solid var(--border);
-      background: rgba(10, 15, 24, 0.56);
+      background: rgba(10, 19, 31, 0.58);
       overflow-y: auto;
     }
     .devices-heading {
@@ -107,6 +108,16 @@
       letter-spacing: 0.12em;
       text-transform: uppercase;
     }
+    .device-summary {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      margin: -8px 0 8px;
+      color: var(--muted);
+      font-size: 0.62rem;
+    }
+    .online-count { color: #86efac; }
+    .device-refresh { white-space: nowrap; }
     .device-count {
       color: var(--muted);
       font-size: 0.7rem;
@@ -119,6 +130,7 @@
       padding: 10px 0;
       border-top: 1px solid var(--border);
     }
+    .device-row.online { border-top-color: rgba(34, 197, 94, 0.24); }
     .device-name {
       display: block;
       overflow-wrap: anywhere;
@@ -153,12 +165,14 @@
       background: #22c55e;
       box-shadow: 0 0 10px rgba(34, 197, 94, 0.8);
     }
+    .device-state.offline { color: #fbbf93; }
+    .device-state.offline::before { background: #f97316; }
     .topbar {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 18px 20px;
-      background: rgba(10, 15, 24, 0.9);
+      padding: 16px 20px;
+      background: rgba(8, 16, 27, 0.94);
       border-bottom: 1px solid var(--border);
     }
     .brand {
@@ -178,8 +192,25 @@
       background: #22c55e;
       box-shadow: 0 0 14px rgba(34, 197, 94, 0.9);
     }
+    .topbar-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .stream-pill {
+      padding: 5px 9px;
+      border: 1px solid rgba(120, 217, 209, 0.28);
+      border-radius: 999px;
+      color: var(--accent);
+      background: rgba(120, 217, 209, 0.08);
+      white-space: nowrap;
+    }
     .status {
-      padding: 14px 20px 0;
+      padding: 15px 20px 0;
       color: var(--muted);
       font-size: 0.8rem;
       letter-spacing: 0.02em;
@@ -191,6 +222,14 @@
       background: rgba(2, 6, 12, 0.12);
       scroll-behavior: smooth;
     }
+    .feed:empty::before {
+      display: block;
+      padding: 12vh 24px;
+      color: var(--muted);
+      content: "No messages yet. Waiting for the first live event.";
+      font-size: 0.86rem;
+      text-align: center;
+    }
     .bubble-wrap {
       display: flex;
       justify-content: flex-start;
@@ -198,7 +237,7 @@
       animation: rise 0.22s ease;
     }
     .bubble {
-      max-width: 78%;
+      max-width: min(78%, 680px);
       background: var(--bubble);
       border: 1px solid rgba(255,255,255,0.12);
       border-radius: 18px 18px 18px 6px;
@@ -246,26 +285,51 @@
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @media (max-width: 700px) {
-      body { padding: 12px; }
-      .app { height: 94vh; border-radius: 18px; }
-      .workspace { grid-template-columns: 1fr; }
+    @media (max-width: 900px) {
+      .workspace { grid-template-columns: 180px minmax(0, 1fr) 230px; }
+      .bubble { max-width: 86%; }
+    }
+    @media (max-width: 720px) {
+      body { padding: 8px; }
+      .app { height: calc(100dvh - 16px); min-height: 480px; border-radius: 18px; }
+      .topbar { padding: 14px 16px; }
+      .topbar-meta { font-size: 0.6rem; }
+      .workspace {
+        grid-template-columns: 1fr;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+      }
       .sidebar {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
         gap: 10px;
-        padding: 12px 14px;
+        padding: 12px 14px 13px;
         border-right: 0;
         border-bottom: 1px solid var(--border);
       }
       .sidebar h2 { grid-column: 1 / -1; margin: 0; }
       .metric { padding: 0; border-top: 0; }
       .metric-value { font-size: 0.72rem; }
+      .status { padding: 12px 16px 0; font-size: 0.72rem; }
+      .feed { padding: 12px 14px 18px; }
+      .bubble { max-width: 92%; padding: 11px 12px 9px; }
       .devices-panel {
         border-top: 1px solid var(--border);
         border-left: 0;
-        max-height: 190px;
+        max-height: 156px;
+        padding: 14px;
       }
+      .devices-heading { margin-bottom: 8px; }
+      .device-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
+      .device-row { padding: 8px 0; }
+    }
+    @media (max-width: 420px) {
+      .brand { font-size: 0.64rem; letter-spacing: 0.1em; }
+      .topbar-meta { gap: 0; }
+      .topbar-meta > span:first-child { display: none; }
+      .sidebar { gap: 7px; }
+      .metric-label { font-size: 0.58rem; }
+      .metric-value { font-size: 0.66rem; }
+      .device-list { grid-template-columns: 1fr; }
     }
   </style>
 </head>
@@ -273,6 +337,7 @@
   <div class="app">
     <div class="topbar">
       <div class="brand"><span class="dot"></span> Live Key Feed</div>
+      <div class="topbar-meta"><span>Realtime monitor</span><span class="stream-pill">Live stream</span></div>
     </div>
     <div class="workspace">
       <aside class="sidebar" aria-label="Service status">
@@ -299,6 +364,10 @@
           <h2>Devices</h2>
           <span class="device-count" id="deviceCount">0</span>
         </div>
+        <div class="device-summary">
+          <span class="online-count" id="onlineCount">0 online</span>
+          <span class="device-refresh" id="deviceUpdated">Checking...</span>
+        </div>
         <div class="device-list" id="deviceList">
           <span class="device-seen">Loading...</span>
         </div>
@@ -313,6 +382,8 @@
     const uptimeEl = document.getElementById('uptime');
     const messageCountEl = document.getElementById('messageCount');
     const deviceCountEl = document.getElementById('deviceCount');
+    const onlineCountEl = document.getElementById('onlineCount');
+    const deviceUpdatedEl = document.getElementById('deviceUpdated');
     const deviceListEl = document.getElementById('deviceList');
     let serviceStartedAt = null;
     let serviceUptime = 0;
@@ -332,6 +403,12 @@
       return `${days}d ${hours}h ${minutes}m ${remainingSeconds}s`;
     }
 
+    function formatAge(seconds) {
+      if (seconds < 60) return `${seconds}s ago`;
+      if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+      return `${Math.floor(seconds / 3600)}h ago`;
+    }
+
     function updateUptime() {
       if (serviceStartedAt === null) return;
       serviceUptime += 1;
@@ -344,6 +421,8 @@
         if (!res.ok) throw new Error('device check failed');
         const devices = await res.json();
         deviceCountEl.textContent = devices.length;
+        onlineCountEl.textContent = `${devices.filter((device) => device.online).length} online`;
+        deviceUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
         deviceListEl.innerHTML = '';
         if (!devices.length) {
           deviceListEl.innerHTML = '<span class="device-seen">No devices registered</span>';
@@ -351,7 +430,7 @@
         }
         devices.forEach((device) => {
           const row = document.createElement('div');
-          row.className = 'device-row';
+          row.className = `device-row${device.online ? ' online' : ''}`;
 
           const name = document.createElement('span');
           name.className = 'device-name';
@@ -362,8 +441,8 @@
           id.textContent = `ID: ${device.id || 'unknown'}`;
 
           const state = document.createElement('span');
-          state.className = `device-state${device.online ? ' online' : ''}`;
-          state.textContent = device.online ? 'Online' : 'Offline';
+          state.className = `device-state ${device.online ? 'online' : 'offline'}`;
+          state.textContent = device.status || (device.online ? 'Online' : 'Offline');
 
           const uptime = document.createElement('span');
           uptime.className = 'device-seen';
@@ -372,10 +451,16 @@
           const seen = document.createElement('span');
           seen.className = 'device-seen';
           seen.textContent = device.last_seen
-            ? `Last seen: ${formatTime(device.last_seen)}`
-            : 'Last seen: unknown';
+            ? `Last seen ${formatAge(device.last_seen_age_seconds || 0)}`
+            : 'Last seen unknown';
 
-          row.append(name, id, state, uptime, seen);
+          const joined = document.createElement('span');
+          joined.className = 'device-seen';
+          joined.textContent = device.joined_at
+            ? `Joined ${formatTime(device.joined_at)}`
+            : 'Joined date unknown';
+
+          row.append(name, id, state, uptime, seen, joined);
           deviceListEl.appendChild(row);
         });
       } catch (err) {

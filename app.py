@@ -193,6 +193,7 @@ def load_text_messages():
             "name": item["device_name"],
             "last_seen": item["time"],
             "started_at": item["time"],
+            "joined_at": item["time"],
         }
 
 
@@ -205,18 +206,19 @@ def load_devices():
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT device_id, device_name, last_seen, started_at
+                    SELECT device_id, device_name, last_seen, started_at, joined_at
                     FROM devices
                     ORDER BY last_seen DESC
                     """
                 )
                 rows = cursor.fetchall()
-        for device_id, device_name, last_seen, started_at in rows:
+        for device_id, device_name, last_seen, started_at, joined_at in rows:
             devices[str(device_id)] = {
                 "id": device_id,
                 "name": device_name,
                 "last_seen": last_seen,
                 "started_at": started_at,
+                "joined_at": joined_at,
             }
             device_online_states[str(device_id)] = (
                 int(time.time() * 1000) - int(last_seen)
@@ -250,12 +252,13 @@ def save_message(item):
             )
 
 
-def save_device(device_id, device_name, last_seen, started_at):
+def save_device(device_id, device_name, last_seen, started_at, joined_at):
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "last_seen": last_seen,
         "started_at": started_at,
+        "joined_at": joined_at,
     }
     if not DATABASE_URL:
         return
@@ -264,14 +267,14 @@ def save_device(device_id, device_name, last_seen, started_at):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices (device_id, device_name, last_seen, started_at)
-                VALUES (%s, %s, %s, %s)
+                INSERT INTO devices (device_id, device_name, last_seen, started_at, joined_at)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (device_id) DO UPDATE SET
                     device_name = EXCLUDED.device_name,
                     last_seen = EXCLUDED.last_seen,
                     started_at = EXCLUDED.started_at
                 """,
-                (device_id, device_name, last_seen, started_at),
+                (device_id, device_name, last_seen, started_at, joined_at),
             )
 
 
@@ -320,12 +323,16 @@ async def fetch_devices():
     for device in devices.values():
         last_seen = int(device.get("last_seen", 0))
         started_at = int(device.get("started_at", last_seen))
-        online = now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
+        age_seconds = max(0, (now - last_seen) // 1000)
+        online = age_seconds <= DEVICE_OFFLINE_AFTER
         uptime_end = now if online else last_seen
         result.append(
             {
                 **device,
                 "online": online,
+                "status": "Online" if online else "Offline",
+                "last_seen_age_seconds": age_seconds,
+                "offline_after_seconds": DEVICE_OFFLINE_AFTER,
                 "uptime_seconds": max(0, (uptime_end - started_at) // 1000),
             }
         )
@@ -346,13 +353,21 @@ async def device_heartbeat(
         return JSONResponse({"ok": False, "error": "missing device_id"}, status_code=400)
 
     now = int(time.time() * 1000)
+    existing_device = devices.get(device_id, {})
+    joined_at = int(existing_device.get("joined_at", now))
     was_online = device_online_states.get(device_id)
     if was_online is None and device_id in devices:
         was_online = now - int(devices[device_id].get("last_seen", 0)) <= (
             DEVICE_OFFLINE_AFTER * 1000
         )
     try:
-        save_device(device_id, device_name, now, payload.started_at)
+        save_device(
+            device_id,
+            device_name,
+            now,
+            payload.started_at,
+            joined_at,
+        )
     except Exception as error:
         print(f"Could not save device heartbeat: {error}")
         return JSONResponse(
@@ -381,11 +396,15 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     device_name = payload.device_name.strip() or "Unknown device"
     app_name = payload.app_name.strip() or "Unknown app"
     is_pasted = payload.is_pasted
+    previous_device = devices.get(device_id, {})
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "last_seen": now,
+        "started_at": previous_device.get("started_at", now),
+        "joined_at": previous_device.get("joined_at", now),
     }
+    device_online_states[device_id] = True
     item = {
         "id": now,
         "text": text,
