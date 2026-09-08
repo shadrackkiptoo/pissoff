@@ -10,7 +10,7 @@ Only run the client on computers and accounts you own or are explicitly authoriz
 Keyboard input -> P3TROKL.exe -> POST /api/messages -> app.py -> index.html
 ```
 
-Each message contains `text`, `device_id`, `device_name`, and `is_pasted`. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color.
+Each message contains `text`, `device_id`, `device_name`, and `is_pasted`. The desktop client also records the active app and focused Windows control, keeping that destination while typing and starting a new message when focus moves to another field or app. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color.
 
 ## Files
 

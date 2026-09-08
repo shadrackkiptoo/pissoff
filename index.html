@@ -124,7 +124,14 @@
       margin-top: 3px;
       opacity: 0.72;
       font-size: 0.64rem;
-      text-align: right;
+      text-align: left;
+    }
+    .source {
+      display: block;
+      margin-top: 3px;
+      opacity: 0.82;
+      font-size: 0.66rem;
+      text-align: left;
     }
     @keyframes rise {
       from { opacity: 0; transform: translateY(10px); }
@@ -171,8 +178,13 @@
 
       const device = document.createElement('span');
       device.className = 'device';
-      device.textContent = `Device ${msg.device_id || 'unknown'}${msg.device_name ? ` (${msg.device_name})` : ''} | ${msg.app_name || 'Unknown app'}`;
+      device.textContent = `From device ${msg.device_id || 'unknown'}${msg.device_name ? ` (${msg.device_name})` : ''}`;
       bubble.appendChild(device);
+
+      const source = document.createElement('span');
+      source.className = 'source';
+      source.textContent = `Entered in: ${msg.app_name || 'Unknown app'}`;
+      bubble.appendChild(source);
 
       wrap.appendChild(bubble);
       feed.appendChild(wrap);

