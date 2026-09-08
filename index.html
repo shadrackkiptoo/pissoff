@@ -10,6 +10,7 @@
       --bg-2: #101b2e;
       --panel: rgba(9, 15, 24, 0.88);
       --bubble: linear-gradient(135deg, #2563eb, #38bdf8);
+      --pasted-bubble: linear-gradient(135deg, #b45309, #f59e0b);
       --text: #edf7ff;
       --muted: #9bb7d4;
       --accent: #7dd3fc;
@@ -98,6 +99,19 @@
       word-break: break-word;
       line-height: 1.55;
     }
+    .bubble.pasted {
+      background: var(--pasted-bubble);
+      border-color: rgba(253, 230, 138, 0.5);
+    }
+    .paste-label {
+      display: block;
+      margin-bottom: 6px;
+      color: #fffbeb;
+      font-size: 0.62rem;
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
     .time {
       display: block;
       margin-top: 6px;
@@ -140,8 +154,15 @@
       wrap.className = 'bubble-wrap';
 
       const bubble = document.createElement('div');
-      bubble.className = 'bubble';
+      bubble.className = `bubble${msg.is_pasted ? ' pasted' : ''}`;
       bubble.textContent = msg.text;
+
+      if (msg.is_pasted) {
+        const label = document.createElement('span');
+        label.className = 'paste-label';
+        label.textContent = 'Pasted';
+        bubble.prepend(label);
+      }
 
       const time = document.createElement('span');
       time.className = 'time';

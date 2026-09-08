@@ -31,14 +31,19 @@ def load_file_messages():
     for line in lines:
         if "|" not in line:
             continue
-        parts = line.split("|", 3)
+        parts = line.split("|", 4)
         try:
             if len(parts) == 2:
                 ts, text = parts
                 device_id = "unknown"
                 device_name = "Unknown device"
+                is_pasted = False
+            elif len(parts) == 5:
+                ts, device_id, device_name, pasted_value, text = parts
+                is_pasted = pasted_value == "1"
             else:
                 ts, device_id, device_name, text = parts
+                is_pasted = False
             parsed.append(
                 {
                     "id": int(ts),
@@ -47,6 +52,7 @@ def load_file_messages():
                     "device_id": device_id,
                     "device_name": device_name,
                     "app_name": "Unknown app",
+                    "is_pasted": is_pasted,
                 }
             )
         except ValueError:
@@ -63,7 +69,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, device_id, device_name, app_name, time
+                        SELECT id, text, device_id, device_name, app_name, time, is_pasted
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -79,6 +85,7 @@ def load_text_messages():
                     "device_name": row[3],
                     "app_name": row[4],
                     "time": row[5],
+                    "is_pasted": row[6],
                 }
                 for row in reversed(rows)
             ]
@@ -105,8 +112,8 @@ def save_message(item):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, device_id, device_name, app_name, time)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, device_id, device_name, app_name, time, is_pasted)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     item["id"],
@@ -115,13 +122,14 @@ def save_message(item):
                     item["device_name"],
                     item["app_name"],
                     item["time"],
+                    item["is_pasted"],
                 ),
             )
 
 
 def write_text_log():
     line_text = "\n".join(
-        f"{int(item['time'])}|{item['device_id']}|{item['device_name']}|{item['text']}"
+        f"{int(item['time'])}|{item['device_id']}|{item['device_name']}|{1 if item.get('is_pasted') else 0}|{item['text']}"
         for item in list(messages)
     )
     with LOG_PATH.open("w", encoding="utf-8") as f:
@@ -133,6 +141,7 @@ class MessageInput(BaseModel):
     device_id: str = "unknown"
     device_name: str = "Unknown device"
     app_name: str = "Unknown app"
+    is_pasted: bool = False
 
 
 app = FastAPI(title="Live Key Feed")
@@ -168,6 +177,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     device_id = payload.device_id.strip() or "unknown"
     device_name = payload.device_name.strip() or "Unknown device"
     app_name = payload.app_name.strip() or "Unknown app"
+    is_pasted = payload.is_pasted
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
@@ -180,6 +190,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "device_id": device_id,
         "device_name": device_name,
         "app_name": app_name,
+        "is_pasted": is_pasted,
     }
     try:
         save_message(item)

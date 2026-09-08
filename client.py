@@ -64,6 +64,26 @@ def get_active_app():
     return title or executable or "Unknown app"
 
 
+def get_clipboard_text():
+    if os.name != "nt":
+        return ""
+
+    user32 = ctypes.windll.user32
+    text = ""
+    if not user32.OpenClipboard(None):
+        return text
+    try:
+        handle = user32.GetClipboardData(13)
+        if handle:
+            pointer = user32.GlobalLock(handle)
+            if pointer:
+                text = ctypes.wstring_at(pointer)
+                user32.GlobalUnlock(handle)
+    finally:
+        user32.CloseClipboard()
+    return text
+
+
 def normalize_key(key):
     if key in (Key.shift, Key.shift_l, Key.shift_r, Key.ctrl, Key.ctrl_l, Key.ctrl_r,
                Key.alt, Key.alt_l, Key.alt_r, Key.cmd, Key.cmd_l, Key.cmd_r):
@@ -84,7 +104,7 @@ def normalize_key(key):
     return ""
 
 
-def send_message(text, app_name):
+def send_message(text, app_name, is_pasted=False):
     try:
         headers = {"Content-Type": "application/json"}
         request = Request(
@@ -95,6 +115,7 @@ def send_message(text, app_name):
                     "device_id": device_id,
                     "device_name": device_name,
                     "app_name": app_name,
+                    "is_pasted": is_pasted,
                 }
             ).encode("utf-8"),
             headers=headers,
@@ -109,8 +130,8 @@ def send_message(text, app_name):
 
 def message_sender():
     while True:
-        text, app_name = message_queue.get()
-        send_message(text, app_name)
+        text, app_name, is_pasted = message_queue.get()
+        send_message(text, app_name, is_pasted)
         message_queue.task_done()
 
 
@@ -121,7 +142,7 @@ def flush_message_buffer():
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        message_queue.put((text, get_active_app()))
+        message_queue.put((text, get_active_app(), False))
 
 
 def on_press(key):
@@ -134,6 +155,13 @@ def on_press(key):
         }
         if key in modifier_aliases or key in (Key.shift, Key.ctrl, Key.alt, Key.cmd):
             active_modifiers.add(modifier_aliases.get(key, key))
+            return
+
+        if key in (KeyCode.from_char("v"), KeyCode.from_char("V")) and Key.ctrl in active_modifiers:
+            pasted_text = get_clipboard_text().strip()
+            if pasted_text:
+                flush_message_buffer()
+                message_queue.put((pasted_text, get_active_app(), True))
             return
 
         symbol = normalize_key(key)
