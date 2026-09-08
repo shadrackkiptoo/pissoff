@@ -1,8 +1,10 @@
 import os
 import time
+import json
 from threading import Lock
+from urllib.error import URLError, HTTPError
+from urllib.request import Request, urlopen
 
-import requests
 from pynput.keyboard import Key, KeyCode, Listener
 
 MESSAGE_GAP_MS = 1200
@@ -44,14 +46,19 @@ def normalize_key(key):
 
 def send_message(text):
     try:
-        response = requests.post(
+        headers = {"Content-Type": "application/json"}
+        if API_KEY:
+            headers["X-API-Key"] = API_KEY
+        request = Request(
             f"{SITE_URL}/api/messages",
-            json={"text": text},
-            headers={"X-API-Key": API_KEY} if API_KEY else {},
-            timeout=10,
+            data=json.dumps({"text": text}).encode("utf-8"),
+            headers=headers,
+            method="POST",
         )
-        response.raise_for_status()
-    except requests.RequestException as error:
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send message: {error}")
 
 
