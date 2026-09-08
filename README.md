@@ -71,6 +71,10 @@ minutes. To change the interval, add `TELEGRAM_UPTIME_INTERVAL_SECONDS` with a
 value of at least 60. Telegram notifications are optional and do not affect the
 health endpoint or service startup if they fail.
 
+When device presence tracking is enabled, Telegram also reports device online
+and offline transitions. These alerts include only the device name and ID, not
+captured message contents.
+
 For alerts when the service is completely unreachable, configure an external
 uptime monitor to check `/health`; a stopped service cannot send its own Telegram
 message.

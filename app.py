@@ -20,6 +20,7 @@ LOG_PATH = BASE_DIR / "text.txt"
 HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
+device_online_states: Dict[str, bool] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
@@ -52,6 +53,32 @@ def send_telegram_message(text):
         print(f"Could not send Telegram uptime notification: {error}")
 
 
+def notify_device_status(device_id, device_name, online):
+    status = "online" if online else "offline"
+    send_telegram_message(
+        f"Device {status}: {device_name} ({device_id})"
+    )
+
+
+async def device_status_loop():
+    while True:
+        await asyncio.sleep(DEVICE_HEARTBEAT_INTERVAL)
+        now = int(time.time() * 1000)
+        for device in list(devices.values()):
+            device_id = str(device["id"])
+            last_seen = int(device.get("last_seen", 0))
+            online = now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
+            previous = device_online_states.get(device_id)
+            device_online_states[device_id] = online
+            if previous is True and not online:
+                await asyncio.to_thread(
+                    notify_device_status,
+                    device_id,
+                    device.get("name", "Unknown device"),
+                    False,
+                )
+
+
 async def telegram_uptime_loop():
     await asyncio.to_thread(
         send_telegram_message,
@@ -68,6 +95,7 @@ async def telegram_uptime_loop():
 @asynccontextmanager
 async def lifespan(_app):
     heartbeat_task = None
+    device_status_task = asyncio.create_task(device_status_loop())
     if telegram_configured():
         heartbeat_task = asyncio.create_task(telegram_uptime_loop())
     elif TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID:
@@ -76,9 +104,12 @@ async def lifespan(_app):
     try:
         yield
     finally:
+        tasks = [device_status_task]
         if heartbeat_task:
-            heartbeat_task.cancel()
-            await asyncio.gather(heartbeat_task, return_exceptions=True)
+            tasks.append(heartbeat_task)
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
 
 
 def load_file_messages():
@@ -187,6 +218,10 @@ def load_devices():
                 "last_seen": last_seen,
                 "started_at": started_at,
             }
+            device_online_states[str(device_id)] = (
+                int(time.time() * 1000) - int(last_seen)
+                <= DEVICE_OFFLINE_AFTER * 1000
+            )
     except Exception as error:
         print(f"Could not load Supabase devices: {error}")
 
@@ -311,12 +346,22 @@ async def device_heartbeat(
         return JSONResponse({"ok": False, "error": "missing device_id"}, status_code=400)
 
     now = int(time.time() * 1000)
+    was_online = device_online_states.get(device_id)
+    if was_online is None and device_id in devices:
+        was_online = now - int(devices[device_id].get("last_seen", 0)) <= (
+            DEVICE_OFFLINE_AFTER * 1000
+        )
     try:
         save_device(device_id, device_name, now, payload.started_at)
     except Exception as error:
         print(f"Could not save device heartbeat: {error}")
         return JSONResponse(
             {"ok": False, "error": "device storage unavailable"}, status_code=503
+        )
+    device_online_states[device_id] = True
+    if was_online is not True:
+        await asyncio.to_thread(
+            notify_device_status, device_id, device_name, True
         )
     return JSONResponse({"ok": True})
 
