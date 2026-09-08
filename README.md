@@ -55,6 +55,26 @@ Type a message and press Enter. It should appear in the browser.
 
 Make sure the deployed service contains the latest `app.py` and `index.html`.
 
+## Configure Telegram Uptime Notifications
+
+Create a Telegram bot with BotFather, then send it a message from the chat where
+you want uptime notifications. Retrieve that chat's numeric ID and add these
+secret environment variables in Render:
+
+```text
+TELEGRAM_BOT_TOKEN=your-bot-token
+TELEGRAM_CHAT_ID=your-chat-id
+```
+
+The service sends an online notification at startup and a heartbeat every 15
+minutes. To change the interval, add `TELEGRAM_UPTIME_INTERVAL_SECONDS` with a
+value of at least 60. Telegram notifications are optional and do not affect the
+health endpoint or service startup if they fail.
+
+For alerts when the service is completely unreachable, configure an external
+uptime monitor to check `/health`; a stopped service cannot send its own Telegram
+message.
+
 ## Configure Supabase Storage
 
 Create a free Supabase project and run this in the Supabase SQL Editor:

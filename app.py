@@ -2,6 +2,9 @@ import asyncio
 import json
 import os
 import time
+import urllib.parse
+import urllib.request
+from contextlib import asynccontextmanager
 from collections import deque
 from pathlib import Path
 from typing import Deque, Dict
@@ -19,6 +22,61 @@ messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SERVICE_STARTED_AT = time.time()
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+TELEGRAM_UPTIME_INTERVAL = max(
+    60, int(os.getenv("TELEGRAM_UPTIME_INTERVAL_SECONDS", "900"))
+)
+
+
+def telegram_configured():
+    return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+
+
+def send_telegram_message(text):
+    if not telegram_configured():
+        return
+
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+    payload = urllib.parse.urlencode(
+        {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+    ).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, method="POST")
+    try:
+        with urllib.request.urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Telegram HTTP {response.status}")
+    except Exception as error:
+        print(f"Could not send Telegram uptime notification: {error}")
+
+
+async def telegram_uptime_loop():
+    await asyncio.to_thread(
+        send_telegram_message,
+        "Live Key Feed is online.",
+    )
+    while True:
+        await asyncio.sleep(TELEGRAM_UPTIME_INTERVAL)
+        await asyncio.to_thread(
+            send_telegram_message,
+            f"Live Key Feed heartbeat: healthy for {int(time.time() - SERVICE_STARTED_AT)} seconds.",
+        )
+
+
+@asynccontextmanager
+async def lifespan(_app):
+    heartbeat_task = None
+    if telegram_configured():
+        heartbeat_task = asyncio.create_task(telegram_uptime_loop())
+    elif TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID:
+        print("Telegram uptime notifications need both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
+
+    try:
+        yield
+    finally:
+        if heartbeat_task:
+            heartbeat_task.cancel()
+            await asyncio.gather(heartbeat_task, return_exceptions=True)
 
 
 def load_file_messages():
@@ -145,7 +203,7 @@ class MessageInput(BaseModel):
     is_pasted: bool = False
 
 
-app = FastAPI(title="Live Key Feed")
+app = FastAPI(title="Live Key Feed", lifespan=lifespan)
 load_text_messages()
 
 
