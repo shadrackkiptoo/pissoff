@@ -41,12 +41,6 @@ Open `http://127.0.0.1:8000`, then start the client in another PowerShell window
 python client.py
 ```
 
-For local client runs, create a `.env` file beside `client.py` with:
-
-```env
-KEY_FEED_URL=http://127.0.0.1:8000
-```
-
 Type a message and press Enter. It should appear in the browser.
 
 ## Deploy to Render
@@ -101,17 +95,7 @@ Use the exact URL shown by Render:
 ./dist/LiveKeyClient.exe
 ```
 
-Create `dist/.env` beside the executable:
-
-```env
-KEY_FEED_URL=https://windows-defender-cf8n.onrender.com
-```
-
-If Render has an `INGEST_API_KEY`, set the matching client variable too:
-
-```env
-KEY_FEED_API_KEY=your-api-key
-```
+The Render URL is embedded in the executable, so no `.env` file or terminal variables are required.
 
 ## Build the Executable
 

