@@ -105,6 +105,13 @@
       font-size: 0.68rem;
       text-align: right;
     }
+    .device {
+      display: block;
+      margin-top: 3px;
+      opacity: 0.72;
+      font-size: 0.64rem;
+      text-align: right;
+    }
     @keyframes rise {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -140,6 +147,11 @@
       time.className = 'time';
       time.textContent = formatTime(msg.time);
       bubble.appendChild(time);
+
+      const device = document.createElement('span');
+      device.className = 'device';
+      device.textContent = `Device ${msg.device_id || 'unknown'}${msg.device_name ? ` (${msg.device_name})` : ''}`;
+      bubble.appendChild(device);
 
       wrap.appendChild(bubble);
       feed.appendChild(wrap);

@@ -30,9 +30,23 @@ def load_text_messages():
     for line in lines:
         if "|" not in line:
             continue
-        ts, text = line.split("|", 1)
+        parts = line.split("|", 3)
         try:
-            parsed.append({"id": int(ts), "text": text.strip(), "time": int(ts)})
+            if len(parts) == 2:
+                ts, text = parts
+                device_id = "unknown"
+                device_name = "Unknown device"
+            else:
+                ts, device_id, device_name, text = parts
+            parsed.append(
+                {
+                    "id": int(ts),
+                    "text": text.strip(),
+                    "time": int(ts),
+                    "device_id": device_id,
+                    "device_name": device_name,
+                }
+            )
         except ValueError:
             continue
     messages = deque(parsed[-MAX_MESSAGES:], maxlen=MAX_MESSAGES)
@@ -40,7 +54,8 @@ def load_text_messages():
 
 def write_text_log():
     line_text = "\n".join(
-        f"{int(item['time'])}|{item['text']}" for item in list(messages)
+        f"{int(item['time'])}|{item['device_id']}|{item['device_name']}|{item['text']}"
+        for item in list(messages)
     )
     with LOG_PATH.open("w", encoding="utf-8") as f:
         f.write(line_text)
@@ -48,11 +63,8 @@ def write_text_log():
 
 class MessageInput(BaseModel):
     text: str
-
-
-class DeviceHeartbeat(BaseModel):
-    device_id: str
-    device_name: str
+    device_id: str = "unknown"
+    device_name: str = "Unknown device"
 
 
 app = FastAPI(title="Live Key Feed")
@@ -67,21 +79,6 @@ async def root():
 @app.get("/messages")
 async def fetch_messages():
     return JSONResponse(list(messages))
-
-
-@app.post("/api/devices/heartbeat")
-async def device_heartbeat(payload: DeviceHeartbeat, x_api_key: str | None = Header(default=None)):
-    expected_key = os.getenv("INGEST_API_KEY")
-    if expected_key and x_api_key != expected_key:
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-
-    now = int(time.time() * 1000)
-    devices[payload.device_id] = {
-        "id": payload.device_id,
-        "name": payload.device_name,
-        "last_seen": now,
-    }
-    return {"ok": True, "device": devices[payload.device_id]}
 
 
 @app.get("/api/devices")
@@ -99,7 +96,21 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     if not text:
         return JSONResponse({"ok": False, "error": "empty message"})
 
-    item = {"id": int(time.time() * 1000), "text": text, "time": int(time.time() * 1000)}
+    now = int(time.time() * 1000)
+    device_id = payload.device_id.strip() or "unknown"
+    device_name = payload.device_name.strip() or "Unknown device"
+    devices[device_id] = {
+        "id": device_id,
+        "name": device_name,
+        "last_seen": now,
+    }
+    item = {
+        "id": now,
+        "text": text,
+        "time": now,
+        "device_id": device_id,
+        "device_name": device_name,
+    }
     messages.append(item)
     write_text_log()
     return JSONResponse({"ok": True, "message": item})

