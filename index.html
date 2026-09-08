@@ -150,7 +150,7 @@
 
       const device = document.createElement('span');
       device.className = 'device';
-      device.textContent = `Device ${msg.device_id || 'unknown'}${msg.device_name ? ` (${msg.device_name})` : ''}`;
+      device.textContent = `Device ${msg.device_id || 'unknown'}${msg.device_name ? ` (${msg.device_name})` : ''} | ${msg.app_name || 'Unknown app'}`;
       bubble.appendChild(device);
 
       wrap.appendChild(bubble);

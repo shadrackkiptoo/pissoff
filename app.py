@@ -46,6 +46,7 @@ def load_file_messages():
                     "time": int(ts),
                     "device_id": device_id,
                     "device_name": device_name,
+                    "app_name": "Unknown app",
                 }
             )
         except ValueError:
@@ -62,7 +63,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, device_id, device_name, time
+                        SELECT id, text, device_id, device_name, app_name, time
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -76,7 +77,8 @@ def load_text_messages():
                     "text": row[1],
                     "device_id": row[2],
                     "device_name": row[3],
-                    "time": row[4],
+                    "app_name": row[4],
+                    "time": row[5],
                 }
                 for row in reversed(rows)
             ]
@@ -103,14 +105,15 @@ def save_message(item):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, device_id, device_name, time)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, device_id, device_name, app_name, time)
+                VALUES (%s, %s, %s, %s, %s, %s)
                 """,
                 (
                     item["id"],
                     item["text"],
                     item["device_id"],
                     item["device_name"],
+                    item["app_name"],
                     item["time"],
                 ),
             )
@@ -129,6 +132,7 @@ class MessageInput(BaseModel):
     text: str
     device_id: str = "unknown"
     device_name: str = "Unknown device"
+    app_name: str = "Unknown app"
 
 
 app = FastAPI(title="Live Key Feed")
@@ -163,6 +167,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     now = int(time.time() * 1000)
     device_id = payload.device_id.strip() or "unknown"
     device_name = payload.device_name.strip() or "Unknown device"
+    app_name = payload.app_name.strip() or "Unknown app"
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
@@ -174,6 +179,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "time": now,
         "device_id": device_id,
         "device_name": device_name,
+        "app_name": app_name,
     }
     try:
         save_message(item)

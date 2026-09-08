@@ -65,11 +65,19 @@ create table public.messages (
    text text not null,
    device_id text not null default 'unknown',
    device_name text not null default 'Unknown device',
+   app_name text not null default 'Unknown app',
    time bigint not null,
    created_at timestamptz not null default now()
 );
 
 create index messages_time_idx on public.messages (time desc);
+```
+
+If the table already exists, add the new column once:
+
+```sql
+alter table public.messages
+add column if not exists app_name text not null default 'Unknown app';
 ```
 
 Copy the Supabase PostgreSQL connection string into Render as the secret environment variable:
@@ -123,6 +131,6 @@ The service keeps the latest 200 messages in memory. Configure Supabase as descr
 - `GET /`: web feed.
 - `GET /messages`: stored messages.
 - `GET /events`: live Server-Sent Events stream.
-- `POST /api/messages`: accepts `text`, `device_id`, and `device_name`.
+- `POST /api/messages`: accepts `text`, `device_id`, `device_name`, and `app_name`.
 - `GET /api/devices`: devices that have sent messages.
 - `GET /health`: service status and message count.

