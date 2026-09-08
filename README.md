@@ -10,7 +10,7 @@ Only run the client on computers and accounts you own or are explicitly authoriz
 Keyboard input -> LiveKeyClient.exe -> POST /api/messages -> app.py -> index.html
 ```
 
-Each message contains `text`, `device_id`, and `device_name`. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 1.2 seconds without typing.
+Each message contains `text`, `device_id`, and `device_name`. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing.
 
 ## Files
 

