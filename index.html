@@ -385,6 +385,8 @@
     const onlineCountEl = document.getElementById('onlineCount');
     const deviceUpdatedEl = document.getElementById('deviceUpdated');
     const deviceListEl = document.getElementById('deviceList');
+    const deviceUptimes = new Map();
+    const deviceOnlineStates = new Map();
     let serviceStartedAt = null;
     let serviceUptime = 0;
 
@@ -415,6 +417,19 @@
       uptimeEl.textContent = formatUptime(serviceUptime);
     }
 
+    function updateDeviceUptimes() {
+      document.querySelectorAll('.device-uptime').forEach((uptimeEl) => {
+        const deviceId = uptimeEl.dataset.deviceId;
+        let seconds = deviceUptimes.get(deviceId);
+        if (seconds === undefined) return;
+        if (deviceOnlineStates.get(deviceId)) {
+          seconds += 1;
+          deviceUptimes.set(deviceId, seconds);
+        }
+        uptimeEl.textContent = `Uptime: ${formatUptime(seconds)}`;
+      });
+    }
+
     async function loadDevices() {
       try {
         const res = await fetch('/api/devices');
@@ -429,6 +444,9 @@
           return;
         }
         devices.forEach((device) => {
+          const deviceId = String(device.id || 'unknown');
+          deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
+          deviceOnlineStates.set(deviceId, Boolean(device.online));
           const row = document.createElement('div');
           row.className = `device-row${device.online ? ' online' : ''}`;
 
@@ -445,8 +463,9 @@
           state.textContent = device.status || (device.online ? 'Online' : 'Offline');
 
           const uptime = document.createElement('span');
-          uptime.className = 'device-seen';
-          uptime.textContent = `Uptime: ${formatUptime(device.uptime_seconds || 0)}`;
+          uptime.className = 'device-seen device-uptime';
+          uptime.dataset.deviceId = deviceId;
+          uptime.textContent = `Uptime: ${formatUptime(deviceUptimes.get(deviceId))}`;
 
           const seen = document.createElement('span');
           seen.className = 'device-seen';
@@ -548,6 +567,7 @@
     loadHealth();
     loadDevices();
     setInterval(updateUptime, 1000);
+    setInterval(updateDeviceUptimes, 1000);
     setInterval(loadHealth, 30000);
     setInterval(loadDevices, 30000);
   </script>
