@@ -106,7 +106,13 @@ add column if not exists app_name text not null default 'Unknown app';
 
 alter table public.messages
 add column if not exists is_pasted boolean not null default false;
+
+alter table public.messages
+add column if not exists is_copied boolean not null default false;
 ```
+
+The desktop client records `Ctrl+C` as a separate copied message and `Ctrl+V`
+as a pasted message. The web feed uses different bubble styles for each.
 
 Copy the Supabase PostgreSQL connection string into Render as the secret environment variable:
 
