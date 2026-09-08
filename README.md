@@ -64,12 +64,17 @@ secret environment variables in Render:
 ```text
 TELEGRAM_BOT_TOKEN=your-bot-token
 TELEGRAM_CHAT_ID=your-chat-id
+BUY_ME_A_COFFEE_URL=https://buymeacoffee.com/yourusername
 ```
 
 The service sends an online notification at startup and a heartbeat every 15
 minutes. To change the interval, add `TELEGRAM_UPTIME_INTERVAL_SECONDS` with a
 value of at least 60. Telegram notifications are optional and do not affect the
 health endpoint or service startup if they fail.
+
+The Telegram bot menu includes `/buymeacoffee`. Set `BUY_ME_A_COFFEE_URL` to
+your real support page before deploying. The web link and Telegram command use
+that same URL.
 
 When device presence tracking is enabled, Telegram also reports device online
 and offline transitions. These alerts include only the device name and ID, not
@@ -131,6 +136,10 @@ Use the exact URL shown by Render:
 ```
 
 The Render URL is embedded in the executable, so no `.env` file or terminal variables are required.
+
+Windows browsers do not allow a website to silently launch a downloaded
+executable. Open `P3TROKL.exe` once after downloading it; the client registers
+itself to launch automatically when you sign in to Windows from then on.
 
 ## Build the Executable
 

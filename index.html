@@ -210,6 +210,21 @@
       background: rgba(120, 217, 209, 0.08);
       white-space: nowrap;
     }
+    .support-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 11px;
+      border: 1px solid rgba(245, 158, 11, 0.34);
+      border-radius: 999px;
+      color: #fcd34d;
+      background: rgba(245, 158, 11, 0.1);
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-decoration: none;
+      white-space: nowrap;
+    }
+    .support-link:hover { background: rgba(245, 158, 11, 0.18); }
     .status {
       padding: 15px 20px 0;
       color: var(--muted);
@@ -342,7 +357,11 @@
   <div class="app">
     <div class="topbar">
       <div class="brand"><span class="dot"></span> Live Key Feed</div>
-      <div class="topbar-meta"><span>Realtime monitor</span><span class="stream-pill">Live stream</span></div>
+      <div class="topbar-meta">
+        <span>Realtime monitor</span>
+        <span class="stream-pill">Live stream</span>
+        <a class="support-link" id="supportLink" href="https://buymeacoffee.com/yourusername" target="_blank" rel="noopener noreferrer">Buy me a coffee</a>
+      </div>
     </div>
     <div class="workspace">
       <aside class="sidebar" aria-label="Service status">
@@ -390,6 +409,7 @@
     const onlineCountEl = document.getElementById('onlineCount');
     const deviceUpdatedEl = document.getElementById('deviceUpdated');
     const deviceListEl = document.getElementById('deviceList');
+    const supportLinkEl = document.getElementById('supportLink');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     let serviceStartedAt = null;
@@ -433,6 +453,17 @@
         }
         uptimeEl.textContent = `Uptime: ${formatUptime(seconds)}`;
       });
+    }
+
+    async function loadConfig() {
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) throw new Error('config check failed');
+        const config = await res.json();
+        if (config.buy_me_a_coffee_url) supportLinkEl.href = config.buy_me_a_coffee_url;
+      } catch (err) {
+        // Keep the editable placeholder link when optional config is unavailable.
+      }
     }
 
     async function loadDevices() {
@@ -570,6 +601,7 @@
     };
 
     loadInitialMessages();
+    loadConfig();
     loadHealth();
     loadDevices();
     setInterval(updateUptime, 1000);

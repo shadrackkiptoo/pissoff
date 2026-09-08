@@ -12,3 +12,5 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
+      - key: BUY_ME_A_COFFEE_URL
+        sync: false

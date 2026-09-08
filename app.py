@@ -27,6 +27,9 @@ DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 90
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+BUY_ME_A_COFFEE_URL = os.getenv(
+    "BUY_ME_A_COFFEE_URL", "https://buymeacoffee.com/yourusername"
+).strip()
 TELEGRAM_UPTIME_INTERVAL = max(
     60, int(os.getenv("TELEGRAM_UPTIME_INTERVAL_SECONDS", "900"))
 )
@@ -36,21 +39,77 @@ def telegram_configured():
     return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
 
 
+def telegram_api_request(method, values, timeout=10):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
+    payload = urllib.parse.urlencode(values).encode("utf-8")
+    request = urllib.request.Request(url, data=payload, method="POST")
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"Telegram HTTP {response.status}")
+        return json.loads(response.read().decode("utf-8"))
+
+
 def send_telegram_message(text):
     if not telegram_configured():
         return
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = urllib.parse.urlencode(
-        {"chat_id": TELEGRAM_CHAT_ID, "text": text}
-    ).encode("utf-8")
-    request = urllib.request.Request(url, data=payload, method="POST")
     try:
-        with urllib.request.urlopen(request, timeout=10) as response:
-            if response.status >= 400:
-                raise RuntimeError(f"Telegram HTTP {response.status}")
+        telegram_api_request(
+            "sendMessage", {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+        )
     except Exception as error:
         print(f"Could not send Telegram uptime notification: {error}")
+
+
+def configure_telegram_menu():
+    try:
+        telegram_api_request(
+            "setMyCommands",
+            {
+                "commands": json.dumps(
+                    [
+                        {
+                            "command": "buymeacoffee",
+                            "description": "Support Live Key Feed",
+                        }
+                    ]
+                )
+            },
+        )
+    except Exception as error:
+        print(f"Could not configure Telegram command menu: {error}")
+
+
+def poll_telegram_commands():
+    offset = None
+    configure_telegram_menu()
+    while True:
+        try:
+            values = {"timeout": 25}
+            if offset is not None:
+                values["offset"] = offset
+            response = telegram_api_request("getUpdates", values, timeout=35)
+            for update in response.get("result", []):
+                offset = int(update["update_id"]) + 1
+                message = update.get("message", {})
+                chat = message.get("chat", {})
+                text = (message.get("text") or "").strip().lower()
+                if str(chat.get("id")) != TELEGRAM_CHAT_ID:
+                    continue
+                if text and text.split()[0] in {
+                    "/buymeacoffee",
+                    "/buymeacoffee@livekeyfeedbot",
+                }:
+                    telegram_api_request(
+                        "sendMessage",
+                        {
+                            "chat_id": TELEGRAM_CHAT_ID,
+                            "text": f"Support Live Key Feed: {BUY_ME_A_COFFEE_URL}",
+                        },
+                    )
+        except Exception as error:
+            print(f"Could not process Telegram commands: {error}")
+            time.sleep(5)
 
 
 def notify_device_status(device_id, device_name, online):
@@ -95,9 +154,13 @@ async def telegram_uptime_loop():
 @asynccontextmanager
 async def lifespan(_app):
     heartbeat_task = None
+    telegram_command_task = None
     device_status_task = asyncio.create_task(device_status_loop())
     if telegram_configured():
         heartbeat_task = asyncio.create_task(telegram_uptime_loop())
+        telegram_command_task = asyncio.create_task(
+            asyncio.to_thread(poll_telegram_commands)
+        )
     elif TELEGRAM_BOT_TOKEN or TELEGRAM_CHAT_ID:
         print("Telegram uptime notifications need both TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID")
 
@@ -107,6 +170,9 @@ async def lifespan(_app):
         tasks = [device_status_task]
         if heartbeat_task:
             tasks.append(heartbeat_task)
+        if telegram_command_task:
+            telegram_command_task.cancel()
+            tasks.append(telegram_command_task)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
@@ -325,6 +391,11 @@ async def root():
 @app.get("/messages")
 async def fetch_messages():
     return JSONResponse(list(messages))
+
+
+@app.get("/api/config")
+async def fetch_config():
+    return JSONResponse({"buy_me_a_coffee_url": BUY_ME_A_COFFEE_URL})
 
 
 @app.get("/api/devices")
