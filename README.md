@@ -143,6 +143,26 @@ It must be `https://windows-defender-cf8n.onrender.com`. Also check `https://win
 
 The service keeps the latest 200 messages in memory. Configure Supabase as described above so messages survive Render restarts and redeploys. `text.txt` is only the local fallback and is ignored by Git.
 
+## Configure Device Presence
+
+Run this SQL in Supabase to retain every client that has started and its latest
+heartbeat:
+
+```sql
+create table public.devices (
+   device_id text primary key,
+   device_name text not null default 'Unknown device',
+   last_seen bigint not null,
+   started_at bigint not null
+);
+
+create index devices_last_seen_idx on public.devices (last_seen desc);
+```
+
+The desktop client sends a heartbeat every 30 seconds. `GET /api/devices`
+returns all known devices with `online: true` when the last heartbeat was within
+90 seconds, and `online: false` after that.
+
 ## API Endpoints
 
 - `GET /`: web feed.
@@ -150,4 +170,5 @@ The service keeps the latest 200 messages in memory. Configure Supabase as descr
 - `GET /events`: live Server-Sent Events stream.
 - `POST /api/messages`: accepts `text`, `device_id`, `device_name`, `app_name`, and `is_pasted`.
 - `GET /api/devices`: devices that have sent messages.
+- `POST /api/devices/heartbeat`: registers a client and updates its presence.
 - `GET /health`: service status and message count.

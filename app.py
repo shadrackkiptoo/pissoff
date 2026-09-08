@@ -22,6 +22,8 @@ messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SERVICE_STARTED_AT = time.time()
+DEVICE_HEARTBEAT_INTERVAL = 30
+DEVICE_OFFLINE_AFTER = 90
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 TELEGRAM_UPTIME_INTERVAL = max(
@@ -159,7 +161,34 @@ def load_text_messages():
             "id": item["device_id"],
             "name": item["device_name"],
             "last_seen": item["time"],
+            "started_at": item["time"],
         }
+
+
+def load_devices():
+    if not DATABASE_URL:
+        return
+
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    SELECT device_id, device_name, last_seen, started_at
+                    FROM devices
+                    ORDER BY last_seen DESC
+                    """
+                )
+                rows = cursor.fetchall()
+        for device_id, device_name, last_seen, started_at in rows:
+            devices[str(device_id)] = {
+                "id": device_id,
+                "name": device_name,
+                "last_seen": last_seen,
+                "started_at": started_at,
+            }
+    except Exception as error:
+        print(f"Could not load Supabase devices: {error}")
 
 
 def save_message(item):
@@ -186,6 +215,31 @@ def save_message(item):
             )
 
 
+def save_device(device_id, device_name, last_seen, started_at):
+    devices[device_id] = {
+        "id": device_id,
+        "name": device_name,
+        "last_seen": last_seen,
+        "started_at": started_at,
+    }
+    if not DATABASE_URL:
+        return
+
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO devices (device_id, device_name, last_seen, started_at)
+                VALUES (%s, %s, %s, %s)
+                ON CONFLICT (device_id) DO UPDATE SET
+                    device_name = EXCLUDED.device_name,
+                    last_seen = EXCLUDED.last_seen,
+                    started_at = LEAST(devices.started_at, EXCLUDED.started_at)
+                """,
+                (device_id, device_name, last_seen, started_at),
+            )
+
+
 def write_text_log():
     line_text = "\n".join(
         f"{int(item['time'])}|{item['device_id']}|{item['device_name']}|{1 if item.get('is_pasted') else 0}|{item['text']}"
@@ -203,8 +257,15 @@ class MessageInput(BaseModel):
     is_pasted: bool = False
 
 
+class DeviceHeartbeat(BaseModel):
+    device_id: str
+    device_name: str = "Unknown device"
+    started_at: int
+
+
 app = FastAPI(title="Live Key Feed", lifespan=lifespan)
 load_text_messages()
+load_devices()
 
 
 @app.get("/")
@@ -219,7 +280,41 @@ async def fetch_messages():
 
 @app.get("/api/devices")
 async def fetch_devices():
-    return JSONResponse(list(devices.values()))
+    now = int(time.time() * 1000)
+    result = []
+    for device in devices.values():
+        last_seen = int(device.get("last_seen", 0))
+        result.append(
+            {
+                **device,
+                "online": now - last_seen <= DEVICE_OFFLINE_AFTER * 1000,
+            }
+        )
+    return JSONResponse(result)
+
+
+@app.post("/api/devices/heartbeat")
+async def device_heartbeat(
+    payload: DeviceHeartbeat, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    device_id = payload.device_id.strip()
+    device_name = payload.device_name.strip() or "Unknown device"
+    if not device_id:
+        return JSONResponse({"ok": False, "error": "missing device_id"}, status_code=400)
+
+    now = int(time.time() * 1000)
+    try:
+        save_device(device_id, device_name, now, payload.started_at)
+    except Exception as error:
+        print(f"Could not save device heartbeat: {error}")
+        return JSONResponse(
+            {"ok": False, "error": "device storage unavailable"}, status_code=503
+        )
+    return JSONResponse({"ok": True})
 
 
 @app.post("/api/messages")
