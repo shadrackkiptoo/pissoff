@@ -157,7 +157,9 @@ def on_press(key):
             active_modifiers.add(modifier_aliases.get(key, key))
             return
 
-        if key in (KeyCode.from_char("v"), KeyCode.from_char("V")) and Key.ctrl in active_modifiers:
+        key_char = key.char if isinstance(key, KeyCode) else ""
+        is_paste_key = key_char.lower() == "v" or key_char == "\x16"
+        if is_paste_key and Key.ctrl in active_modifiers:
             pasted_text = get_clipboard_text().strip()
             if pasted_text:
                 flush_message_buffer()
