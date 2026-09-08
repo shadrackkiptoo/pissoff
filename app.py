@@ -123,7 +123,7 @@ def load_file_messages():
     for line in lines:
         if "|" not in line:
             continue
-        parts = line.split("|", 4)
+        parts = line.split("|", 5)
         try:
             if len(parts) == 2:
                 ts, text = parts
