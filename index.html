@@ -44,6 +44,48 @@
       flex-direction: column;
       backdrop-filter: blur(12px);
     }
+    .workspace {
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      flex: 1;
+      min-height: 0;
+    }
+    .sidebar {
+      padding: 20px 16px;
+      border-right: 1px solid var(--border);
+      background: rgba(10, 15, 24, 0.56);
+    }
+    .sidebar h2 {
+      margin: 0 0 18px;
+      color: var(--accent);
+      font-size: 0.72rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+    }
+    .metric {
+      padding: 12px 0;
+      border-top: 1px solid var(--border);
+    }
+    .metric-label {
+      display: block;
+      margin-bottom: 5px;
+      color: var(--muted);
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .metric-value {
+      display: block;
+      font-size: 0.82rem;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+    .feed-panel {
+      display: flex;
+      min-width: 0;
+      min-height: 0;
+      flex-direction: column;
+    }
     .topbar {
       display: flex;
       align-items: center;
@@ -137,6 +179,22 @@
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
     }
+    @media (max-width: 700px) {
+      body { padding: 12px; }
+      .app { height: 94vh; border-radius: 18px; }
+      .workspace { grid-template-columns: 1fr; }
+      .sidebar {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        padding: 12px 14px;
+        border-right: 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .sidebar h2 { grid-column: 1 / -1; margin: 0; }
+      .metric { padding: 0; border-top: 0; }
+      .metric-value { font-size: 0.72rem; }
+    }
   </style>
 </head>
 <body>
@@ -144,16 +202,73 @@
     <div class="topbar">
       <div class="brand"><span class="dot"></span> Live Key Feed</div>
     </div>
-    <div class="status" id="status">Waiting for live stream…</div>
-    <div class="feed" id="feed"></div>
+    <div class="workspace">
+      <aside class="sidebar" aria-label="Service status">
+        <h2>Service status</h2>
+        <div class="metric">
+          <span class="metric-label">Started</span>
+          <span class="metric-value" id="startedAt">Loading…</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Current uptime</span>
+          <span class="metric-value" id="uptime">Loading…</span>
+        </div>
+        <div class="metric">
+          <span class="metric-label">Messages stored</span>
+          <span class="metric-value" id="messageCount">0</span>
+        </div>
+      </aside>
+      <section class="feed-panel">
+        <div class="status" id="status">Waiting for live stream…</div>
+        <div class="feed" id="feed"></div>
+      </section>
+    </div>
   </div>
 
   <script>
     const feed = document.getElementById('feed');
     const statusEl = document.getElementById('status');
+    const startedAtEl = document.getElementById('startedAt');
+    const uptimeEl = document.getElementById('uptime');
+    const messageCountEl = document.getElementById('messageCount');
+    let serviceStartedAt = null;
+    let serviceUptime = 0;
 
     function formatTime(ts) {
-      return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      return new Date(ts).toLocaleString([], {
+        dateStyle: 'medium',
+        timeStyle: 'medium'
+      });
+    }
+
+    function formatUptime(seconds) {
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      const remainingSeconds = seconds % 60;
+      return `${days}d ${hours}h ${minutes}m ${remainingSeconds}s`;
+    }
+
+    function updateUptime() {
+      if (serviceStartedAt === null) return;
+      serviceUptime += 1;
+      uptimeEl.textContent = formatUptime(serviceUptime);
+    }
+
+    async function loadHealth() {
+      try {
+        const res = await fetch('/health');
+        if (!res.ok) throw new Error('health check failed');
+        const health = await res.json();
+        serviceStartedAt = health.started_at;
+        serviceUptime = health.uptime_seconds;
+        startedAtEl.textContent = formatTime(serviceStartedAt);
+        messageCountEl.textContent = health.count;
+        updateUptime();
+      } catch (err) {
+        startedAtEl.textContent = 'Unavailable';
+        uptimeEl.textContent = 'Unavailable';
+      }
     }
 
     function addMessage(msg) {
@@ -188,6 +303,7 @@
 
       wrap.appendChild(bubble);
       feed.appendChild(wrap);
+      messageCountEl.textContent = feed.children.length;
       feed.scrollTop = feed.scrollHeight;
     }
 
@@ -198,6 +314,7 @@
         const messages = await res.json();
         feed.innerHTML = '';
         messages.forEach(addMessage);
+        messageCountEl.textContent = messages.length;
         statusEl.textContent = 'Latest messages: ' + messages.length;
       } catch (err) {
         statusEl.textContent = 'Listening for new messages…';
@@ -215,6 +332,9 @@
     };
 
     loadInitialMessages();
+    loadHealth();
+    setInterval(updateUptime, 1000);
+    setInterval(loadHealth, 30000);
   </script>
 </body>
 </html>

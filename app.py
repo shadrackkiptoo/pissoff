@@ -18,6 +18,7 @@ HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+SERVICE_STARTED_AT = time.time()
 
 
 def load_file_messages():
@@ -222,7 +223,12 @@ async def events(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "count": len(messages)}
+    return {
+        "ok": True,
+        "count": len(messages),
+        "started_at": int(SERVICE_STARTED_AT * 1000),
+        "uptime_seconds": int(time.time() - SERVICE_STARTED_AT),
+    }
 
 
 if __name__ == "__main__":
