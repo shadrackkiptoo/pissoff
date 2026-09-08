@@ -15,6 +15,7 @@ BASE_DIR = Path(__file__).resolve().parent
 LOG_PATH = BASE_DIR / "text.txt"
 HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
+devices: Dict[str, Dict[str, object]] = {}
 
 
 def load_text_messages():
@@ -49,6 +50,11 @@ class MessageInput(BaseModel):
     text: str
 
 
+class DeviceHeartbeat(BaseModel):
+    device_id: str
+    device_name: str
+
+
 app = FastAPI(title="Live Key Feed")
 load_text_messages()
 
@@ -61,6 +67,26 @@ async def root():
 @app.get("/messages")
 async def fetch_messages():
     return JSONResponse(list(messages))
+
+
+@app.post("/api/devices/heartbeat")
+async def device_heartbeat(payload: DeviceHeartbeat, x_api_key: str | None = Header(default=None)):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    now = int(time.time() * 1000)
+    devices[payload.device_id] = {
+        "id": payload.device_id,
+        "name": payload.device_name,
+        "last_seen": now,
+    }
+    return {"ok": True, "device": devices[payload.device_id]}
+
+
+@app.get("/api/devices")
+async def fetch_devices():
+    return JSONResponse(list(devices.values()))
 
 
 @app.post("/api/messages")
