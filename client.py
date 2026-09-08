@@ -146,7 +146,7 @@ def normalize_key(key):
     return ""
 
 
-def send_message(text, app_name, is_pasted=False):
+def send_message(text, app_name, is_pasted=False, is_copied=False):
     try:
         headers = {"Content-Type": "application/json"}
         request = Request(
@@ -158,6 +158,7 @@ def send_message(text, app_name, is_pasted=False):
                     "device_name": device_name,
                     "app_name": app_name,
                     "is_pasted": is_pasted,
+                    "is_copied": is_copied,
                 }
             ).encode("utf-8"),
             headers=headers,
@@ -200,9 +201,16 @@ def heartbeat_sender():
 
 def message_sender():
     while True:
-        text, app_name, is_pasted = message_queue.get()
-        send_message(text, app_name, is_pasted)
+        text, app_name, is_pasted, is_copied = message_queue.get()
+        send_message(text, app_name, is_pasted, is_copied)
         message_queue.task_done()
+
+
+def queue_copied_clipboard(target):
+    time.sleep(0.1)
+    copied_text = get_clipboard_text().strip()
+    if copied_text:
+        message_queue.put((copied_text, target, False, True))
 
 
 def flush_message_buffer():
@@ -213,7 +221,7 @@ def flush_message_buffer():
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        message_queue.put((text, active_target or get_active_app(), False))
+        message_queue.put((text, active_target or get_active_app(), False, False))
     active_target = None
     active_target_key = None
 
@@ -233,12 +241,17 @@ def on_press(key):
 
         key_char = key.char if isinstance(key, KeyCode) else ""
         is_paste_key = key_char.lower() == "v" or key_char == "\x16"
+        is_copy_key = key_char.lower() == "c" or key_char == "\x03"
+        if is_copy_key and Key.ctrl in active_modifiers:
+            target, _target_key = get_active_target()
+            Thread(target=queue_copied_clipboard, args=(target,), daemon=True).start()
+            return
         if is_paste_key and Key.ctrl in active_modifiers:
             pasted_text = get_clipboard_text().strip()
             if pasted_text:
                 flush_message_buffer()
                 target, target_key = get_active_target()
-                message_queue.put((pasted_text, target, True))
+                message_queue.put((pasted_text, target, True, False))
             return
 
         symbol = normalize_key(key)

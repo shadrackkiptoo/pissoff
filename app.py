@@ -130,12 +130,19 @@ def load_file_messages():
                 device_id = "unknown"
                 device_name = "Unknown device"
                 is_pasted = False
+                is_copied = False
             elif len(parts) == 5:
                 ts, device_id, device_name, pasted_value, text = parts
                 is_pasted = pasted_value == "1"
+                is_copied = False
+            elif len(parts) == 6:
+                ts, device_id, device_name, pasted_value, copied_value, text = parts
+                is_pasted = pasted_value == "1"
+                is_copied = copied_value == "1"
             else:
                 ts, device_id, device_name, text = parts
                 is_pasted = False
+                is_copied = False
             parsed.append(
                 {
                     "id": int(ts),
@@ -145,6 +152,7 @@ def load_file_messages():
                     "device_name": device_name,
                     "app_name": "Unknown app",
                     "is_pasted": is_pasted,
+                    "is_copied": is_copied,
                 }
             )
         except ValueError:
@@ -161,7 +169,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, device_id, device_name, app_name, time, is_pasted
+                        SELECT id, text, device_id, device_name, app_name, time, is_pasted, is_copied
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -178,6 +186,7 @@ def load_text_messages():
                     "app_name": row[4],
                     "time": row[5],
                     "is_pasted": row[6],
+                    "is_copied": row[7],
                 }
                 for row in reversed(rows)
             ]
@@ -237,8 +246,8 @@ def save_message(item):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, device_id, device_name, app_name, time, is_pasted)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, device_id, device_name, app_name, time, is_pasted, is_copied)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     item["id"],
@@ -248,6 +257,7 @@ def save_message(item):
                     item["app_name"],
                     item["time"],
                     item["is_pasted"],
+                    item["is_copied"],
                 ),
             )
 
@@ -280,7 +290,7 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at):
 
 def write_text_log():
     line_text = "\n".join(
-        f"{int(item['time'])}|{item['device_id']}|{item['device_name']}|{1 if item.get('is_pasted') else 0}|{item['text']}"
+        f"{int(item['time'])}|{item['device_id']}|{item['device_name']}|{1 if item.get('is_pasted') else 0}|{1 if item.get('is_copied') else 0}|{item['text']}"
         for item in list(messages)
     )
     with LOG_PATH.open("w", encoding="utf-8") as f:
@@ -293,6 +303,7 @@ class MessageInput(BaseModel):
     device_name: str = "Unknown device"
     app_name: str = "Unknown app"
     is_pasted: bool = False
+    is_copied: bool = False
 
 
 class DeviceHeartbeat(BaseModel):
@@ -396,6 +407,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     device_name = payload.device_name.strip() or "Unknown device"
     app_name = payload.app_name.strip() or "Unknown app"
     is_pasted = payload.is_pasted
+    is_copied = payload.is_copied
     previous_device = devices.get(device_id, {})
     devices[device_id] = {
         "id": device_id,
@@ -413,6 +425,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "device_name": device_name,
         "app_name": app_name,
         "is_pasted": is_pasted,
+        "is_copied": is_copied,
     }
     try:
         save_message(item)

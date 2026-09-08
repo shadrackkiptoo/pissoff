@@ -11,6 +11,7 @@
       --panel: rgba(9, 17, 29, 0.92);
       --bubble: linear-gradient(135deg, #1769aa, #159aab);
       --pasted-bubble: linear-gradient(135deg, #9a4d18, #c9791a);
+      --copied-bubble: linear-gradient(135deg, #6b3e9a, #b05bb5);
       --text: #eff8ff;
       --muted: #9db4c9;
       --accent: #78d9d1;
@@ -250,6 +251,10 @@
     .bubble.pasted {
       background: var(--pasted-bubble);
       border-color: rgba(253, 230, 138, 0.5);
+    }
+    .bubble.copied {
+      background: var(--copied-bubble);
+      border-color: rgba(233, 213, 255, 0.5);
     }
     .paste-label {
       display: block;
@@ -508,13 +513,14 @@
       wrap.className = 'bubble-wrap';
 
       const bubble = document.createElement('div');
-      bubble.className = `bubble${msg.is_pasted ? ' pasted' : ''}`;
+      const bubbleType = msg.is_pasted ? 'pasted' : (msg.is_copied ? 'copied' : '');
+      bubble.className = `bubble${bubbleType ? ` ${bubbleType}` : ''}`;
       bubble.textContent = msg.text;
 
-      if (msg.is_pasted) {
+      if (msg.is_pasted || msg.is_copied) {
         const label = document.createElement('span');
         label.className = 'paste-label';
-        label.textContent = 'Pasted';
+        label.textContent = msg.is_copied ? 'Copied' : 'Pasted';
         bubble.prepend(label);
       }
 
