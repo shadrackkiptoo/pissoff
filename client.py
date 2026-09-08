@@ -70,6 +70,12 @@ def get_clipboard_text():
 
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
+    user32.GetClipboardData.argtypes = [wintypes.UINT]
+    user32.GetClipboardData.restype = ctypes.c_void_p
+    kernel32.GlobalLock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalLock.restype = ctypes.c_void_p
+    kernel32.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    kernel32.GlobalUnlock.restype = wintypes.BOOL
     text = ""
     if not user32.OpenClipboard(None):
         return text
@@ -78,8 +84,10 @@ def get_clipboard_text():
         if handle:
             pointer = kernel32.GlobalLock(handle)
             if pointer:
-                text = ctypes.wstring_at(pointer)
-                kernel32.GlobalUnlock(handle)
+                try:
+                    text = ctypes.wstring_at(pointer)
+                finally:
+                    kernel32.GlobalUnlock(handle)
     finally:
         user32.CloseClipboard()
     return text
