@@ -62,6 +62,58 @@ def send_telegram_message(text):
         print(f"Could not send Telegram uptime notification: {error}")
 
 
+def format_uptime(seconds):
+    days, remainder = divmod(max(0, int(seconds)), 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    parts = []
+    if days:
+        parts.append(f"{days}d")
+    if hours or days:
+        parts.append(f"{hours}h")
+    if minutes or hours or days:
+        parts.append(f"{minutes}m")
+    parts.append(f"{seconds}s")
+    return " ".join(parts)
+
+
+def telegram_uptime_text():
+    return (
+        "Live Key Feed status: healthy\n"
+        f"Uptime: {format_uptime(time.time() - SERVICE_STARTED_AT)}\n"
+        f"Stored messages: {len(messages)}\n"
+        f"Known devices: {len(devices)}"
+    )
+
+
+def telegram_devices_text():
+    if not devices:
+        return "Devices\nNo devices have checked in yet."
+
+    now = int(time.time() * 1000)
+    lines = ["Devices"]
+    for device in sorted(devices.values(), key=lambda item: str(item.get("name", ""))):
+        last_seen = int(device.get("last_seen", 0))
+        online = now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
+        status = "online" if online else "offline"
+        lines.append(f"- {device.get('name', 'Unknown device')} ({device.get('id')}) - {status}")
+    return "\n".join(lines)
+
+
+def telegram_messages_text():
+    counts = {}
+    for item in messages:
+        device_name = str(item.get("device_name", "Unknown device"))
+        counts[device_name] = counts.get(device_name, 0) + 1
+    lines = [f"Stored messages: {len(messages)}"]
+    if counts:
+        lines.append("By device:")
+        lines.extend(f"- {name}: {count}" for name, count in sorted(counts.items()))
+    else:
+        lines.append("No messages stored.")
+    return "\n".join(lines)
+
+
 def configure_telegram_menu():
     try:
         telegram_api_request(
@@ -72,6 +124,9 @@ def configure_telegram_menu():
             {
                 "commands": json.dumps(
                     [
+                        {"command": "uptime", "description": "Show service uptime and status"},
+                        {"command": "devices", "description": "List connected devices"},
+                        {"command": "messages", "description": "Show stored message totals"},
                         {
                             "command": "buymeacoffee",
                             "description": "Support Live Key Feed",
@@ -101,15 +156,23 @@ def poll_telegram_commands():
                 text = (message.get("text") or "").strip().lower()
                 if str(chat.get("id")) != TELEGRAM_CHAT_ID:
                     continue
-                if text and text.split()[0] in {
-                    "/buymeacoffee",
-                    "/buymeacoffee@livekeyfeedbot",
-                }:
+                command = text.split()[0] if text else ""
+                command = command.split("@", 1)[0]
+                reply = None
+                if command == "/uptime":
+                    reply = telegram_uptime_text()
+                elif command == "/devices":
+                    reply = telegram_devices_text()
+                elif command == "/messages":
+                    reply = telegram_messages_text()
+                elif command == "/buymeacoffee":
+                    reply = f"Support Live Key Feed: {BUY_ME_A_COFFEE_URL}"
+                if reply:
                     telegram_api_request(
                         "sendMessage",
                         {
                             "chat_id": TELEGRAM_CHAT_ID,
-                            "text": f"Support Live Key Feed: {BUY_ME_A_COFFEE_URL}",
+                            "text": reply,
                         },
                     )
         except HTTPError as error:

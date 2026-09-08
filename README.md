@@ -72,9 +72,12 @@ minutes. To change the interval, add `TELEGRAM_UPTIME_INTERVAL_SECONDS` with a
 value of at least 60. Telegram notifications are optional and do not affect the
 health endpoint or service startup if they fail.
 
-The Telegram bot menu includes `/buymeacoffee`. Set `BUY_ME_A_COFFEE_URL` to
-your real support page before deploying. The web link and Telegram command use
-that same URL.
+The Telegram bot menu includes `/uptime`, `/devices`, `/messages`, and
+`/buymeacoffee`. `/uptime` reports service health and uptime, `/devices` lists
+device names, IDs, and online state, and `/messages` reports stored-message
+totals by device without sending captured message contents to Telegram. Set
+`BUY_ME_A_COFFEE_URL` to your real support page before deploying. The web link
+and Telegram command use that same URL.
 
 When device presence tracking is enabled, Telegram also reports device online
 and offline transitions. These alerts include only the device name and ID, not
