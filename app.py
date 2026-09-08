@@ -4,6 +4,7 @@ import os
 import time
 import urllib.parse
 import urllib.request
+from urllib.error import HTTPError
 from contextlib import asynccontextmanager
 from collections import deque
 from pathlib import Path
@@ -64,6 +65,9 @@ def send_telegram_message(text):
 def configure_telegram_menu():
     try:
         telegram_api_request(
+            "deleteWebhook", {"drop_pending_updates": "false"}
+        )
+        telegram_api_request(
             "setMyCommands",
             {
                 "commands": json.dumps(
@@ -83,6 +87,7 @@ def configure_telegram_menu():
 def poll_telegram_commands():
     offset = None
     configure_telegram_menu()
+    conflict_logged = False
     while True:
         try:
             values = {"timeout": 25}
@@ -107,6 +112,18 @@ def poll_telegram_commands():
                             "text": f"Support Live Key Feed: {BUY_ME_A_COFFEE_URL}",
                         },
                     )
+        except HTTPError as error:
+            if error.code == 409:
+                if not conflict_logged:
+                    print(
+                        "Telegram command polling is already active elsewhere; "
+                        "stop the other bot process to enable /buymeacoffee."
+                    )
+                    conflict_logged = True
+                time.sleep(30)
+                continue
+            print(f"Could not process Telegram commands: {error}")
+            time.sleep(5)
         except Exception as error:
             print(f"Could not process Telegram commands: {error}")
             time.sleep(5)
