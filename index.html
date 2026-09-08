@@ -365,13 +365,17 @@
           state.className = `device-state${device.online ? ' online' : ''}`;
           state.textContent = device.online ? 'Online' : 'Offline';
 
+          const uptime = document.createElement('span');
+          uptime.className = 'device-seen';
+          uptime.textContent = `Uptime: ${formatUptime(device.uptime_seconds || 0)}`;
+
           const seen = document.createElement('span');
           seen.className = 'device-seen';
           seen.textContent = device.last_seen
             ? `Last seen: ${formatTime(device.last_seen)}`
             : 'Last seen: unknown';
 
-          row.append(name, id, state, seen);
+          row.append(name, id, state, uptime, seen);
           deviceListEl.appendChild(row);
         });
       } catch (err) {

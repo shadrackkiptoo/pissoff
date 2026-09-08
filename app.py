@@ -234,7 +234,7 @@ def save_device(device_id, device_name, last_seen, started_at):
                 ON CONFLICT (device_id) DO UPDATE SET
                     device_name = EXCLUDED.device_name,
                     last_seen = EXCLUDED.last_seen,
-                    started_at = LEAST(devices.started_at, EXCLUDED.started_at)
+                    started_at = EXCLUDED.started_at
                 """,
                 (device_id, device_name, last_seen, started_at),
             )
@@ -284,10 +284,14 @@ async def fetch_devices():
     result = []
     for device in devices.values():
         last_seen = int(device.get("last_seen", 0))
+        started_at = int(device.get("started_at", last_seen))
+        online = now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
+        uptime_end = now if online else last_seen
         result.append(
             {
                 **device,
-                "online": now - last_seen <= DEVICE_OFFLINE_AFTER * 1000,
+                "online": online,
+                "uptime_seconds": max(0, (uptime_end - started_at) // 1000),
             }
         )
     return JSONResponse(result)

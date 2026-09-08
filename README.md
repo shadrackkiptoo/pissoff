@@ -161,7 +161,8 @@ create index devices_last_seen_idx on public.devices (last_seen desc);
 
 The desktop client sends a heartbeat every 30 seconds. `GET /api/devices`
 returns all known devices with `online: true` when the last heartbeat was within
-90 seconds, and `online: false` after that.
+90 seconds, plus `uptime_seconds` for each client's current session. Offline
+devices retain the uptime from their last session.
 
 ## API Endpoints
 
