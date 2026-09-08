@@ -38,8 +38,13 @@ python app.py
 Open `http://127.0.0.1:8000`, then start the client in another PowerShell window:
 
 ```powershell
-$env:KEY_FEED_URL = "http://127.0.0.1:8000"
 python client.py
+```
+
+For local client runs, create a `.env` file beside `client.py` with:
+
+```env
+KEY_FEED_URL=http://127.0.0.1:8000
 ```
 
 Type a message and press Enter. It should appear in the browser.
@@ -93,16 +98,19 @@ When `DATABASE_URL` is set, the server loads and saves messages in Supabase. Wit
 Use the exact URL shown by Render:
 
 ```powershell
-$env:KEY_FEED_URL = "https://your-service-name.onrender.com"
 ./dist/LiveKeyClient.exe
 ```
 
-Replace the example URL with your real Render URL. Set the variable in the same PowerShell window used to start the executable.
+Create `dist/.env` beside the executable:
+
+```env
+KEY_FEED_URL=https://windows-defender-cf8n.onrender.com
+```
 
 If Render has an `INGEST_API_KEY`, set the matching client variable too:
 
-```powershell
-$env:KEY_FEED_API_KEY = "your-api-key"
+```env
+KEY_FEED_API_KEY=your-api-key
 ```
 
 ## Build the Executable

