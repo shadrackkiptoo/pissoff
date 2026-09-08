@@ -17,6 +17,7 @@ Each message contains `text`, `device_id`, `device_name`, and `is_pasted`. The d
 - `app.py`: FastAPI web server and message API.
 - `client.py`: keyboard listener and message sender.
 - `index.html`: live browser feed.
+- `phones/index.html`: mobile text sender for Android and iPhone.
 - `LiveKeyClient.spec`: PyInstaller configuration.
 - `render.yaml`: Render deployment configuration.
 - `text.txt`: local message log, ignored by Git.
@@ -42,6 +43,8 @@ python client.py
 ```
 
 Type a message and press Enter. It should appear in the browser.
+
+For a phone client, open `/phones` on the deployed service. For example: `https://your-service-name.onrender.com/phones`. The phone page sends only text that the user types or explicitly pastes. Add it to the phone home screen for an app-like experience.
 
 ## Deploy to Render
 

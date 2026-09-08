@@ -107,6 +107,8 @@ def normalize_key(key):
         return "\b"
     if isinstance(key, KeyCode) and key.char is not None:
         value = key.char
+        if ord(value) < 32:
+            return ""
         if Key.shift in active_modifiers and value.isalpha():
             return value.upper()
         return SHIFTED_SYMBOLS.get(value, value) if Key.shift in active_modifiers else value

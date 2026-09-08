@@ -15,6 +15,7 @@ MAX_MESSAGES = 200
 BASE_DIR = Path(__file__).resolve().parent
 LOG_PATH = BASE_DIR / "text.txt"
 HTML_PATH = BASE_DIR / "index.html"
+PHONES_HTML_PATH = BASE_DIR / "phones" / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -151,6 +152,11 @@ load_text_messages()
 @app.get("/")
 async def root():
     return FileResponse(HTML_PATH)
+
+
+@app.get("/phones")
+async def phones():
+    return FileResponse(PHONES_HTML_PATH)
 
 
 @app.get("/messages")
