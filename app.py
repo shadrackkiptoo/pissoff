@@ -3,6 +3,7 @@ import json
 import os
 import time
 from collections import deque
+from pathlib import Path
 from typing import Deque, Dict
 
 from fastapi import FastAPI, Header, Request
@@ -10,13 +11,16 @@ from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 MAX_MESSAGES = 200
+BASE_DIR = Path(__file__).resolve().parent
+LOG_PATH = BASE_DIR / "text.txt"
+HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 
 
 def load_text_messages():
     global messages
     try:
-        with open("text.txt", "r", encoding="utf-8") as f:
+        with LOG_PATH.open("r", encoding="utf-8") as f:
             lines = [line.strip() for line in f.read().splitlines() if line.strip()]
     except FileNotFoundError:
         return
@@ -37,7 +41,7 @@ def write_text_log():
     line_text = "\n".join(
         f"{int(item['time'])}|{item['text']}" for item in list(messages)
     )
-    with open("text.txt", "w", encoding="utf-8") as f:
+    with LOG_PATH.open("w", encoding="utf-8") as f:
         f.write(line_text)
 
 
@@ -51,7 +55,7 @@ load_text_messages()
 
 @app.get("/")
 async def root():
-    return FileResponse("index.html")
+    return FileResponse(HTML_PATH)
 
 
 @app.get("/messages")
