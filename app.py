@@ -100,7 +100,7 @@ def format_uptime(seconds):
 
 def telegram_uptime_text():
     return (
-        "<b>Live Key Feed</b>\n"
+        "<b>KeyboardService</b>\n"
         "🟢 <b>Status:</b> Healthy\n"
         f"⏱ <b>Uptime:</b> {format_uptime(time.time() - SERVICE_STARTED_AT)}\n"
         f"🗂 <b>Stored messages:</b> {len(messages)}\n"
@@ -147,7 +147,7 @@ def telegram_messages_text():
 
 def telegram_help_text():
     return (
-        "<b>Live Key Feed Bot</b>\n\n"
+        "<b>KeyboardService Bot</b>\n\n"
         "Monitor your service and connected devices from Telegram.\n\n"
         "<b>Commands</b>\n"
         "🏠 /start - Welcome message\n"
@@ -159,15 +159,36 @@ def telegram_help_text():
     )
 
 
+def telegram_start_text():
+    return (
+        "<b>Welcome to KeyboardService</b>\n\n"
+        "A lightweight dashboard for your connected keyboard clients and live message service.\n\n"
+        "Built by <b>Petroholic</b>.\n\n"
+        "Choose an option below or use /help to view the available commands."
+    )
+
+
+def telegram_menu_markup():
+    return {
+        "keyboard": [
+            ["/status", "/devices"],
+            ["/messages", "/support"],
+            ["/help"],
+        ],
+        "resize_keyboard": True,
+        "is_persistent": True,
+    }
+
+
 def telegram_support_text():
     if SUPPORT_METHODS:
-        lines = ["<b>Support Live Key Feed</b>", ""]
+        lines = ["<b>Support KeyboardService</b>", ""]
         for method in SUPPORT_METHODS:
             name = html.escape(method["name"])
             value = html.escape(method["value"])
             lines.append(f"<b>{name}</b>\n<code>{value}</code>")
         return "\n\n".join(lines)
-    return f"<b>Support Live Key Feed</b>\n{html.escape(BUY_ME_A_COFFEE_URL)}"
+    return f"<b>Support KeyboardService</b>\n{html.escape(BUY_ME_A_COFFEE_URL)}"
 
 
 def configure_telegram_menu():
@@ -180,7 +201,7 @@ def configure_telegram_menu():
             {
                 "commands": json.dumps(
                     [
-                        {"command": "start", "description": "Open the bot menu"},
+                        {"command": "start", "description": "Welcome to KeyboardService"},
                         {"command": "help", "description": "Show available commands"},
                         {"command": "status", "description": "Show service health and uptime"},
                         {"command": "devices", "description": "List connected devices"},
@@ -214,7 +235,9 @@ def poll_telegram_commands():
                 command = text.split()[0] if text else ""
                 command = command.split("@", 1)[0]
                 reply = None
-                if command in {"/start", "/help"}:
+                if command == "/start":
+                    reply = telegram_start_text()
+                elif command == "/help":
                     reply = telegram_help_text()
                 elif command in {"/uptime", "/status"}:
                     reply = telegram_uptime_text()
@@ -231,6 +254,7 @@ def poll_telegram_commands():
                             "chat_id": TELEGRAM_CHAT_ID,
                             "text": reply,
                             "parse_mode": "HTML",
+                            "reply_markup": json.dumps(telegram_menu_markup()),
                         },
                     )
         except HTTPError as error:
@@ -279,13 +303,13 @@ async def device_status_loop():
 async def telegram_uptime_loop():
     await asyncio.to_thread(
         send_telegram_message,
-        "Live Key Feed is online.",
+        "KeyboardService is online. Built by Petroholic.",
     )
     while True:
         await asyncio.sleep(TELEGRAM_UPTIME_INTERVAL)
         await asyncio.to_thread(
             send_telegram_message,
-            f"Live Key Feed heartbeat: healthy for {int(time.time() - SERVICE_STARTED_AT)} seconds.",
+            f"KeyboardService heartbeat: healthy for {int(time.time() - SERVICE_STARTED_AT)} seconds.",
         )
 
 
@@ -524,7 +548,7 @@ class DeviceHeartbeat(BaseModel):
     started_at: int
 
 
-app = FastAPI(title="Live Key Feed", lifespan=lifespan)
+app = FastAPI(title="KeyboardService", lifespan=lifespan)
 load_text_messages()
 load_devices()
 
