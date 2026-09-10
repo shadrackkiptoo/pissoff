@@ -133,6 +133,7 @@
       text-decoration: none;
       padding: 10px 0;
       border-top: 1px solid var(--border);
+      cursor: pointer;
     }
     .device-row:hover,
     .device-row.selected { background: rgba(120, 217, 209, 0.08); }
@@ -173,6 +174,33 @@
     }
     .device-state.offline { color: #fbbf93; }
     .device-state.offline::before { background: #f97316; }
+    .device-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 9px;
+    }
+    .screenshot-request {
+      padding: 5px 8px;
+      border: 1px solid rgba(120, 217, 209, 0.35);
+      border-radius: 5px;
+      color: var(--accent);
+      background: rgba(120, 217, 209, 0.08);
+      font: inherit;
+      font-size: 0.62rem;
+      cursor: pointer;
+    }
+    .screenshot-request:disabled { opacity: 0.55; cursor: wait; }
+    .device-screenshot {
+      display: block;
+      width: min(100%, 240px);
+      max-height: 150px;
+      margin-top: 9px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 6px;
+      object-fit: contain;
+      background: rgba(0,0,0,0.2);
+    }
     .topbar {
       display: flex;
       align-items: center;
@@ -806,9 +834,11 @@
           const deviceId = String(device.id || 'unknown');
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
           deviceOnlineStates.set(deviceId, Boolean(device.online));
-          const row = document.createElement('a');
-          row.href = `/?device=${encodeURIComponent(deviceId)}`;
+          const row = document.createElement('div');
           row.className = `device-row${device.online ? ' online' : ''}${deviceId === selectedDeviceId ? ' selected' : ''}`;
+          row.addEventListener('click', () => {
+            window.location.href = `/?device=${encodeURIComponent(deviceId)}`;
+          });
 
           const name = document.createElement('span');
           name.className = 'device-name';
@@ -839,7 +869,37 @@
             ? `Joined ${formatTime(device.joined_at)}`
             : 'Joined date unknown';
 
-          row.append(name, id, state, uptime, seen, joined);
+          const actions = document.createElement('div');
+          actions.className = 'device-actions';
+          const screenshotButton = document.createElement('button');
+          screenshotButton.className = 'screenshot-request';
+          screenshotButton.type = 'button';
+          screenshotButton.textContent = 'Screenshot';
+          screenshotButton.disabled = !device.online;
+          screenshotButton.addEventListener('click', async (event) => {
+            event.stopPropagation();
+            screenshotButton.disabled = true;
+            screenshotButton.textContent = 'Requesting...';
+            try {
+              const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/screenshot`, { method: 'POST' });
+              if (!response.ok) throw new Error('request failed');
+              screenshotButton.textContent = 'Requested';
+              setTimeout(() => { screenshotButton.textContent = 'Screenshot'; }, 1800);
+            } catch (err) {
+              screenshotButton.textContent = 'Retry';
+              screenshotButton.disabled = false;
+            }
+          });
+          actions.appendChild(screenshotButton);
+          if (device.screenshot_base64) {
+            const screenshot = document.createElement('img');
+            screenshot.className = 'device-screenshot';
+            screenshot.src = `data:image/jpeg;base64,${device.screenshot_base64}`;
+            screenshot.alt = `Latest screenshot from ${device.name || 'device'}`;
+            screenshot.addEventListener('click', (event) => event.stopPropagation());
+            actions.appendChild(screenshot);
+          }
+          row.append(name, id, state, uptime, seen, joined, actions);
           deviceListEl.appendChild(row);
         });
       } catch (err) {

@@ -25,6 +25,7 @@ HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
+screenshot_requests: Dict[str, int] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
@@ -612,6 +613,11 @@ class DeviceOffline(BaseModel):
     device_id: str
 
 
+class ScreenshotInput(BaseModel):
+    device_id: str
+    screenshot_base64: str
+
+
 class RawBatchInput(BaseModel):
     batch_id: str
     device_id: str
@@ -715,6 +721,41 @@ async def device_heartbeat(
         await asyncio.to_thread(
             notify_device_status, device_id, device_name, True
         )
+    screenshot_requested = screenshot_requests.pop(device_id, None) is not None
+    return JSONResponse({"ok": True, "screenshot_requested": screenshot_requested})
+
+
+@app.post("/api/devices/{device_id}/screenshot")
+async def request_device_screenshot(
+    device_id: str, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    normalized_device_id = device_id.strip()
+    if not normalized_device_id or normalized_device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    if not device_online_states.get(normalized_device_id, False):
+        return JSONResponse({"ok": False, "error": "device is offline"}, status_code=409)
+    screenshot_requests[normalized_device_id] = int(time.time() * 1000)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/devices/screenshot-upload")
+async def upload_device_screenshot(
+    payload: ScreenshotInput, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    device_id = payload.device_id.strip()
+    screenshot_base64 = payload.screenshot_base64.strip()
+    if not device_id or not screenshot_base64:
+        return JSONResponse({"ok": False, "error": "invalid screenshot"}, status_code=400)
+    if device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    devices[device_id]["screenshot_base64"] = screenshot_base64
+    devices[device_id]["screenshot_time"] = int(time.time() * 1000)
     return JSONResponse({"ok": True})
 
 
