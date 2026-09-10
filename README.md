@@ -149,6 +149,10 @@ Run [migrations/006_add_source_url.sql](migrations/006_add_source_url.sql) in Su
 
 Run [migrations/010_create_screenshots_storage.sql](migrations/010_create_screenshots_storage.sql) before using the per-device Screenshot button. Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Render; screenshots are stored in the private `screenshots` bucket and metadata is stored in `public.screenshots`.
 
+The Render environment must also contain `DATABASE_URL`, `SUPABASE_URL`, and
+`SUPABASE_SERVICE_ROLE_KEY`. The service role key is server-only and must not be
+placed in the desktop client or web page.
+
 To rebuild the messages table and remove legacy per-keystroke rows, run
 [migrations/007_rebuild_messages_table.sql](migrations/007_rebuild_messages_table.sql)
 in Supabase. It preserves completed messages, normalizes empty raw text to the

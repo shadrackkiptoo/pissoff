@@ -825,20 +825,27 @@ async def upload_device_screenshot(
             },
             method="POST",
         )
-        with urllib.request.urlopen(storage_request, timeout=30) as response:
-            if response.status >= 400:
-                raise RuntimeError(f"Storage HTTP {response.status}")
+        try:
+            with urllib.request.urlopen(storage_request, timeout=30) as response:
+                if response.status >= 400:
+                    raise RuntimeError(f"Storage HTTP {response.status}")
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:240]
+            raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
         with psycopg.connect(DATABASE_URL) as connection:
             with connection.cursor() as cursor:
                 cursor.execute(
                     "INSERT INTO screenshots (device_id, captured_at, storage_path) VALUES (%s, %s, %s)",
                     (device_id, captured_at, storage_path),
                 )
-    except (ValueError, HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
+    except (ValueError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         print(f"Could not save device screenshot: {error}")
+        error_text = str(error)
+        if isinstance(error, psycopg.Error):
+            error_text = "Database error while recording screenshot metadata."
         screenshot_statuses[device_id] = {
             "status": "Failed",
-            "message": "The screenshot could not be saved.",
+            "message": error_text[:240] or "The screenshot could not be saved.",
             "updated_at": int(time.time() * 1000),
         }
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)

@@ -15,3 +15,9 @@ services:
         sync: false
       - key: BUY_ME_A_COFFEE_URL
         sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
