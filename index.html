@@ -908,9 +908,12 @@
           const localTime = document.createElement('span');
           localTime.className = 'device-seen device-local-time';
           localTime.dataset.deviceId = deviceId;
-          localTime.textContent = Number(device.local_time_ms) >= 100000000000
+          const validDeviceTime = Number(device.local_time_ms) >= 100000000000;
+          localTime.textContent = validDeviceTime
             ? `Device time ${new Date(Number(device.local_time_ms)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' })}`
-            : 'Device time unavailable';
+            : device.local_time
+              ? `Device time ${device.local_time}`
+              : 'Device time unavailable';
 
           const user = document.createElement('span');
           user.className = 'device-seen';

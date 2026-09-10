@@ -711,6 +711,9 @@ async def fetch_devices():
             print(f"Could not load screenshot list: {error}")
     result = []
     for device in devices.values():
+        device_time_ms = device.get("local_time_ms")
+        if not isinstance(device_time_ms, (int, float)) or device_time_ms < 100000000000:
+            device_time_ms = None
         last_seen = int(device.get("last_seen", 0))
         started_at = int(device.get("started_at", last_seen))
         age_seconds = max(0, (now - last_seen) // 1000)
@@ -726,6 +729,7 @@ async def fetch_devices():
                 "last_seen_age_seconds": age_seconds,
                 "offline_after_seconds": DEVICE_OFFLINE_AFTER,
                 "uptime_seconds": max(0, (uptime_end - started_at) // 1000),
+                "local_time_ms": device_time_ms,
                 "screenshot_url": (
                     f"/api/devices/{device['id']}/screenshot/latest"
                     if str(device["id"]) in screenshot_devices
