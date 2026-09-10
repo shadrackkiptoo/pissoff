@@ -48,7 +48,7 @@
     }
     .workspace {
       display: grid;
-      grid-template-columns: 210px 220px minmax(0, 1fr) 270px;
+      grid-template-columns: 210px minmax(0, 1fr) 220px 270px;
       flex: 1;
       min-height: 0;
     }
@@ -582,7 +582,7 @@
       to { opacity: 1; transform: translateY(0); }
     }
     @media (max-width: 900px) {
-      .workspace { grid-template-columns: 180px 190px minmax(0, 1fr) 230px; }
+      .workspace { grid-template-columns: 180px minmax(0, 1fr) 190px 230px; }
       .bubble { max-width: 86%; }
     }
     @media (max-width: 720px) {
@@ -736,15 +736,6 @@
           <span class="metric-value" id="messageCount">0</span>
         </div>
       </aside>
-      <aside class="open-apps-panel" aria-label="Open applications">
-        <div class="open-apps-heading">
-          <h2>Open apps</h2>
-        </div>
-        <div class="open-apps-device" id="openAppsDevice">Select a device</div>
-        <ul class="open-apps-list" id="openAppsList">
-          <li>Select a device to view open apps</li>
-        </ul>
-      </aside>
       <section class="feed-panel">
         <div class="status" id="status">Waiting for live stream…</div>
         <div class="feed-toolbar">
@@ -767,6 +758,15 @@
         </form>
         <div class="feed" id="feed"></div>
       </section>
+      <aside class="open-apps-panel" aria-label="Open applications">
+        <div class="open-apps-heading">
+          <h2>Open apps</h2>
+        </div>
+        <div class="open-apps-device" id="openAppsDevice">Select a device</div>
+        <ul class="open-apps-list" id="openAppsList">
+          <li>Select a device to view open apps</li>
+        </ul>
+      </aside>
       <aside class="devices-panel" aria-label="Connected devices">
         <div class="devices-heading">
           <h2>Devices</h2>
