@@ -230,6 +230,7 @@ def get_device_telemetry():
         "logged_in_user": getpass.getuser() or "Unknown user",
         "battery_percent": None,
         "battery_status": "Unknown",
+        "open_apps": get_open_apps(),
     }
     if os.name != "nt":
         return telemetry
@@ -257,6 +258,22 @@ def get_device_telemetry():
     except Exception:
         pass
     return telemetry
+
+
+def get_open_apps():
+    if os.name != "nt" or Desktop is None:
+        return []
+    try:
+        titles = []
+        for window in Desktop(backend="uia").windows(visible_only=True):
+            title = (window.window_text() or "").strip()
+            if title and title not in titles:
+                titles.append(title)
+            if len(titles) >= 30:
+                break
+        return titles
+    except Exception:
+        return []
 
 
 def raw_key_value(key):

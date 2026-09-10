@@ -574,6 +574,7 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
         "logged_in_user": telemetry.get("logged_in_user") or previous.get("logged_in_user", ""),
         "battery_percent": telemetry.get("battery_percent") if telemetry.get("battery_percent") is not None else previous.get("battery_percent"),
         "battery_status": telemetry.get("battery_status") or previous.get("battery_status", "Unknown"),
+        "open_apps": telemetry.get("open_apps", previous.get("open_apps", []))[:30],
     }
     if not DATABASE_URL:
         return
@@ -631,6 +632,7 @@ class DeviceHeartbeat(BaseModel):
     logged_in_user: str = ""
     battery_percent: int | None = None
     battery_status: str = "Unknown"
+    open_apps: list[str] = []
 
 
 class DeviceOffline(BaseModel):
@@ -921,6 +923,7 @@ async def device_heartbeat(
                 "logged_in_user": payload.logged_in_user,
                 "battery_percent": payload.battery_percent,
                 "battery_status": payload.battery_status,
+                "open_apps": payload.open_apps,
             },
         )
     except Exception as error:
