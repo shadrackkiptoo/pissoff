@@ -150,6 +150,14 @@ def normalize_key(key):
 
 
 def raw_key_value(key):
+    if key in (Key.ctrl, Key.ctrl_l, Key.ctrl_r):
+        return "[CTRL]"
+    if key in (Key.shift, Key.shift_l, Key.shift_r):
+        return "[SHIFT]"
+    if key in (Key.alt, Key.alt_l, Key.alt_r):
+        return "[ALT]"
+    if key in (Key.cmd, Key.cmd_l, Key.cmd_r):
+        return "[CMD]"
     if key == Key.space:
         return " "
     if key == Key.enter:
@@ -282,6 +290,7 @@ def on_press(key):
         }
         if key in modifier_aliases or key in (Key.shift, Key.ctrl, Key.alt, Key.cmd):
             active_modifiers.add(modifier_aliases.get(key, key))
+            raw_message_buffer += raw_key_value(key)
             return
 
         key_char = (key.char or "") if isinstance(key, KeyCode) else ""
