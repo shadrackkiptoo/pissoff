@@ -723,6 +723,69 @@ async def fetch_devices():
     return JSONResponse(result)
 
 
+@app.get("/api/screenshots")
+async def fetch_screenshots(device_id: str | None = None):
+    if not DATABASE_URL:
+        return JSONResponse([])
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                query = """
+                    SELECT screenshots.id, screenshots.device_id, screenshots.captured_at,
+                           screenshots.storage_path, devices.device_name
+                    FROM screenshots
+                    LEFT JOIN devices ON devices.device_id = screenshots.device_id
+                """
+                values = []
+                if device_id and device_id.strip():
+                    query += " WHERE screenshots.device_id = %s"
+                    values.append(device_id.strip())
+                query += " ORDER BY screenshots.captured_at DESC LIMIT 100"
+                cursor.execute(query, values)
+                rows = cursor.fetchall()
+        return JSONResponse([
+            {
+                "id": row[0],
+                "device_id": row[1],
+                "captured_at": row[2],
+                "device_name": row[4] or "Unknown device",
+                "image_url": f"/api/screenshots/{row[0]}/image",
+            }
+            for row in rows
+        ])
+    except Exception as error:
+        print(f"Could not load screenshots: {error}")
+        return JSONResponse({"ok": False, "error": "screenshots unavailable"}, status_code=503)
+
+
+@app.get("/api/screenshots/{screenshot_id}/image")
+async def fetch_screenshot_image(screenshot_id: int):
+    if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT storage_path FROM screenshots WHERE id = %s",
+                    (screenshot_id,),
+                )
+                row = cursor.fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
+        storage_request = urllib.request.Request(
+            f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{row[0]}",
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            },
+        )
+        with urllib.request.urlopen(storage_request, timeout=30) as response:
+            return Response(response.read(), media_type="image/jpeg")
+    except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
+        print(f"Could not load screenshot image: {error}")
+        return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
+
+
 @app.post("/api/devices/heartbeat")
 async def device_heartbeat(
     payload: DeviceHeartbeat, x_api_key: str | None = Header(default=None)

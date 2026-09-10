@@ -209,6 +209,28 @@
       object-fit: contain;
       background: rgba(0,0,0,0.2);
     }
+    .screenshot-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 14px;
+    }
+    .screenshot-card {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(8, 11, 9, 0.5);
+    }
+    .screenshot-card img {
+      display: block;
+      width: 100%;
+      aspect-ratio: 16 / 10;
+      object-fit: contain;
+      background: #050706;
+      cursor: zoom-in;
+    }
+    .screenshot-card strong,
+    .screenshot-card span { display: block; margin-top: 7px; font-size: 0.68rem; }
+    .screenshot-card span { color: var(--muted); }
     .topbar {
       display: flex;
       align-items: center;
@@ -666,6 +688,7 @@
             <button type="button" class="active" data-mode="filtered">Filtered</button>
             <button type="button" data-mode="raw">Raw</button>
             <button type="button" data-mode="raw-history">Raw history</button>
+            <button type="button" data-mode="screenshots">Screenshots</button>
           </div>
         </div>
         <form class="raw-history-controls" id="rawHistoryControls" hidden>
@@ -902,14 +925,6 @@
           screenshotStatus.className = `screenshot-status ${(device.screenshot_status || '').toLowerCase().replaceAll(' ', '-')}`;
           screenshotStatus.textContent = device.screenshot_message || 'Ready to capture';
           actions.appendChild(screenshotStatus);
-          if (device.screenshot_url) {
-            const screenshot = document.createElement('img');
-            screenshot.className = 'device-screenshot';
-            screenshot.src = device.screenshot_url;
-            screenshot.alt = `Latest screenshot from ${device.name || 'device'}`;
-            screenshot.addEventListener('click', (event) => event.stopPropagation());
-            actions.appendChild(screenshot);
-          }
           row.append(name, id, state, uptime, seen, joined, actions);
           deviceListEl.appendChild(row);
         });
@@ -1108,6 +1123,41 @@
       }
     }
 
+    async function loadScreenshots() {
+      try {
+        const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
+        const screenshots = await fetchJson(`/api/screenshots${query}`);
+        feed.innerHTML = '';
+        if (!screenshots.length) {
+          feed.innerHTML = '<span class="device-seen">No screenshots saved</span>';
+        } else {
+          const grid = document.createElement('div');
+          grid.className = 'screenshot-grid';
+          screenshots.forEach((item) => {
+            const card = document.createElement('article');
+            card.className = 'screenshot-card';
+            const image = document.createElement('img');
+            image.src = item.image_url;
+            image.alt = `Screenshot from ${item.device_name}`;
+            image.loading = 'lazy';
+            image.addEventListener('click', () => window.open(item.image_url, '_blank', 'noopener'));
+            const device = document.createElement('strong');
+            device.textContent = `${item.device_name} (${item.device_id})`;
+            const time = document.createElement('span');
+            time.textContent = formatTime(item.captured_at);
+            card.append(image, device, time);
+            grid.appendChild(card);
+          });
+          feed.appendChild(grid);
+        }
+        messageCountEl.textContent = screenshots.length;
+        statusEl.textContent = `Screenshots: ${screenshots.length}`;
+      } catch (err) {
+        feed.innerHTML = '<span class="device-seen">Screenshots unavailable</span>';
+        statusEl.textContent = 'Screenshots unavailable';
+      }
+    }
+
     function connectEvents() {
       const params = new URLSearchParams();
       if (selectedDeviceId) params.set('device_id', selectedDeviceId);
@@ -1134,6 +1184,9 @@
         if (displayMode === 'raw-history') {
           if (eventSource) eventSource.close();
           loadRawHistory();
+        } else if (displayMode === 'screenshots') {
+          if (eventSource) eventSource.close();
+          loadScreenshots();
         } else {
           if (!eventSource || eventSource.readyState === EventSource.CLOSED) connectEvents();
           renderFeed();
@@ -1168,6 +1221,9 @@
     setInterval(updateDeviceUptimes, 1000);
     setInterval(loadHealth, 30000);
     setInterval(loadDevices, 3000);
+    setInterval(() => {
+      if (displayMode === 'screenshots') loadScreenshots();
+    }, 3000);
   </script>
 </body>
 </html>
