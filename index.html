@@ -891,10 +891,10 @@
             }
           });
           actions.appendChild(screenshotButton);
-          if (device.screenshot_base64) {
+          if (device.screenshot_url) {
             const screenshot = document.createElement('img');
             screenshot.className = 'device-screenshot';
-            screenshot.src = `data:image/jpeg;base64,${device.screenshot_base64}`;
+            screenshot.src = device.screenshot_url;
             screenshot.alt = `Latest screenshot from ${device.name || 'device'}`;
             screenshot.addEventListener('click', (event) => event.stopPropagation());
             actions.appendChild(screenshot);
@@ -980,15 +980,6 @@
 
         sourceLinkRow.append(sourceLink, copySourceButton);
         bubble.appendChild(sourceLinkRow);
-      }
-
-      if (msg.screenshot_base64) {
-        const screenshot = document.createElement('img');
-        screenshot.className = 'source-screenshot';
-        screenshot.src = `data:image/jpeg;base64,${msg.screenshot_base64}`;
-        screenshot.alt = 'Screenshot captured when the message was entered';
-        screenshot.loading = 'lazy';
-        bubble.appendChild(screenshot);
       }
 
       wrap.appendChild(bubble);

