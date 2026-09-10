@@ -15,13 +15,14 @@ from typing import Deque, Dict
 
 from fastapi import FastAPI, Header, Request
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import psycopg
 
 MAX_MESSAGES = 200
 BASE_DIR = Path(__file__).resolve().parent
 LOG_PATH = BASE_DIR / "text.txt"
-HTML_PATH = BASE_DIR / "index.html"
+HTML_PATH = BASE_DIR / "web" / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 website_history: Deque[Dict[str, object]] = deque(maxlen=500)
 devices: Dict[str, Dict[str, object]] = {}
@@ -670,6 +671,7 @@ class RawBatchInput(BaseModel):
 
 
 app = FastAPI(title="KeyboardService", lifespan=lifespan)
+app.mount("/web", StaticFiles(directory=BASE_DIR / "web"), name="web")
 load_text_messages()
 load_devices()
 
