@@ -393,6 +393,52 @@
     }
     .view-switch button:last-child { border-right: 0; }
     .view-switch button.active { color: var(--accent); background: rgba(120, 217, 209, 0.12); }
+    .raw-history-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      padding: 10px 20px 0;
+    }
+    .raw-history-controls input,
+    .raw-history-controls button {
+      min-height: 32px;
+      padding: 6px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      background: rgba(10, 19, 31, 0.8);
+      font: inherit;
+      font-size: 0.68rem;
+    }
+    .raw-history-controls button { color: var(--accent); cursor: pointer; font-weight: 700; }
+    .raw-batch {
+      margin: 0 0 14px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: rgba(10, 19, 31, 0.65);
+    }
+    .raw-batch-heading {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 10px 12px;
+      color: var(--accent);
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+    .raw-batch-heading span { color: var(--muted); font-weight: 400; }
+    .raw-event {
+      display: grid;
+      grid-template-columns: 145px minmax(100px, 1fr) minmax(120px, 1fr);
+      gap: 10px;
+      padding: 7px 12px;
+      border-top: 1px solid rgba(157, 190, 209, 0.1);
+      color: var(--muted);
+      font: 0.7rem/1.3 Consolas, "Courier New", monospace;
+    }
+    .raw-event code { color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
     @keyframes rise {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -442,6 +488,7 @@
       .metric-label { font-size: 0.58rem; }
       .metric-value { font-size: 0.66rem; }
       .device-list { grid-template-columns: 1fr; }
+      .raw-event { grid-template-columns: 1fr; gap: 3px; }
     }
   </style>
 </head>
@@ -481,8 +528,16 @@
           <div class="view-switch" aria-label="Message view">
             <button type="button" class="active" data-mode="filtered">Filtered</button>
             <button type="button" data-mode="raw">Raw</button>
+            <button type="button" data-mode="raw-history">Raw history</button>
           </div>
         </div>
+        <form class="raw-history-controls" id="rawHistoryControls" hidden>
+          <input id="rawDeviceFilter" type="text" placeholder="Device ID" aria-label="Device ID" />
+          <input id="rawSessionFilter" type="text" placeholder="Session ID" aria-label="Session ID" />
+          <input id="rawStartFilter" type="datetime-local" aria-label="Start time" />
+          <input id="rawEndFilter" type="datetime-local" aria-label="End time" />
+          <button type="submit">Load history</button>
+        </form>
         <div class="feed" id="feed"></div>
       </section>
       <aside class="devices-panel" aria-label="Connected devices">
@@ -514,6 +569,11 @@
     const supportLinkEl = document.getElementById('supportLink');
     const paymentListEl = document.getElementById('paymentList');
     const scopeLabelEl = document.getElementById('scopeLabel');
+    const rawHistoryControlsEl = document.getElementById('rawHistoryControls');
+    const rawDeviceFilterEl = document.getElementById('rawDeviceFilter');
+    const rawSessionFilterEl = document.getElementById('rawSessionFilter');
+    const rawStartFilterEl = document.getElementById('rawStartFilter');
+    const rawEndFilterEl = document.getElementById('rawEndFilter');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const selectedDeviceId = new URLSearchParams(window.location.search).get('device') || '';
@@ -522,6 +582,21 @@
     let eventSource = null;
     let serviceStartedAt = null;
     let serviceUptime = 0;
+    let renderQueued = false;
+    let rawHistory = [];
+    const FETCH_TIMEOUT_MS = 10000;
+
+    async function fetchJson(url) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      try {
+        const response = await fetch(url, { signal: controller.signal });
+        if (!response.ok) throw new Error(`Request failed: ${response.status}`);
+        return response.json();
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
 
     function formatTime(ts) {
       return new Date(ts).toLocaleString([], {
@@ -602,9 +677,7 @@
 
     async function loadConfig() {
       try {
-        const res = await fetch('/api/config');
-        if (!res.ok) throw new Error('config check failed');
-        const config = await res.json();
+        const config = await fetchJson('/api/config');
         if (config.buy_me_a_coffee_url) supportLinkEl.href = config.buy_me_a_coffee_url;
         renderPaymentMethods(config.payment_methods || []);
         if (!config.buy_me_a_coffee_url && config.payment_methods?.length) {
@@ -618,9 +691,7 @@
 
     async function loadDevices() {
       try {
-        const res = await fetch('/api/devices');
-        if (!res.ok) throw new Error('device check failed');
-        const devices = await res.json();
+        const devices = await fetchJson('/api/devices');
         deviceCountEl.textContent = devices.length;
         onlineCountEl.textContent = `${devices.filter((device) => device.online).length} online`;
         deviceUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
@@ -676,9 +747,7 @@
 
     async function loadHealth() {
       try {
-        const res = await fetch('/health');
-        if (!res.ok) throw new Error('health check failed');
-        const health = await res.json();
+        const health = await fetchJson('/health');
         serviceStartedAt = health.started_at;
         serviceUptime = health.uptime_seconds;
         startedAtEl.textContent = formatTime(serviceStartedAt);
@@ -723,51 +792,125 @@
       bubble.appendChild(source);
 
       wrap.appendChild(bubble);
-      feed.appendChild(wrap);
+      return wrap;
+    }
+
+    function visibleMessages() {
+      if (displayMode === 'raw') {
+        const rawMessages = currentMessages.filter((msg) => msg.raw_only);
+        return rawMessages.length ? rawMessages : currentMessages;
+      }
+      return currentMessages.filter((msg) => !msg.raw_only);
+    }
+
+    function updateMessageCount() {
+      messageCountEl.textContent = visibleMessages().length;
+    }
+
+    function queueFeedRender() {
+      if (renderQueued) return;
+      renderQueued = true;
+      requestAnimationFrame(() => {
+        renderQueued = false;
+        renderFeed();
+      });
     }
 
     function renderFeed() {
       feed.innerHTML = '';
+      if (displayMode === 'raw-history') {
+        const fragment = document.createDocumentFragment();
+        rawHistory.forEach((batch) => {
+          const section = document.createElement('section');
+          section.className = 'raw-batch';
+          const heading = document.createElement('header');
+          heading.className = 'raw-batch-heading';
+          heading.textContent = `${formatTime(batch.started_at)} - ${formatTime(batch.ended_at)} | ${batch.device_name} | ${batch.event_count} events`;
+          const session = document.createElement('span');
+          session.textContent = `Session ${batch.session_id}`;
+          heading.appendChild(session);
+          section.appendChild(heading);
+          batch.events.forEach((event) => {
+            const row = document.createElement('div');
+            row.className = 'raw-event';
+            const time = document.createElement('time');
+            time.textContent = formatTime(event.time);
+            const key = document.createElement('code');
+            key.textContent = event.key;
+            const app = document.createElement('span');
+            app.textContent = event.app_name || 'Unknown app';
+            row.append(time, key, app);
+            section.appendChild(row);
+          });
+          fragment.appendChild(section);
+        });
+        feed.appendChild(fragment);
+        messageCountEl.textContent = rawHistory.reduce((count, batch) => count + batch.event_count, 0);
+        feed.scrollTop = 0;
+        return;
+      }
       if (displayMode === 'raw') {
         const rawLog = document.createElement('pre');
         rawLog.className = 'raw-log';
-        const rawEntries = currentMessages.some((msg) => msg.raw_only)
-          ? currentMessages.filter((msg) => msg.raw_only)
-          : currentMessages;
-        rawLog.textContent = rawEntries
+        rawLog.textContent = visibleMessages()
           .map((msg) => msg.raw_text || msg.text)
           .join('');
         feed.appendChild(rawLog);
-        messageCountEl.textContent = currentMessages.filter((msg) => msg.raw_only).length;
+        updateMessageCount();
         feed.scrollTop = feed.scrollHeight;
         return;
       }
-      currentMessages.forEach(addMessage);
-      messageCountEl.textContent = currentMessages.filter((msg) => !msg.raw_only).length;
+      const fragment = document.createDocumentFragment();
+      visibleMessages().forEach((msg) => fragment.appendChild(addMessage(msg)));
+      feed.appendChild(fragment);
+      updateMessageCount();
       feed.scrollTop = feed.scrollHeight;
     }
 
     async function loadInitialMessages() {
       try {
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
-        const res = await fetch(`/messages${query}`);
-        if (!res.ok) throw new Error('failed');
-        const messages = await res.json();
+        const messages = await fetchJson(`/messages${query}`);
         currentMessages = messages;
         renderFeed();
-        messageCountEl.textContent = messages.length;
-        statusEl.textContent = selectedDeviceId ? 'Device messages: ' + messages.length : 'Latest messages: ' + messages.length;
+        statusEl.textContent = selectedDeviceId ? 'Device messages: ' + visibleMessages().length : 'Latest messages: ' + visibleMessages().length;
+        return true;
       } catch (err) {
         statusEl.textContent = 'Listening for new messages…';
+        return false;
+      }
+    }
+
+    async function loadRawHistory() {
+      const params = new URLSearchParams();
+      const deviceId = rawDeviceFilterEl.value.trim() || selectedDeviceId;
+      if (deviceId) params.set('device_id', deviceId);
+      if (rawSessionFilterEl.value.trim()) params.set('session_id', rawSessionFilterEl.value.trim());
+      if (rawStartFilterEl.value) params.set('start_time', String(new Date(rawStartFilterEl.value).getTime()));
+      if (rawEndFilterEl.value) params.set('end_time', String(new Date(rawEndFilterEl.value).getTime()));
+      params.set('limit', '100');
+      try {
+        rawHistory = await fetchJson(`/api/raw-history?${params}`);
+        renderFeed();
+        statusEl.textContent = `Raw history: ${rawHistory.length} batches`;
+      } catch (err) {
+        rawHistory = [];
+        renderFeed();
+        statusEl.textContent = 'Raw history unavailable';
       }
     }
 
     function connectEvents() {
-      const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
+      const params = new URLSearchParams();
+      if (selectedDeviceId) params.set('device_id', selectedDeviceId);
+      const lastMessageId = currentMessages.reduce((latest, msg) => Math.max(latest, Number(msg.id) || 0), 0);
+      if (lastMessageId) params.set('since', String(lastMessageId));
+      const query = params.toString() ? `?${params.toString()}` : '';
       eventSource = new EventSource(`/events${query}`);
       eventSource.onmessage = (event) => {
         currentMessages.push(JSON.parse(event.data));
-        renderFeed();
+        if (currentMessages.length > 200) currentMessages.shift();
+        queueFeedRender();
         statusEl.textContent = 'Live stream connected';
       };
       eventSource.onerror = () => {
@@ -779,17 +922,32 @@
       button.addEventListener('click', () => {
         displayMode = button.dataset.mode;
         document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
-        renderFeed();
+        rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
+        if (displayMode === 'raw-history') {
+          if (eventSource) eventSource.close();
+          loadRawHistory();
+        } else {
+          if (!eventSource || eventSource.readyState === EventSource.CLOSED) connectEvents();
+          renderFeed();
+        }
       });
     });
 
-    scopeLabelEl.textContent = selectedDeviceId ? `Device ${selectedDeviceId}` : 'All devices';
-    connectEvents();
+    rawHistoryControlsEl.addEventListener('submit', (event) => {
+      event.preventDefault();
+      loadRawHistory();
+    });
 
-    loadInitialMessages();
-    loadConfig();
-    loadHealth();
-    loadDevices();
+    scopeLabelEl.textContent = selectedDeviceId ? `Device ${selectedDeviceId}` : 'All devices';
+    async function startApp() {
+      await loadInitialMessages();
+      connectEvents();
+      loadConfig();
+      loadHealth();
+      loadDevices();
+    }
+
+    startApp();
     setInterval(updateUptime, 1000);
     setInterval(updateDeviceUptimes, 1000);
     setInterval(loadHealth, 30000);

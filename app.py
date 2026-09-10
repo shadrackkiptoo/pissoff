@@ -1,4 +1,6 @@
 import asyncio
+import base64
+import gzip
 import html
 import json
 import os
@@ -599,6 +601,17 @@ class DeviceOffline(BaseModel):
     device_id: str
 
 
+class RawBatchInput(BaseModel):
+    batch_id: str
+    device_id: str
+    device_name: str = "Unknown device"
+    session_id: str
+    started_at: int
+    ended_at: int
+    event_count: int
+    payload_base64: str
+
+
 app = FastAPI(title="KeyboardService", lifespan=lifespan)
 load_text_messages()
 load_devices()
@@ -774,23 +787,133 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     return JSONResponse({"ok": True, "message": item})
 
 
+@app.post("/api/raw-batches")
+async def add_raw_batch(
+    payload: RawBatchInput, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if not DATABASE_URL:
+        return JSONResponse({"ok": False, "error": "raw storage unavailable"}, status_code=503)
+    if not payload.batch_id.strip() or not payload.device_id.strip() or payload.event_count < 1:
+        return JSONResponse({"ok": False, "error": "invalid raw batch"}, status_code=400)
+    try:
+        decoded = gzip.decompress(base64.b64decode(payload.payload_base64))
+        events = json.loads(decoded.decode("utf-8"))
+        if not isinstance(events, list) or len(events) != payload.event_count:
+            return JSONResponse({"ok": False, "error": "invalid raw payload"}, status_code=400)
+    except (ValueError, OSError, json.JSONDecodeError):
+        return JSONResponse({"ok": False, "error": "invalid raw payload"}, status_code=400)
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO raw_batches
+                    (batch_id, device_id, device_name, session_id, started_at, ended_at, event_count, payload_base64)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                    ON CONFLICT (batch_id) DO NOTHING
+                    """,
+                    (
+                        payload.batch_id.strip(), payload.device_id.strip(),
+                        payload.device_name.strip() or "Unknown device", payload.session_id.strip(),
+                        payload.started_at, payload.ended_at, payload.event_count,
+                        payload.payload_base64,
+                    ),
+                )
+    except Exception as error:
+        print(f"Could not save raw batch: {error}")
+        return JSONResponse({"ok": False, "error": "raw storage unavailable"}, status_code=503)
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/raw-history")
+async def raw_history(
+    device_id: str | None = None,
+    session_id: str | None = None,
+    start_time: int | None = None,
+    end_time: int | None = None,
+    limit: int = 100,
+):
+    if not DATABASE_URL:
+        return JSONResponse([])
+    limit = min(max(limit, 1), 500)
+    clauses = []
+    values = []
+    if device_id and device_id.strip():
+        clauses.append("device_id = %s")
+        values.append(device_id.strip())
+    if session_id and session_id.strip():
+        clauses.append("session_id = %s")
+        values.append(session_id.strip())
+    if start_time is not None:
+        clauses.append("ended_at >= %s")
+        values.append(start_time)
+    if end_time is not None:
+        clauses.append("started_at <= %s")
+        values.append(end_time)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    f"""
+                    SELECT batch_id, device_id, device_name, session_id, started_at, ended_at,
+                           event_count, payload_base64
+                    FROM raw_batches {where}
+                    ORDER BY started_at DESC LIMIT %s
+                    """,
+                    (*values, limit),
+                )
+                rows = cursor.fetchall()
+    except Exception as error:
+        print(f"Could not load raw history: {error}")
+        return JSONResponse({"ok": False, "error": "raw storage unavailable"}, status_code=503)
+    result = []
+    for row in rows:
+        try:
+            events = json.loads(gzip.decompress(base64.b64decode(row[7])).decode("utf-8"))
+        except (ValueError, OSError, json.JSONDecodeError):
+            continue
+        result.append({
+            "batch_id": row[0], "device_id": row[1], "device_name": row[2],
+            "session_id": row[3], "started_at": row[4], "ended_at": row[5],
+            "event_count": row[6], "events": events,
+        })
+    return JSONResponse(result)
+
+
 @app.get("/events")
-async def events(request: Request, device_id: str | None = None):
+async def events(
+    request: Request, device_id: str | None = None, since: int = 0
+):
     selected_device_id = (device_id or "").strip()
     async def event_generator():
-        last_seen = max((int(item["id"]) for item in messages), default=0)
+        last_seen = max(0, since)
         while True:
+            sent_event = False
             for msg in list(messages):
                 msg_id = int(msg["id"])
                 if msg_id > last_seen:
                     if not selected_device_id or str(msg.get("device_id")) == selected_device_id:
                         yield f"data: {json.dumps(msg)}\n\n"
+                        sent_event = True
                     last_seen = msg_id
             if await request.is_disconnected():
                 break
-            await asyncio.sleep(0.5)
+            if not sent_event:
+                await asyncio.sleep(0.75)
 
-    return StreamingResponse(event_generator(), media_type="text/event-stream")
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/health")

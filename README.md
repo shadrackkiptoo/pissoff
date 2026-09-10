@@ -140,6 +140,14 @@ where raw_text = '';
 
 Run [migrations/003_add_raw_message_text.sql](migrations/003_add_raw_message_text.sql) and [migrations/004_add_raw_only_flag.sql](migrations/004_add_raw_only_flag.sql) in Supabase before deploying the updated client. Older messages use their filtered text as the raw fallback.
 
+Run [migrations/005_add_raw_batches.sql](migrations/005_add_raw_batches.sql) to
+create the separate `raw_batches` table. The desktop client groups raw keyboard
+events into ten-second gzip-compressed batches with millisecond timestamps,
+device ID, application name, and session ID. Failed batch uploads are retained
+locally in `%LOCALAPPDATA%\KeyboardService\pending_raw_batches.json` until the
+server accepts them. The filtered `messages` table no longer receives new
+per-key raw rows.
+
 The desktop client records `Ctrl+C` as a separate copied message and `Ctrl+V`
 as a pasted message. The web feed uses different bubble styles for each.
 
@@ -244,6 +252,8 @@ The file is removed after all pending messages are accepted.
 - `GET /messages`: stored messages; pass `device_id` to select one device.
 - `GET /events`: live Server-Sent Events stream.
 - `POST /api/messages`: accepts `text`, optional `raw_text` and `raw_only`, `device_id`, `device_name`, `app_name`, and `is_pasted`.
+- `POST /api/raw-batches`: stores a compressed raw-event batch in Supabase.
+- `GET /api/raw-history`: returns raw batches filtered by device, session, and time range.
 - `GET /api/devices`: devices that have sent messages.
 - `POST /api/devices/heartbeat`: registers a client and updates its presence.
 - `POST /api/devices/offline`: marks a client offline on graceful shutdown.
