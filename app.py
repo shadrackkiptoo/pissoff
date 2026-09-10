@@ -26,6 +26,7 @@ messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
 screenshot_requests: Dict[str, int] = {}
+screenshot_statuses: Dict[str, Dict[str, object]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
@@ -624,6 +625,12 @@ class ScreenshotInput(BaseModel):
     screenshot_base64: str
 
 
+class ScreenshotStatusInput(BaseModel):
+    device_id: str
+    status: str
+    message: str = ""
+
+
 class RawBatchInput(BaseModel):
     batch_id: str
     device_id: str
@@ -699,6 +706,8 @@ async def fetch_devices():
                     if str(device["id"]) in screenshot_devices
                     else ""
                 ),
+                "screenshot_status": screenshot_statuses.get(str(device["id"]), {}).get("status", "Ready"),
+                "screenshot_message": screenshot_statuses.get(str(device["id"]), {}).get("message", ""),
             }
         )
     return JSONResponse(result)
@@ -744,6 +753,11 @@ async def device_heartbeat(
             notify_device_status, device_id, device_name, True
         )
     screenshot_requested = screenshot_requests.pop(device_id, None) is not None
+    if screenshot_requested:
+        screenshot_statuses[device_id] = {
+            "status": "Taking screenshot",
+            "message": "The client is capturing the desktop.",
+        }
     return JSONResponse({"ok": True, "screenshot_requested": screenshot_requested})
 
 
@@ -760,6 +774,10 @@ async def request_device_screenshot(
     if not device_online_states.get(normalized_device_id, False):
         return JSONResponse({"ok": False, "error": "device is offline"}, status_code=409)
     screenshot_requests[normalized_device_id] = int(time.time() * 1000)
+    screenshot_statuses[normalized_device_id] = {
+        "status": "Requested",
+        "message": "Waiting for the client heartbeat.",
+    }
     return JSONResponse({"ok": True})
 
 
@@ -773,10 +791,12 @@ async def upload_device_screenshot(
     device_id = payload.device_id.strip()
     screenshot_base64 = payload.screenshot_base64.strip()
     if not device_id or not screenshot_base64:
+        screenshot_statuses[device_id] = {"status": "Failed", "message": "The client sent an empty screenshot."}
         return JSONResponse({"ok": False, "error": "invalid screenshot"}, status_code=400)
     if device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
     if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        screenshot_statuses[device_id] = {"status": "Failed", "message": "Storage configuration is missing on the server."}
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     try:
         image_bytes = base64.b64decode(screenshot_base64, validate=True)
@@ -804,7 +824,29 @@ async def upload_device_screenshot(
                 )
     except (ValueError, HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         print(f"Could not save device screenshot: {error}")
+        screenshot_statuses[device_id] = {"status": "Failed", "message": "The screenshot could not be saved."}
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
+    screenshot_statuses[device_id] = {
+        "status": "Saved",
+        "message": "Screenshot saved successfully.",
+    }
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/devices/screenshot-status")
+async def update_screenshot_status(
+    payload: ScreenshotStatusInput, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    device_id = payload.device_id.strip()
+    if device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    screenshot_statuses[device_id] = {
+        "status": payload.status.strip() or "Failed",
+        "message": payload.message.strip(),
+    }
     return JSONResponse({"ok": True})
 
 

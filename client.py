@@ -388,6 +388,7 @@ def post_message(payload, quiet=False):
 
 def upload_device_screenshot(screenshot_base64):
     if not screenshot_base64:
+        report_screenshot_status("Failed", "The desktop capture returned no image.")
         return False
     try:
         request = Request(
@@ -405,7 +406,27 @@ def upload_device_screenshot(screenshot_base64):
         return True
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not upload device screenshot: {error}")
+        report_screenshot_status("Failed", "The screenshot upload failed.")
         return False
+
+
+def report_screenshot_status(status, message):
+    try:
+        request = Request(
+            f"{SITE_URL}/api/devices/screenshot-status",
+            data=json.dumps({
+                "device_id": device_id,
+                "status": status,
+                "message": message,
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not report screenshot status: {error}")
 
 
 def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False):

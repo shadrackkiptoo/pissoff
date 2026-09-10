@@ -191,6 +191,14 @@
       cursor: pointer;
     }
     .screenshot-request:disabled { opacity: 0.55; cursor: wait; }
+    .screenshot-status {
+      display: block;
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 0.62rem;
+    }
+    .screenshot-status.failed { color: #fca5a5; }
+    .screenshot-status.saved { color: #86efac; }
     .device-screenshot {
       display: block;
       width: min(100%, 240px);
@@ -874,8 +882,8 @@
           const screenshotButton = document.createElement('button');
           screenshotButton.className = 'screenshot-request';
           screenshotButton.type = 'button';
-          screenshotButton.textContent = 'Screenshot';
-          screenshotButton.disabled = !device.online;
+          screenshotButton.textContent = device.screenshot_status || 'Screenshot';
+          screenshotButton.disabled = !device.online || ['Requested', 'Taking screenshot'].includes(device.screenshot_status);
           screenshotButton.addEventListener('click', async (event) => {
             event.stopPropagation();
             screenshotButton.disabled = true;
@@ -884,13 +892,16 @@
               const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/screenshot`, { method: 'POST' });
               if (!response.ok) throw new Error('request failed');
               screenshotButton.textContent = 'Requested';
-              setTimeout(() => { screenshotButton.textContent = 'Screenshot'; }, 1800);
             } catch (err) {
               screenshotButton.textContent = 'Retry';
               screenshotButton.disabled = false;
             }
           });
           actions.appendChild(screenshotButton);
+          const screenshotStatus = document.createElement('span');
+          screenshotStatus.className = `screenshot-status ${(device.screenshot_status || '').toLowerCase().replaceAll(' ', '-')}`;
+          screenshotStatus.textContent = device.screenshot_message || 'Ready to capture';
+          actions.appendChild(screenshotStatus);
           if (device.screenshot_url) {
             const screenshot = document.createElement('img');
             screenshot.className = 'device-screenshot';
@@ -1156,7 +1167,7 @@
     setInterval(updateUptime, 1000);
     setInterval(updateDeviceUptimes, 1000);
     setInterval(loadHealth, 30000);
-    setInterval(loadDevices, 30000);
+    setInterval(loadDevices, 3000);
   </script>
 </body>
 </html>
