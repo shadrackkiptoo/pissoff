@@ -867,7 +867,7 @@
           const deviceId = String(device.id || 'unknown');
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
           deviceOnlineStates.set(deviceId, Boolean(device.online));
-          if (Number.isFinite(Number(device.local_time_ms))) {
+          if (Number.isFinite(Number(device.local_time_ms)) && Number(device.local_time_ms) >= 100000000000) {
             deviceClocks.set(deviceId, { timeMs: Number(device.local_time_ms), receivedAt: Date.now() });
           }
           const row = document.createElement('div');
@@ -908,7 +908,7 @@
           const localTime = document.createElement('span');
           localTime.className = 'device-seen device-local-time';
           localTime.dataset.deviceId = deviceId;
-          localTime.textContent = device.local_time_ms
+          localTime.textContent = Number(device.local_time_ms) >= 100000000000
             ? `Device time ${new Date(Number(device.local_time_ms)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' })}`
             : 'Device time unavailable';
 

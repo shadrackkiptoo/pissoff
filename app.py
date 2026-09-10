@@ -558,17 +558,21 @@ def save_message(item):
 
 def save_device(device_id, device_name, last_seen, started_at, joined_at, telemetry=None):
     telemetry = telemetry or {}
+    previous = devices.get(device_id, {})
+    local_time_ms = telemetry.get("local_time_ms")
+    if not isinstance(local_time_ms, (int, float)) or local_time_ms < 100000000000:
+        local_time_ms = previous.get("local_time_ms")
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "last_seen": last_seen,
         "started_at": started_at,
         "joined_at": joined_at,
-        "local_time": telemetry.get("local_time", ""),
-        "local_time_ms": telemetry.get("local_time_ms"),
-        "logged_in_user": telemetry.get("logged_in_user", ""),
-        "battery_percent": telemetry.get("battery_percent"),
-        "battery_status": telemetry.get("battery_status", "Unknown"),
+        "local_time": telemetry.get("local_time") or previous.get("local_time", ""),
+        "local_time_ms": local_time_ms,
+        "logged_in_user": telemetry.get("logged_in_user") or previous.get("logged_in_user", ""),
+        "battery_percent": telemetry.get("battery_percent") if telemetry.get("battery_percent") is not None else previous.get("battery_percent"),
+        "battery_status": telemetry.get("battery_status") or previous.get("battery_status", "Unknown"),
     }
     if not DATABASE_URL:
         return
