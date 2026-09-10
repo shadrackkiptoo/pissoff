@@ -357,6 +357,16 @@
       font-size: 0.66rem;
       text-align: left;
     }
+    .raw-log {
+      margin: 0;
+      padding: 16px;
+      border: 1px solid var(--border);
+      background: rgba(1, 5, 10, 0.72);
+      color: #c9f7e9;
+      font: 0.78rem/1.8 Consolas, "Courier New", monospace;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     .feed-toolbar {
       display: flex;
       align-items: center;
@@ -681,6 +691,7 @@
     }
 
     function addMessage(msg) {
+      if (displayMode === 'filtered' && msg.raw_only) return;
       const wrap = document.createElement('div');
       wrap.className = 'bubble-wrap';
 
@@ -717,8 +728,22 @@
 
     function renderFeed() {
       feed.innerHTML = '';
+      if (displayMode === 'raw') {
+        const rawLog = document.createElement('pre');
+        rawLog.className = 'raw-log';
+        const rawEntries = currentMessages.some((msg) => msg.raw_only)
+          ? currentMessages.filter((msg) => msg.raw_only)
+          : currentMessages;
+        rawLog.textContent = rawEntries
+          .map((msg) => msg.raw_text || msg.text)
+          .join('');
+        feed.appendChild(rawLog);
+        messageCountEl.textContent = currentMessages.filter((msg) => msg.raw_only).length;
+        feed.scrollTop = feed.scrollHeight;
+        return;
+      }
       currentMessages.forEach(addMessage);
-      messageCountEl.textContent = currentMessages.length;
+      messageCountEl.textContent = currentMessages.filter((msg) => !msg.raw_only).length;
       feed.scrollTop = feed.scrollHeight;
     }
 

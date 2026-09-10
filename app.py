@@ -352,6 +352,7 @@ def load_file_messages():
                     "id": int(ts),
                     "text": text.strip(),
                     "raw_text": text.strip(),
+                    "raw_only": False,
                     "time": int(ts),
                     "device_id": device_id,
                     "device_name": device_name,
@@ -374,7 +375,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, raw_text, device_id, device_name, app_name, time, is_pasted, is_copied
+                        SELECT id, text, raw_text, raw_only, device_id, device_name, app_name, time, is_pasted, is_copied
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -387,12 +388,13 @@ def load_text_messages():
                     "id": row[0],
                     "text": row[1],
                     "raw_text": row[2] or row[1],
-                    "device_id": row[3],
-                    "device_name": row[4],
-                    "app_name": row[5],
-                    "time": row[6],
-                    "is_pasted": row[7],
-                    "is_copied": row[8],
+                    "raw_only": row[3],
+                    "device_id": row[4],
+                    "device_name": row[5],
+                    "app_name": row[6],
+                    "time": row[7],
+                    "is_pasted": row[8],
+                    "is_copied": row[9],
                 }
                 for row in reversed(rows)
             ]
@@ -452,13 +454,14 @@ def save_message(item):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, raw_text, device_id, device_name, app_name, time, is_pasted, is_copied)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, raw_text, raw_only, device_id, device_name, app_name, time, is_pasted, is_copied)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     item["id"],
                     item["text"],
                     item["raw_text"],
+                    item["raw_only"],
                     item["device_id"],
                     item["device_name"],
                     item["app_name"],
@@ -507,6 +510,7 @@ def write_text_log():
 class MessageInput(BaseModel):
     text: str
     raw_text: str = ""
+    raw_only: bool = False
     device_id: str = "unknown"
     device_name: str = "Unknown device"
     app_name: str = "Unknown app"
@@ -630,6 +634,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     is_pasted = payload.is_pasted
     is_copied = payload.is_copied
     raw_text = payload.raw_text.strip() or text
+    raw_only = payload.raw_only
     previous_device = devices.get(device_id, {})
     devices[device_id] = {
         "id": device_id,
@@ -643,6 +648,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "id": now,
         "text": text,
         "raw_text": raw_text,
+        "raw_only": raw_only,
         "time": now,
         "device_id": device_id,
         "device_name": device_name,
