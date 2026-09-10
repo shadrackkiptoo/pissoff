@@ -408,7 +408,16 @@ def upload_device_screenshot(screenshot_base64):
         return True
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not upload device screenshot: {error}")
-        report_screenshot_status("Failed", "The screenshot upload failed.")
+        if isinstance(error, HTTPError):
+            try:
+                detail = error.read().decode("utf-8", errors="replace")[:240]
+            except OSError:
+                detail = "no response body"
+            report_screenshot_status("Failed", f"Upload HTTP {error.code}: {detail}")
+        elif isinstance(error, URLError):
+            report_screenshot_status("Failed", f"Upload network error: {error.reason}")
+        else:
+            report_screenshot_status("Failed", f"Upload error: {error}")
         return False
 
 
