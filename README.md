@@ -10,7 +10,7 @@ Only run the client on computers and accounts you own or are explicitly authoriz
 Keyboard input -> P3TROKL.exe -> POST /api/messages -> app.py -> index.html
 ```
 
-Each message contains `text`, `device_id`, `device_name`, and `is_pasted`. The desktop client also records the active app and focused Windows control, keeping that destination while typing and starting a new message when focus moves to another field or app. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color.
+Each message contains filtered `text`, the original `raw_text`, `device_id`, `device_name`, and `is_pasted`. The desktop client also records the active app and focused Windows control, keeping that destination while typing and starting a new message when focus moves to another field or app. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color. The web feed can switch between filtered and raw output, and each device is a link to its own message feed.
 
 ## Files
 
@@ -72,12 +72,21 @@ minutes. To change the interval, add `TELEGRAM_UPTIME_INTERVAL_SECONDS` with a
 value of at least 60. Telegram notifications are optional and do not affect the
 health endpoint or service startup if they fail.
 
-The Telegram bot menu includes `/uptime`, `/devices`, `/messages`, and
-`/buymeacoffee`. `/uptime` reports service health and uptime, `/devices` lists
-device names, IDs, and online state, and `/messages` reports stored-message
-totals by device without sending captured message contents to Telegram. Set
+The Telegram bot menu includes `/start`, `/help`, `/status`, `/devices`,
+`/messages`, and `/support`. `/uptime` remains an alias for `/status`, and
+`/buymeacoffee` remains an alias for `/support`. `/status` reports service
+health and uptime, `/devices` lists device names, IDs, online state, and last
+seen time, and `/messages` reports stored-message totals by device without
+sending captured message contents to Telegram. Set
 `BUY_ME_A_COFFEE_URL` to your real support page before deploying. The web link
-and Telegram command use that same URL.
+and Telegram command use that same URL. For multiple support methods, use the
+same variable with semicolon-separated `name=value` entries:
+
+```text
+BUY_ME_A_COFFEE_URL=M-Pesa=0712345678;OKX USDT=your-okx-wallet;Binance USDT=your-binance-wallet
+```
+
+Each configured method appears in the support list with a copy button.
 
 When device presence tracking is enabled, Telegram also reports device online
 and offline transitions. These alerts include only the device name and ID, not
@@ -117,7 +126,16 @@ add column if not exists is_pasted boolean not null default false;
 
 alter table public.messages
 add column if not exists is_copied boolean not null default false;
+
+alter table public.messages
+add column if not exists raw_text text not null default '';
+
+update public.messages
+set raw_text = text
+where raw_text = '';
 ```
+
+The equivalent migration is [migrations/003_add_raw_message_text.sql](migrations/003_add_raw_message_text.sql). Run it in Supabase before deploying the updated client. Older messages use their filtered text as the raw fallback.
 
 The desktop client records `Ctrl+C` as a separate copied message and `Ctrl+V`
 as a pasted message. The web feed uses different bubble styles for each.
@@ -208,9 +226,9 @@ uptime from their last session.
 ## API Endpoints
 
 - `GET /`: web feed.
-- `GET /messages`: stored messages.
+- `GET /messages`: stored messages; pass `device_id` to select one device.
 - `GET /events`: live Server-Sent Events stream.
-- `POST /api/messages`: accepts `text`, `device_id`, `device_name`, `app_name`, and `is_pasted`.
+- `POST /api/messages`: accepts `text`, optional `raw_text`, `device_id`, `device_name`, `app_name`, and `is_pasted`.
 - `GET /api/devices`: devices that have sent messages.
 - `POST /api/devices/heartbeat`: registers a client and updates its presence.
 - `GET /health`: service status and message count.

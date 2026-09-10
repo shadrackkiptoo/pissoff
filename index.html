@@ -128,9 +128,14 @@
       gap: 10px;
     }
     .device-row {
+      display: block;
+      color: inherit;
+      text-decoration: none;
       padding: 10px 0;
       border-top: 1px solid var(--border);
     }
+    .device-row:hover,
+    .device-row.selected { background: rgba(120, 217, 209, 0.08); }
     .device-row.online { border-top-color: rgba(34, 197, 94, 0.24); }
     .device-name {
       display: block;
@@ -225,6 +230,57 @@
       white-space: nowrap;
     }
     .support-link:hover { background: rgba(245, 158, 11, 0.18); }
+    .support-menu { position: relative; }
+    .payment-list {
+      position: absolute;
+      top: calc(100% + 8px);
+      right: 0;
+      z-index: 2;
+      display: none;
+      width: min(300px, calc(100vw - 32px));
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: #101d2d;
+      box-shadow: 0 14px 30px var(--shadow);
+    }
+    .support-menu:hover .payment-list,
+    .support-menu:focus-within .payment-list { display: grid; gap: 8px; }
+    .payment-item {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+    }
+    .payment-details { min-width: 0; }
+    .payment-name {
+      display: block;
+      color: var(--accent);
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .payment-value {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.65rem;
+      overflow-wrap: anywhere;
+    }
+    .copy-payment {
+      padding: 6px 8px;
+      border: 1px solid rgba(120, 217, 209, 0.28);
+      border-radius: 6px;
+      color: var(--accent);
+      background: rgba(120, 217, 209, 0.08);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.62rem;
+      font-weight: 700;
+    }
+    .copy-payment:hover { background: rgba(120, 217, 209, 0.18); }
     .status {
       padding: 15px 20px 0;
       color: var(--muted);
@@ -301,6 +357,32 @@
       font-size: 0.66rem;
       text-align: left;
     }
+    .feed-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 20px 0;
+    }
+    .view-switch {
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .view-switch button {
+      padding: 7px 10px;
+      border: 0;
+      border-right: 1px solid var(--border);
+      color: var(--muted);
+      background: transparent;
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.68rem;
+      font-weight: 700;
+    }
+    .view-switch button:last-child { border-right: 0; }
+    .view-switch button.active { color: var(--accent); background: rgba(120, 217, 209, 0.12); }
     @keyframes rise {
       from { opacity: 0; transform: translateY(10px); }
       to { opacity: 1; transform: translateY(0); }
@@ -360,7 +442,10 @@
       <div class="topbar-meta">
         <span>Realtime monitor</span>
         <span class="stream-pill">Live stream</span>
-        <a class="support-link" id="supportLink" href="https://buymeacoffee.com/yourusername" target="_blank" rel="noopener noreferrer">Buy me a coffee</a>
+        <div class="support-menu">
+          <a class="support-link" id="supportLink" href="https://buymeacoffee.com/yourusername" target="_blank" rel="noopener noreferrer">Buy me a coffee</a>
+          <div class="payment-list" id="paymentList" aria-label="Other ways to support"></div>
+        </div>
       </div>
     </div>
     <div class="workspace">
@@ -381,6 +466,13 @@
       </aside>
       <section class="feed-panel">
         <div class="status" id="status">Waiting for live stream…</div>
+        <div class="feed-toolbar">
+          <span id="scopeLabel">All devices</span>
+          <div class="view-switch" aria-label="Message view">
+            <button type="button" class="active" data-mode="filtered">Filtered</button>
+            <button type="button" data-mode="raw">Raw</button>
+          </div>
+        </div>
         <div class="feed" id="feed"></div>
       </section>
       <aside class="devices-panel" aria-label="Connected devices">
@@ -410,8 +502,14 @@
     const deviceUpdatedEl = document.getElementById('deviceUpdated');
     const deviceListEl = document.getElementById('deviceList');
     const supportLinkEl = document.getElementById('supportLink');
+    const paymentListEl = document.getElementById('paymentList');
+    const scopeLabelEl = document.getElementById('scopeLabel');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
+    const selectedDeviceId = new URLSearchParams(window.location.search).get('device') || '';
+    let displayMode = 'filtered';
+    let currentMessages = [];
+    let eventSource = null;
     let serviceStartedAt = null;
     let serviceUptime = 0;
 
@@ -455,12 +553,54 @@
       });
     }
 
+    function renderPaymentMethods(paymentMethods) {
+      paymentListEl.innerHTML = '';
+      paymentMethods
+        .filter((method) => method.value)
+        .forEach((method) => {
+          const item = document.createElement('div');
+          item.className = 'payment-item';
+
+          const details = document.createElement('div');
+          details.className = 'payment-details';
+          const name = document.createElement('span');
+          name.className = 'payment-name';
+          name.textContent = method.name;
+          const value = document.createElement('span');
+          value.className = 'payment-value';
+          value.textContent = method.value;
+          details.append(name, value);
+
+          const copyButton = document.createElement('button');
+          copyButton.className = 'copy-payment';
+          copyButton.type = 'button';
+          copyButton.textContent = 'Copy';
+          copyButton.addEventListener('click', async () => {
+            try {
+              await navigator.clipboard.writeText(method.value);
+              copyButton.textContent = 'Copied';
+              setTimeout(() => { copyButton.textContent = 'Copy'; }, 1400);
+            } catch (err) {
+              copyButton.textContent = 'Select';
+            }
+          });
+
+          item.append(details, copyButton);
+          paymentListEl.appendChild(item);
+        });
+    }
+
     async function loadConfig() {
       try {
         const res = await fetch('/api/config');
         if (!res.ok) throw new Error('config check failed');
         const config = await res.json();
         if (config.buy_me_a_coffee_url) supportLinkEl.href = config.buy_me_a_coffee_url;
+        renderPaymentMethods(config.payment_methods || []);
+        if (!config.buy_me_a_coffee_url && config.payment_methods?.length) {
+          supportLinkEl.textContent = 'Support options';
+          supportLinkEl.removeAttribute('href');
+        }
       } catch (err) {
         // Keep the editable placeholder link when optional config is unavailable.
       }
@@ -483,8 +623,9 @@
           const deviceId = String(device.id || 'unknown');
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
           deviceOnlineStates.set(deviceId, Boolean(device.online));
-          const row = document.createElement('div');
-          row.className = `device-row${device.online ? ' online' : ''}`;
+          const row = document.createElement('a');
+          row.href = `/?device=${encodeURIComponent(deviceId)}`;
+          row.className = `device-row${device.online ? ' online' : ''}${deviceId === selectedDeviceId ? ' selected' : ''}`;
 
           const name = document.createElement('span');
           name.className = 'device-name';
@@ -546,7 +687,7 @@
       const bubble = document.createElement('div');
       const bubbleType = msg.is_pasted ? 'pasted' : (msg.is_copied ? 'copied' : '');
       bubble.className = `bubble${bubbleType ? ` ${bubbleType}` : ''}`;
-      bubble.textContent = msg.text;
+      bubble.textContent = displayMode === 'raw' ? (msg.raw_text || msg.text) : msg.text;
 
       if (msg.is_pasted || msg.is_copied) {
         const label = document.createElement('span');
@@ -572,33 +713,53 @@
 
       wrap.appendChild(bubble);
       feed.appendChild(wrap);
-      messageCountEl.textContent = feed.children.length;
+    }
+
+    function renderFeed() {
+      feed.innerHTML = '';
+      currentMessages.forEach(addMessage);
+      messageCountEl.textContent = currentMessages.length;
       feed.scrollTop = feed.scrollHeight;
     }
 
     async function loadInitialMessages() {
       try {
-        const res = await fetch('/messages');
+        const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
+        const res = await fetch(`/messages${query}`);
         if (!res.ok) throw new Error('failed');
         const messages = await res.json();
-        feed.innerHTML = '';
-        messages.forEach(addMessage);
+        currentMessages = messages;
+        renderFeed();
         messageCountEl.textContent = messages.length;
-        statusEl.textContent = 'Latest messages: ' + messages.length;
+        statusEl.textContent = selectedDeviceId ? 'Device messages: ' + messages.length : 'Latest messages: ' + messages.length;
       } catch (err) {
         statusEl.textContent = 'Listening for new messages…';
       }
     }
 
-    const eventSource = new EventSource('/events');
-    eventSource.onmessage = (event) => {
-      const msg = JSON.parse(event.data);
-      addMessage(msg);
-      statusEl.textContent = 'Live stream connected';
-    };
-    eventSource.onerror = () => {
-      statusEl.textContent = 'Reconnect in progress…';
-    };
+    function connectEvents() {
+      const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
+      eventSource = new EventSource(`/events${query}`);
+      eventSource.onmessage = (event) => {
+        currentMessages.push(JSON.parse(event.data));
+        renderFeed();
+        statusEl.textContent = 'Live stream connected';
+      };
+      eventSource.onerror = () => {
+        statusEl.textContent = 'Reconnect in progress…';
+      };
+    }
+
+    document.querySelectorAll('[data-mode]').forEach((button) => {
+      button.addEventListener('click', () => {
+        displayMode = button.dataset.mode;
+        document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
+        renderFeed();
+      });
+    });
+
+    scopeLabelEl.textContent = selectedDeviceId ? `Device ${selectedDeviceId}` : 'All devices';
+    connectEvents();
 
     loadInitialMessages();
     loadConfig();
