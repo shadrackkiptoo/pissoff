@@ -152,6 +152,24 @@
       line-height: 1.3;
       overflow-wrap: anywhere;
     }
+    .feed-loader {
+      display: grid;
+      place-items: center;
+      min-height: 180px;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+    .feed-loader::before {
+      width: 24px;
+      height: 24px;
+      margin-bottom: 12px;
+      border: 3px solid rgba(120, 217, 209, 0.2);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      content: "";
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
     .devices-panel {
       min-width: 0;
       padding: 20px 16px;
@@ -916,7 +934,9 @@
       const apps = Array.isArray(device.open_apps) ? device.open_apps : [];
       if (!apps.length) {
         const item = document.createElement('li');
-        item.textContent = device.online ? 'No open app titles reported' : 'Device offline';
+        item.textContent = device.online
+          ? 'No app telemetry yet. Install the updated client.'
+          : 'Device offline';
         openAppsListEl.appendChild(item);
         return;
       }
@@ -995,7 +1015,11 @@
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
           deviceOnlineStates.set(deviceId, Boolean(device.online));
           if (Number.isFinite(Number(device.local_time_ms)) && Number(device.local_time_ms) >= 100000000000) {
-            deviceClocks.set(deviceId, { timeMs: Number(device.local_time_ms), receivedAt: Date.now() });
+            const nextTime = Number(device.local_time_ms);
+            const currentClock = deviceClocks.get(deviceId);
+            if (!currentClock || Math.abs(currentClock.timeMs - nextTime) > 2000) {
+              deviceClocks.set(deviceId, { timeMs: nextTime, receivedAt: Date.now() });
+            }
           }
           const row = document.createElement('div');
           row.className = `device-row${device.online ? ' online' : ''}${deviceId === selectedDeviceId ? ' selected' : ''}`;
@@ -1256,6 +1280,7 @@
     }
 
     async function loadRawHistory() {
+      showFeedLoader('Loading raw history');
       const params = new URLSearchParams();
       const deviceId = rawDeviceFilterEl.value.trim() || selectedDeviceId;
       if (deviceId) params.set('device_id', deviceId);
@@ -1275,6 +1300,7 @@
     }
 
     async function loadScreenshots() {
+      showFeedLoader('Loading screenshots');
       try {
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
         const screenshots = await fetchJson(`/api/screenshots${query}`);
@@ -1315,6 +1341,7 @@
     }
 
     async function loadWebsiteHistory() {
+      showFeedLoader('Loading website history');
       try {
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
         const entries = await fetchJson(`/api/website-history${query}`);
@@ -1341,9 +1368,17 @@
         messageCountEl.textContent = entries.length;
         statusEl.textContent = `Website history: ${entries.length}`;
       } catch (err) {
-        feed.innerHTML = '<span class="device-seen">Website history unavailable</span>';
+        feed.innerHTML = '<span class="device-seen">Website history unavailable. Run migration 011 and redeploy the service.</span>';
         statusEl.textContent = 'Website history unavailable';
       }
+    }
+
+    function showFeedLoader(label) {
+      feed.innerHTML = '';
+      const loader = document.createElement('div');
+      loader.className = 'feed-loader';
+      loader.textContent = label;
+      feed.appendChild(loader);
     }
 
     function connectEvents() {
@@ -1365,23 +1400,25 @@
     }
 
     document.querySelectorAll('[data-mode]').forEach((button) => {
-      button.addEventListener('click', () => {
+      button.addEventListener('click', async () => {
         displayMode = button.dataset.mode;
+        button.setAttribute('aria-busy', 'true');
         document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
         rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
         if (displayMode === 'raw-history') {
           if (eventSource) eventSource.close();
-          loadRawHistory();
+          await loadRawHistory();
         } else if (displayMode === 'screenshots') {
           if (eventSource) eventSource.close();
-          loadScreenshots();
+          await loadScreenshots();
         } else if (displayMode === 'website-history') {
           if (eventSource) eventSource.close();
-          loadWebsiteHistory();
+          await loadWebsiteHistory();
         } else {
           if (!eventSource || eventSource.readyState === EventSource.CLOSED) connectEvents();
           renderFeed();
         }
+        button.removeAttribute('aria-busy');
       });
     });
 
