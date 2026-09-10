@@ -23,6 +23,7 @@ BASE_DIR = Path(__file__).resolve().parent
 LOG_PATH = BASE_DIR / "text.txt"
 HTML_PATH = BASE_DIR / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
+website_history: Deque[Dict[str, object]] = deque(maxlen=500)
 devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
 screenshot_requests: Dict[str, int] = {}
@@ -647,6 +648,14 @@ class ScreenshotStatusInput(BaseModel):
     message: str = ""
 
 
+class WebsiteHistoryInput(BaseModel):
+    device_id: str
+    device_name: str = "Unknown device"
+    browser: str = "Unknown browser"
+    url: str
+    visited_at: int
+
+
 class RawBatchInput(BaseModel):
     batch_id: str
     device_id: str
@@ -676,6 +685,79 @@ async def fetch_messages(device_id: str | None = None):
         if not selected_device_id or str(item.get("device_id")) == selected_device_id
     ]
     return JSONResponse(result)
+
+
+@app.get("/api/website-history")
+async def fetch_website_history(device_id: str | None = None):
+    selected_device_id = (device_id or "").strip()
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    query = """
+                        SELECT id, device_id, device_name, browser, url, visited_at
+                        FROM website_history
+                    """
+                    values = []
+                    if selected_device_id:
+                        query += " WHERE device_id = %s"
+                        values.append(selected_device_id)
+                    query += " ORDER BY visited_at DESC LIMIT 500"
+                    cursor.execute(query, values)
+                    rows = cursor.fetchall()
+            return JSONResponse([
+                {
+                    "id": row[0], "device_id": row[1], "device_name": row[2],
+                    "browser": row[3], "url": row[4], "visited_at": row[5],
+                }
+                for row in rows
+            ])
+        except Exception as error:
+            print(f"Could not load website history: {error}")
+            return JSONResponse({"ok": False, "error": "website history unavailable"}, status_code=503)
+    return JSONResponse([
+        item for item in reversed(website_history)
+        if not selected_device_id or item["device_id"] == selected_device_id
+    ])
+
+
+@app.post("/api/website-history")
+async def add_website_history(
+    payload: WebsiteHistoryInput, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    device_id = payload.device_id.strip()
+    url = payload.url.strip()
+    if not device_id or not url.startswith(("http://", "https://")):
+        return JSONResponse({"ok": False, "error": "invalid website history"}, status_code=400)
+    item = {
+        "id": int(time.time() * 1000),
+        "device_id": device_id,
+        "device_name": payload.device_name.strip() or "Unknown device",
+        "browser": payload.browser.strip() or "Unknown browser",
+        "url": url,
+        "visited_at": payload.visited_at,
+    }
+    try:
+        if DATABASE_URL:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO website_history
+                            (device_id, device_name, browser, url, visited_at)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (item["device_id"], item["device_name"], item["browser"], item["url"], item["visited_at"]),
+                    )
+        else:
+            website_history.append(item)
+    except Exception as error:
+        print(f"Could not save website history: {error}")
+        return JSONResponse({"ok": False, "error": "website history storage unavailable"}, status_code=503)
+    return JSONResponse({"ok": True})
 
 
 @app.get("/api/config")

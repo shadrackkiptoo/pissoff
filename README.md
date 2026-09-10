@@ -149,6 +149,8 @@ Run [migrations/006_add_source_url.sql](migrations/006_add_source_url.sql) in Su
 
 Run [migrations/010_create_screenshots_storage.sql](migrations/010_create_screenshots_storage.sql) before using the per-device Screenshot button. Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Render; screenshots are stored in the private `screenshots` bucket and metadata is stored in `public.screenshots`.
 
+Run [migrations/011_create_website_history.sql](migrations/011_create_website_history.sql) to enable the Website History tab. The desktop client records URL changes from supported active browsers every five seconds and stores them with the device and browser name.
+
 The Render environment must also contain `DATABASE_URL`, `SUPABASE_URL`, and
 `SUPABASE_SERVICE_ROLE_KEY`. The service role key is server-only and must not be
 placed in the desktop client or web page.

