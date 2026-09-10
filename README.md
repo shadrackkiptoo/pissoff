@@ -10,7 +10,7 @@ Only run the client on computers and accounts you own or are explicitly authoriz
 Keyboard input -> KeyboardService.exe -> POST /api/messages -> app.py -> index.html
 ```
 
-Each message contains filtered `text`, the original `raw_text`, `device_id`, `device_name`, and `is_pasted`. Every keyboard press is also stored as a `raw_only` log record, including modifiers and non-text keys. The desktop client also records the active app and focused Windows control, keeping that destination while typing and starting a new message when focus moves to another field or app. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color. The web feed can switch between filtered bubbles and a separate raw keyboard log, and each device is a link to its own message feed.
+Each message contains filtered `text`, the original `raw_text`, `device_id`, `device_name`, and `is_pasted`. When typing in a supported browser, the client also captures the exact active page URL as `source_url`; the filtered feed shows that URL with a link-copy button. Every keyboard press is also stored as a `raw_only` log record, including modifiers and non-text keys. The desktop client also records the active app and focused Windows control, keeping that destination while typing and starting a new message when focus moves to another field or app. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color. The web feed can switch between filtered bubbles and a separate raw keyboard log, and each device is a link to its own message feed.
 
 ## Files
 
@@ -67,10 +67,12 @@ TELEGRAM_CHAT_ID=your-chat-id
 BUY_ME_A_COFFEE_URL=https://buymeacoffee.com/yourusername
 ```
 
-The service sends an online notification at startup and a heartbeat every 15
-minutes. To change the interval, add `TELEGRAM_UPTIME_INTERVAL_SECONDS` with a
-value of at least 60. Telegram notifications are optional and do not affect the
-health endpoint or service startup if they fail.
+The service sends an online notification at startup and a health heartbeat
+every 15 minutes. To change the interval, add
+`TELEGRAM_UPTIME_INTERVAL_SECONDS` with a value of at least 60. Telegram
+notifications are optional and do not affect the health endpoint or service
+startup if they fail. Repeated online notifications indicate that the Render
+process is restarting; check the service event and error logs in Render.
 
 The Telegram bot menu includes `/start`, `/help`, `/status`, `/devices`,
 `/messages`, and `/support`. `/uptime` remains an alias for `/status`, and
@@ -133,12 +135,17 @@ add column if not exists raw_text text not null default '';
 alter table public.messages
 add column if not exists raw_only boolean not null default false;
 
+alter table public.messages
+add column if not exists source_url text not null default '';
+
 update public.messages
 set raw_text = text
 where raw_text = '';
 ```
 
 Run [migrations/003_add_raw_message_text.sql](migrations/003_add_raw_message_text.sql) and [migrations/004_add_raw_only_flag.sql](migrations/004_add_raw_only_flag.sql) in Supabase before deploying the updated client. Older messages use their filtered text as the raw fallback.
+
+Run [migrations/006_add_source_url.sql](migrations/006_add_source_url.sql) in Supabase before deploying the updated client. Existing messages keep an empty source URL.
 
 Run [migrations/005_add_raw_batches.sql](migrations/005_add_raw_batches.sql) to
 create the separate `raw_batches` table. The desktop client groups raw keyboard

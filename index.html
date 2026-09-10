@@ -357,6 +357,34 @@
       font-size: 0.66rem;
       text-align: left;
     }
+    .source-link-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 7px;
+      max-width: 100%;
+    }
+    .source-link {
+      min-width: 0;
+      color: #d6fff9;
+      font-size: 0.65rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .copy-source {
+      flex: 0 0 auto;
+      padding: 4px 7px;
+      border: 1px solid rgba(214, 255, 249, 0.35);
+      border-radius: 5px;
+      color: #d6fff9;
+      background: rgba(214, 255, 249, 0.1);
+      cursor: pointer;
+      font: inherit;
+      font-size: 0.6rem;
+      font-weight: 700;
+    }
+    .copy-source:hover { background: rgba(214, 255, 249, 0.2); }
     .raw-log {
       margin: 0;
       padding: 16px;
@@ -790,6 +818,35 @@
       source.className = 'source';
       source.textContent = `Entered in: ${msg.app_name || 'Unknown app'}`;
       bubble.appendChild(source);
+
+      if (msg.source_url) {
+        const sourceLinkRow = document.createElement('div');
+        sourceLinkRow.className = 'source-link-row';
+        const sourceLink = document.createElement('a');
+        sourceLink.className = 'source-link';
+        sourceLink.href = msg.source_url;
+        sourceLink.target = '_blank';
+        sourceLink.rel = 'noopener noreferrer';
+        sourceLink.title = msg.source_url;
+        sourceLink.textContent = msg.source_url;
+
+        const copySourceButton = document.createElement('button');
+        copySourceButton.className = 'copy-source';
+        copySourceButton.type = 'button';
+        copySourceButton.textContent = 'Copy link';
+        copySourceButton.addEventListener('click', async () => {
+          try {
+            await navigator.clipboard.writeText(msg.source_url);
+            copySourceButton.textContent = 'Copied';
+            setTimeout(() => { copySourceButton.textContent = 'Copy link'; }, 1400);
+          } catch (err) {
+            copySourceButton.textContent = 'Select';
+          }
+        });
+
+        sourceLinkRow.append(sourceLink, copySourceButton);
+        bubble.appendChild(sourceLinkRow);
+      }
 
       wrap.appendChild(bubble);
       return wrap;
