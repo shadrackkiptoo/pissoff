@@ -498,19 +498,22 @@ def load_devices():
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT device_id, device_name, last_seen, started_at, joined_at
+                    SELECT device_id, device_name, last_seen, started_at, joined_at,
+                           screenshot_base64, screenshot_time
                     FROM devices
                     ORDER BY last_seen DESC
                     """
                 )
                 rows = cursor.fetchall()
-        for device_id, device_name, last_seen, started_at, joined_at in rows:
+        for device_id, device_name, last_seen, started_at, joined_at, screenshot_base64, screenshot_time in rows:
             devices[str(device_id)] = {
                 "id": device_id,
                 "name": device_name,
                 "last_seen": last_seen,
                 "started_at": started_at,
                 "joined_at": joined_at,
+                "screenshot_base64": screenshot_base64 or "",
+                "screenshot_time": screenshot_time,
             }
             device_online_states[str(device_id)] = (
                 int(time.time() * 1000) - int(last_seen)
@@ -554,12 +557,15 @@ def save_message(item):
 
 
 def save_device(device_id, device_name, last_seen, started_at, joined_at):
+    existing_device = devices.get(device_id, {})
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "last_seen": last_seen,
         "started_at": started_at,
         "joined_at": joined_at,
+        "screenshot_base64": existing_device.get("screenshot_base64", ""),
+        "screenshot_time": existing_device.get("screenshot_time"),
     }
     if not DATABASE_URL:
         return
@@ -568,14 +574,24 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices (device_id, device_name, last_seen, started_at, joined_at)
-                VALUES (%s, %s, %s, %s, %s)
+                INSERT INTO devices
+                    (device_id, device_name, last_seen, started_at, joined_at,
+                     screenshot_base64, screenshot_time)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (device_id) DO UPDATE SET
                     device_name = EXCLUDED.device_name,
                     last_seen = EXCLUDED.last_seen,
                     started_at = EXCLUDED.started_at
                 """,
-                (device_id, device_name, last_seen, started_at, joined_at),
+                (
+                    device_id,
+                    device_name,
+                    last_seen,
+                    started_at,
+                    joined_at,
+                    existing_device.get("screenshot_base64", ""),
+                    existing_device.get("screenshot_time"),
+                ),
             )
 
 
@@ -755,7 +771,26 @@ async def upload_device_screenshot(
     if device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
     devices[device_id]["screenshot_base64"] = screenshot_base64
-    devices[device_id]["screenshot_time"] = int(time.time() * 1000)
+    screenshot_time = int(time.time() * 1000)
+    devices[device_id]["screenshot_time"] = screenshot_time
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        UPDATE devices
+                        SET screenshot_base64 = %s, screenshot_time = %s
+                        WHERE device_id = %s
+                        """,
+                        (screenshot_base64, screenshot_time, device_id),
+                    )
+        except Exception as error:
+            print(f"Could not save device screenshot: {error}")
+            return JSONResponse(
+                {"ok": False, "error": "screenshot storage unavailable"},
+                status_code=503,
+            )
     return JSONResponse({"ok": True})
 
 

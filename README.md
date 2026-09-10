@@ -152,6 +152,8 @@ Run [migrations/006_add_source_url.sql](migrations/006_add_source_url.sql) in Su
 
 Run [migrations/008_add_screenshot.sql](migrations/008_add_screenshot.sql) before deploying the screenshot-enabled client. When browser URL extraction is unavailable, the Windows client stores a compressed screenshot with the message instead.
 
+Run [migrations/009_add_device_screenshot.sql](migrations/009_add_device_screenshot.sql) before using the per-device Screenshot button. On-demand screenshots are stored on the matching row in `public.devices`.
+
 To rebuild the messages table and remove legacy per-keystroke rows, run
 [migrations/007_rebuild_messages_table.sql](migrations/007_rebuild_messages_table.sql)
 in Supabase. It preserves completed messages, normalizes empty raw text to the
