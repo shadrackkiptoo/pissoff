@@ -34,6 +34,7 @@ const feed = document.getElementById('feed');
     let rawHistory = [];
     let lastDeviceSignature = '';
     let panelRequestId = 0;
+    let screenshotSignature = null;
     function updateUptime() {
       if (serviceStartedAt === null) return;
       serviceUptime += 1;
@@ -465,6 +466,9 @@ const feed = document.getElementById('feed');
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
         const screenshots = await fetchJson(`/api/screenshots${query}`);
         if (requestId !== panelRequestId) return;
+        const nextSignature = screenshots.map((item) => item.id).join(',');
+        if (nextSignature === screenshotSignature) return;
+        screenshotSignature = nextSignature;
         feed.innerHTML = '';
         if (!screenshots.length) {
           feed.innerHTML = '<span class="device-seen">No screenshots saved</span>';
@@ -614,6 +618,7 @@ const feed = document.getElementById('feed');
     setInterval(loadHealth, 30000);
     setInterval(loadDevices, 3000);
     setInterval(() => {
+      if (displayMode === 'screenshots') loadScreenshots();
       if (displayMode === 'website-history') loadWebsiteHistory();
     }, 3000);
 
