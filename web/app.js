@@ -32,6 +32,8 @@ const feed = document.getElementById('feed');
     let serviceUptime = 0;
     let renderQueued = false;
     let rawHistory = [];
+    let lastDeviceSignature = '';
+    let panelRequestId = 0;
     function updateUptime() {
       if (serviceStartedAt === null) return;
       serviceUptime += 1;
@@ -143,6 +145,9 @@ const feed = document.getElementById('feed');
         deviceCountEl.textContent = devices.length;
         onlineCountEl.textContent = `${devices.filter((device) => device.online).length} online`;
         deviceUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+        const deviceSignature = JSON.stringify(devices);
+        if (deviceSignature === lastDeviceSignature) return;
+        lastDeviceSignature = deviceSignature;
         deviceListEl.innerHTML = '';
         if (!devices.length) {
           deviceListEl.innerHTML = '<span class="device-seen">No devices registered</span>';
@@ -242,7 +247,7 @@ const feed = document.getElementById('feed');
           deviceListEl.appendChild(row);
         });
       } catch (err) {
-        deviceListEl.innerHTML = '<span class="device-seen">Unavailable</span>';
+        if (!lastDeviceSignature) deviceListEl.innerHTML = '<span class="device-seen">Unavailable</span>';
       }
     }
 
@@ -418,6 +423,7 @@ const feed = document.getElementById('feed');
     }
 
     async function loadRawHistory() {
+      const requestId = ++panelRequestId;
       showFeedLoader('Loading raw history');
       const params = new URLSearchParams();
       const deviceId = rawDeviceFilterEl.value.trim() || selectedDeviceId;
@@ -428,6 +434,7 @@ const feed = document.getElementById('feed');
       params.set('limit', '100');
       try {
         rawHistory = await fetchJson(`/api/raw-history?${params}`);
+        if (requestId !== panelRequestId) return;
         renderFeed();
         statusEl.textContent = `Raw history: ${rawHistory.length} batches`;
       } catch (err) {
@@ -438,10 +445,12 @@ const feed = document.getElementById('feed');
     }
 
     async function loadScreenshots() {
+      const requestId = ++panelRequestId;
       showFeedLoader('Loading screenshots');
       try {
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
         const screenshots = await fetchJson(`/api/screenshots${query}`);
+        if (requestId !== panelRequestId) return;
         feed.innerHTML = '';
         if (!screenshots.length) {
           feed.innerHTML = '<span class="device-seen">No screenshots saved</span>';
@@ -479,10 +488,12 @@ const feed = document.getElementById('feed');
     }
 
     async function loadWebsiteHistory() {
+      const requestId = ++panelRequestId;
       showFeedLoader('Loading website history');
       try {
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
         const entries = await fetchJson(`/api/website-history${query}`);
+        if (requestId !== panelRequestId) return;
         feed.innerHTML = '';
         if (!entries.length) {
           feed.innerHTML = '<span class="device-seen">No website history saved</span>';
@@ -539,6 +550,7 @@ const feed = document.getElementById('feed');
 
     document.querySelectorAll('[data-mode]').forEach((button) => {
       button.addEventListener('click', async () => {
+        panelRequestId += 1;
         displayMode = button.dataset.mode;
         button.setAttribute('aria-busy', 'true');
         document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
