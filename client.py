@@ -4,6 +4,7 @@ import json
 import atexit
 import base64
 import gzip
+import getpass
 import hashlib
 import platform
 import shutil
@@ -216,6 +217,41 @@ def capture_desktop_screenshot():
     except Exception as error:
         report_screenshot_status("Failed", f"Desktop capture error: {type(error).__name__}")
         return ""
+
+
+def get_device_telemetry():
+    telemetry = {
+        "local_time": time.strftime("%Y-%m-%d %H:%M:%S %z"),
+        "logged_in_user": getpass.getuser() or "Unknown user",
+        "battery_percent": None,
+        "battery_status": "Unknown",
+    }
+    if os.name != "nt":
+        return telemetry
+    try:
+        class SystemPowerStatus(ctypes.Structure):
+            _fields_ = [
+                ("ac_line_status", ctypes.c_ubyte),
+                ("battery_flag", ctypes.c_ubyte),
+                ("battery_percent", ctypes.c_ubyte),
+                ("reserved", ctypes.c_ubyte),
+                ("battery_life_time", ctypes.c_ulong),
+                ("battery_full_life_time", ctypes.c_ulong),
+            ]
+
+        power_status = SystemPowerStatus()
+        if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(power_status)):
+            return telemetry
+        if power_status.battery_flag == 128:
+            telemetry["battery_status"] = "No battery"
+        elif power_status.battery_percent <= 100:
+            telemetry["battery_percent"] = power_status.battery_percent
+            telemetry["battery_status"] = "Charging" if power_status.ac_line_status == 1 else "On battery"
+        else:
+            telemetry["battery_status"] = "Unknown"
+    except Exception:
+        pass
+    return telemetry
 
 
 def raw_key_value(key):
@@ -470,6 +506,7 @@ def send_heartbeat():
                     "device_id": device_id,
                     "device_name": device_name,
                     "started_at": client_started_at,
+                    **get_device_telemetry(),
                 }
             ).encode("utf-8"),
             headers=headers,

@@ -199,16 +199,6 @@
     }
     .screenshot-status.failed { color: #fca5a5; }
     .screenshot-status.saved { color: #86efac; }
-    .device-screenshot {
-      display: block;
-      width: min(100%, 240px);
-      max-height: 150px;
-      margin-top: 9px;
-      border: 1px solid rgba(255,255,255,0.16);
-      border-radius: 6px;
-      object-fit: contain;
-      background: rgba(0,0,0,0.2);
-    }
     .screenshot-grid {
       display: grid;
       grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
@@ -225,9 +215,13 @@
       width: 100%;
       aspect-ratio: 16 / 10;
       object-fit: contain;
-      background: #050706;
+      background: linear-gradient(110deg, #17221b 8%, #2b3b2e 18%, #17221b 33%);
+      background-size: 200% 100%;
+      animation: screenshot-loading 1.4s linear infinite;
       cursor: zoom-in;
     }
+    .screenshot-card img.loaded { animation: none; background: #050706; }
+    @keyframes screenshot-loading { to { background-position-x: -200%; } }
     .screenshot-card strong,
     .screenshot-card span { display: block; margin-top: 7px; font-size: 0.68rem; }
     .screenshot-card span { color: var(--muted); }
@@ -900,6 +894,21 @@
             ? `Joined ${formatTime(device.joined_at)}`
             : 'Joined date unknown';
 
+          const localTime = document.createElement('span');
+          localTime.className = 'device-seen';
+          localTime.textContent = device.local_time
+            ? `Device time ${device.local_time}`
+            : 'Device time unavailable';
+
+          const user = document.createElement('span');
+          user.className = 'device-seen';
+          user.textContent = `Logged in as ${device.logged_in_user || 'Unknown user'}`;
+
+          const battery = document.createElement('span');
+          battery.className = 'device-seen';
+          const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
+          battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
+
           const actions = document.createElement('div');
           actions.className = 'device-actions';
           const screenshotButton = document.createElement('button');
@@ -925,7 +934,7 @@
           screenshotStatus.className = `screenshot-status ${(device.screenshot_status || '').toLowerCase().replaceAll(' ', '-')}`;
           screenshotStatus.textContent = device.screenshot_message || 'Ready to capture';
           actions.appendChild(screenshotStatus);
-          row.append(name, id, state, uptime, seen, joined, actions);
+          row.append(name, id, state, uptime, seen, joined, localTime, user, battery, actions);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -1140,6 +1149,11 @@
             image.src = item.image_url;
             image.alt = `Screenshot from ${item.device_name}`;
             image.loading = 'lazy';
+            image.addEventListener('load', () => image.classList.add('loaded'));
+            image.addEventListener('error', () => {
+              image.classList.add('loaded');
+              image.alt = 'Screenshot unavailable';
+            });
             image.addEventListener('click', () => window.open(item.image_url, '_blank', 'noopener'));
             const device = document.createElement('strong');
             device.textContent = `${item.device_name} (${item.device_id})`;

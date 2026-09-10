@@ -615,6 +615,10 @@ class DeviceHeartbeat(BaseModel):
     device_id: str
     device_name: str = "Unknown device"
     started_at: int
+    local_time: str = ""
+    logged_in_user: str = ""
+    battery_percent: int | None = None
+    battery_status: str = "Unknown"
 
 
 class DeviceOffline(BaseModel):
@@ -821,6 +825,14 @@ async def device_heartbeat(
             {"ok": False, "error": "device storage unavailable"}, status_code=503
         )
     device_online_states[device_id] = True
+    devices[device_id].update(
+        {
+            "local_time": payload.local_time,
+            "logged_in_user": payload.logged_in_user or "Unknown user",
+            "battery_percent": payload.battery_percent,
+            "battery_status": payload.battery_status or "Unknown",
+        }
+    )
     if was_online is not True:
         await asyncio.to_thread(
             notify_device_status, device_id, device_name, True
