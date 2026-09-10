@@ -145,14 +145,6 @@ const feed = document.getElementById('feed');
         deviceCountEl.textContent = devices.length;
         onlineCountEl.textContent = `${devices.filter((device) => device.online).length} online`;
         deviceUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
-        const deviceSignature = JSON.stringify(devices);
-        if (deviceSignature === lastDeviceSignature) return;
-        lastDeviceSignature = deviceSignature;
-        deviceListEl.innerHTML = '';
-        if (!devices.length) {
-          deviceListEl.innerHTML = '<span class="device-seen">No devices registered</span>';
-          return;
-        }
         devices.forEach((device) => {
           const deviceId = String(device.id || 'unknown');
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
@@ -164,6 +156,29 @@ const feed = document.getElementById('feed');
               deviceClocks.set(deviceId, { timeMs: nextTime, receivedAt: Date.now() });
             }
           }
+        });
+        const deviceSignature = JSON.stringify(devices.map((device) => ({
+          id: device.id,
+          name: device.name,
+          online: device.online,
+          status: device.status,
+          open_apps: device.open_apps,
+          local_time_ms: device.local_time_ms,
+          logged_in_user: device.logged_in_user,
+          battery_percent: device.battery_percent,
+          battery_status: device.battery_status,
+          screenshot_status: device.screenshot_status,
+          screenshot_message: device.screenshot_message,
+        })));
+        if (deviceSignature === lastDeviceSignature) return;
+        lastDeviceSignature = deviceSignature;
+        deviceListEl.innerHTML = '';
+        if (!devices.length) {
+          deviceListEl.innerHTML = '<span class="device-seen">No devices registered</span>';
+          return;
+        }
+        devices.forEach((device) => {
+          const deviceId = String(device.id || 'unknown');
           const row = document.createElement('div');
           row.className = `device-row${device.online ? ' online' : ''}${deviceId === selectedDeviceId ? ' selected' : ''}`;
           row.addEventListener('click', () => {
