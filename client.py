@@ -477,9 +477,35 @@ def post_website_history(url, browser):
         with urlopen(request, timeout=10) as response:
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
+        report_website_history_status("Saved", "Last URL stored successfully.")
         return True
-    except (HTTPError, URLError, TimeoutError, RuntimeError):
+    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+        if isinstance(error, HTTPError):
+            try:
+                detail = error.read().decode("utf-8", errors="replace")[:240]
+            except OSError:
+                detail = "no response body"
+            report_website_history_status("Failed", f"History HTTP {error.code}: {detail}")
+        elif isinstance(error, URLError):
+            report_website_history_status("Failed", f"History network error: {error.reason}")
+        else:
+            report_website_history_status("Failed", f"History error: {error}")
         return False
+
+
+def report_website_history_status(status, message):
+    try:
+        request = Request(
+            f"{SITE_URL}/api/devices/website-history-status",
+            data=json.dumps({"device_id": device_id, "status": status, "message": message}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+    except (HTTPError, URLError, TimeoutError, RuntimeError):
+        pass
 
 
 def website_history_sender():

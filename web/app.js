@@ -35,6 +35,7 @@ const feed = document.getElementById('feed');
     let lastDeviceSignature = '';
     let panelRequestId = 0;
     let screenshotSignature = null;
+    let websiteHistorySignature = null;
     function updateUptime() {
       if (serviceStartedAt === null) return;
       serviceUptime += 1;
@@ -170,6 +171,8 @@ const feed = document.getElementById('feed');
           battery_status: device.battery_status,
           screenshot_status: device.screenshot_status,
           screenshot_message: device.screenshot_message,
+          website_history_status: device.website_history_status,
+          website_history_message: device.website_history_message,
         })));
         if (deviceSignature === lastDeviceSignature) return;
         lastDeviceSignature = deviceSignature;
@@ -234,6 +237,10 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
+          const historyStatus = document.createElement('span');
+          historyStatus.className = 'device-seen';
+          historyStatus.textContent = `Web history: ${device.website_history_status || 'Ready'}${device.website_history_message ? ` - ${device.website_history_message}` : ''}`;
+
           const actions = document.createElement('div');
           actions.className = 'device-actions';
           const screenshotButton = document.createElement('button');
@@ -259,7 +266,7 @@ const feed = document.getElementById('feed');
           screenshotStatus.className = `screenshot-status ${(device.screenshot_status || '').toLowerCase().replaceAll(' ', '-')}`;
           screenshotStatus.textContent = device.screenshot_message || 'Ready to capture';
           actions.appendChild(screenshotStatus);
-          row.append(name, id, state, uptime, seen, joined, localTime, user, battery, actions);
+          row.append(name, id, state, uptime, seen, joined, localTime, user, battery, historyStatus, actions);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -507,11 +514,13 @@ const feed = document.getElementById('feed');
 
     async function loadWebsiteHistory() {
       const requestId = ++panelRequestId;
-      showFeedLoader('Loading website history');
       try {
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
         const entries = await fetchJson(`/api/website-history${query}`);
         if (requestId !== panelRequestId) return;
+        const nextSignature = entries.map((entry) => entry.id).join(',');
+        if (nextSignature === websiteHistorySignature) return;
+        websiteHistorySignature = nextSignature;
         feed.innerHTML = '';
         if (!entries.length) {
           feed.innerHTML = '<span class="device-seen">No website history saved</span>';

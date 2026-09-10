@@ -29,6 +29,7 @@ devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
 screenshot_requests: Dict[str, int] = {}
 screenshot_statuses: Dict[str, Dict[str, object]] = {}
+website_history_statuses: Dict[str, Dict[str, str]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
@@ -659,6 +660,12 @@ class WebsiteHistoryInput(BaseModel):
     visited_at: int
 
 
+class WebsiteHistoryStatusInput(BaseModel):
+    device_id: str
+    status: str
+    message: str = ""
+
+
 class RawBatchInput(BaseModel):
     batch_id: str
     device_id: str
@@ -764,6 +771,23 @@ async def add_website_history(
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/devices/website-history-status")
+async def update_website_history_status(
+    payload: WebsiteHistoryStatusInput, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    device_id = payload.device_id.strip()
+    if device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    website_history_statuses[device_id] = {
+        "status": payload.status.strip() or "Failed",
+        "message": payload.message.strip(),
+    }
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/config")
 async def fetch_config():
     return JSONResponse({
@@ -823,6 +847,8 @@ async def fetch_devices():
                 ),
                 "screenshot_status": screenshot_statuses.get(str(device["id"]), {}).get("status", "Ready"),
                 "screenshot_message": screenshot_statuses.get(str(device["id"]), {}).get("message", ""),
+                "website_history_status": website_history_statuses.get(str(device["id"]), {}).get("status", "Ready"),
+                "website_history_message": website_history_statuses.get(str(device["id"]), {}).get("message", ""),
             }
         )
     return JSONResponse(result)
