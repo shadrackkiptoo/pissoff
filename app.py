@@ -116,8 +116,11 @@ def telegram_devices_text():
     online_count = 0
     lines = [f"<b>Connected devices</b> ({len(devices)})", ""]
     for device in sorted(devices.values(), key=lambda item: str(item.get("name", ""))):
+        device_key = str(device.get("id", "unknown"))
         last_seen = int(device.get("last_seen", 0))
-        online = now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
+        online = device_online_states.get(
+            device_key, now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
+        )
         if online:
             online_count += 1
         status = "🟢 Online" if online else "🔴 Offline"
@@ -172,14 +175,14 @@ def telegram_menu_markup():
     return {
         "inline_keyboard": [
             [
-                {"text": "📊 Status", "callback_data": "status"},
-                {"text": "📱 Devices", "callback_data": "devices"},
+                {"text": "Service status", "callback_data": "status"},
+                {"text": "Connected devices", "callback_data": "devices"},
             ],
             [
-                {"text": "📨 Messages", "callback_data": "messages"},
-                {"text": "💛 Support", "callback_data": "support"},
+                {"text": "Message summary", "callback_data": "messages"},
+                {"text": "Support", "callback_data": "support"},
             ],
-            [{"text": "❓ Help", "callback_data": "help"}],
+            [{"text": "Help", "callback_data": "help"}],
         ]
     }
 
@@ -328,6 +331,8 @@ async def device_status_loop():
         now = int(time.time() * 1000)
         for device in list(devices.values()):
             device_id = str(device["id"])
+            if device_online_states.get(device_id) is False:
+                continue
             last_seen = int(device.get("last_seen", 0))
             online = now - last_seen <= DEVICE_OFFLINE_AFTER * 1000
             previous = device_online_states.get(device_id)
@@ -589,6 +594,10 @@ class DeviceHeartbeat(BaseModel):
     started_at: int
 
 
+class DeviceOffline(BaseModel):
+    device_id: str
+
+
 app = FastAPI(title="KeyboardService", lifespan=lifespan)
 load_text_messages()
 load_devices()
@@ -625,7 +634,9 @@ async def fetch_devices():
         last_seen = int(device.get("last_seen", 0))
         started_at = int(device.get("started_at", last_seen))
         age_seconds = max(0, (now - last_seen) // 1000)
-        online = age_seconds <= DEVICE_OFFLINE_AFTER
+        online = device_online_states.get(
+            str(device["id"]), age_seconds <= DEVICE_OFFLINE_AFTER
+        )
         uptime_end = now if online else last_seen
         result.append(
             {
@@ -679,6 +690,30 @@ async def device_heartbeat(
         await asyncio.to_thread(
             notify_device_status, device_id, device_name, True
         )
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/devices/offline")
+async def device_offline(
+    payload: DeviceOffline, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+
+    device_id = payload.device_id.strip()
+    if not device_id:
+        return JSONResponse({"ok": False, "error": "missing device_id"}, status_code=400)
+    if device_id in devices:
+        was_online = device_online_states.get(device_id, True)
+        device_online_states[device_id] = False
+        if was_online:
+            await asyncio.to_thread(
+                notify_device_status,
+                device_id,
+                devices[device_id].get("name", "Unknown device"),
+                False,
+            )
     return JSONResponse({"ok": True})
 
 

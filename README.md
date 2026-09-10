@@ -224,11 +224,17 @@ alter table public.devices
 alter column joined_at set not null;
 ```
 
-The desktop client sends a heartbeat every 30 seconds. `GET /api/devices`
-returns all known devices with `online: true` when the last heartbeat was within
-90 seconds, plus `uptime_seconds` for each client's current session and
-`joined_at` for the first recorded registration. Offline devices retain the
-uptime from their last session.
+The desktop client sends a heartbeat every 30 seconds. It also marks itself
+offline when it exits gracefully, so the dashboard does not wait for the 90
+second heartbeat timeout. `GET /api/devices` returns all known devices with
+`online: true` when the client is active and its last heartbeat was within 90
+seconds, plus `uptime_seconds` for each client's current session and `joined_at`
+for the first recorded registration. Offline devices retain the uptime from
+their last session.
+
+If an upload fails, the desktop client stores it in
+`%LOCALAPPDATA%\KeyboardService\pending_messages.json` and retries it every 30
+seconds. The file is removed after all pending messages are accepted.
 
 ## API Endpoints
 
@@ -238,4 +244,5 @@ uptime from their last session.
 - `POST /api/messages`: accepts `text`, optional `raw_text` and `raw_only`, `device_id`, `device_name`, `app_name`, and `is_pasted`.
 - `GET /api/devices`: devices that have sent messages.
 - `POST /api/devices/heartbeat`: registers a client and updates its presence.
+- `POST /api/devices/offline`: marks a client offline on graceful shutdown.
 - `GET /health`: service status and message count.
