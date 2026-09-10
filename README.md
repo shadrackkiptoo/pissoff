@@ -234,7 +234,9 @@ their last session.
 
 If an upload fails, the desktop client stores it in
 `%LOCALAPPDATA%\KeyboardService\pending_messages.json` and retries it every 30
-seconds. The file is removed after all pending messages are accepted.
+seconds without printing retry errors on the PC. After a retry succeeds, the
+server sends Telegram a notification containing only the device name and ID.
+The file is removed after all pending messages are accepted.
 
 ## API Endpoints
 

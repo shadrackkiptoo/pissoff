@@ -229,7 +229,7 @@ def forget_pending_message(payload):
             os.unlink(PENDING_MESSAGES_PATH)
 
 
-def post_message(payload):
+def post_message(payload, quiet=False):
     try:
         headers = {"Content-Type": "application/json"}
         request = Request(
@@ -243,7 +243,8 @@ def post_message(payload):
                 raise RuntimeError(f"HTTP {response.status}")
         return True
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
-        print(f"Could not send message: {error}")
+        if not quiet:
+            print(f"Could not send message: {error}")
         return False
 
 
@@ -265,7 +266,8 @@ def send_message(text, app_name, raw_text=None, is_pasted=False, is_copied=False
 
 def retry_pending_messages():
     for payload in load_pending_messages():
-        if post_message(payload):
+        retry_payload = {**payload, "retry": True}
+        if post_message(retry_payload, quiet=True):
             forget_pending_message(payload)
 
 

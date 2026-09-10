@@ -586,6 +586,7 @@ class MessageInput(BaseModel):
     app_name: str = "Unknown app"
     is_pasted: bool = False
     is_copied: bool = False
+    retry: bool = False
 
 
 class DeviceHeartbeat(BaseModel):
@@ -762,6 +763,12 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         print(f"Could not save message: {error}")
         return JSONResponse(
             {"ok": False, "error": "message storage unavailable"}, status_code=503
+        )
+    if payload.retry:
+        await asyncio.to_thread(
+            send_telegram_message,
+            f"Offline message uploaded: {html.escape(device_name)} ({html.escape(device_id)})",
+            "HTML",
         )
     messages.append(item)
     return JSONResponse({"ok": True, "message": item})
