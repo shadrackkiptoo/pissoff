@@ -14,6 +14,8 @@ import sys
 import ctypes
 import tempfile
 import uuid
+import getpass
+from datetime import datetime
 from io import BytesIO
 from urllib.parse import urlparse
 from ctypes import wintypes
@@ -220,8 +222,10 @@ def capture_desktop_screenshot():
 
 
 def get_device_telemetry():
+    local_now = datetime.now().astimezone()
     telemetry = {
-        "local_time": time.strftime("%Y-%m-%d %H:%M:%S %z"),
+        "local_time": local_now.isoformat(timespec="seconds"),
+        "local_time_ms": int(local_now.timestamp() * 1000),
         "logged_in_user": getpass.getuser() or "Unknown user",
         "battery_percent": None,
         "battery_status": "Unknown",
@@ -468,6 +472,34 @@ def report_screenshot_status(status, message):
                 raise RuntimeError(f"HTTP {response.status}")
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not report screenshot status: {error}")
+
+
+def get_battery_telemetry():
+    if os.name != "nt":
+        return {"battery_percent": None, "battery_status": "Unavailable"}
+    try:
+        class SystemPowerStatus(ctypes.Structure):
+            _fields_ = [
+                ("ac_line_status", wintypes.BYTE),
+                ("battery_flag", wintypes.BYTE),
+                ("battery_percent", wintypes.BYTE),
+                ("reserved", wintypes.BYTE),
+                ("battery_life_seconds", wintypes.DWORD),
+                ("battery_full_life_seconds", wintypes.DWORD),
+            ]
+        status = SystemPowerStatus()
+        if not ctypes.windll.kernel32.GetSystemPowerStatus(ctypes.byref(status)):
+            return {"battery_percent": None, "battery_status": "Unavailable"}
+        percent = None if status.battery_percent == 255 else int(status.battery_percent)
+        if status.ac_line_status == 1:
+            state = "Charging" if percent is not None and percent < 100 else "Plugged in"
+        elif status.ac_line_status == 0:
+            state = "On battery"
+        else:
+            state = "Unknown"
+        return {"battery_percent": percent, "battery_status": state}
+    except (AttributeError, OSError):
+        return {"battery_percent": None, "battery_status": "Unavailable"}
 
 
 def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False):

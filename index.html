@@ -731,6 +731,7 @@
     const rawEndFilterEl = document.getElementById('rawEndFilter');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
+    const deviceClocks = new Map();
     const selectedDeviceId = new URLSearchParams(window.location.search).get('device') || '';
     let displayMode = 'filtered';
     let currentMessages = [];
@@ -790,6 +791,13 @@
           deviceUptimes.set(deviceId, seconds);
         }
         uptimeEl.textContent = `Uptime: ${formatUptime(seconds)}`;
+      });
+      document.querySelectorAll('.device-local-time').forEach((timeEl) => {
+        const deviceId = timeEl.dataset.deviceId;
+        const clock = deviceClocks.get(deviceId);
+        if (!clock) return;
+        const elapsed = Date.now() - clock.receivedAt;
+        timeEl.textContent = `Device time ${new Date(clock.timeMs + elapsed).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' })}`;
       });
     }
 
@@ -859,6 +867,9 @@
           const deviceId = String(device.id || 'unknown');
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
           deviceOnlineStates.set(deviceId, Boolean(device.online));
+          if (Number.isFinite(Number(device.local_time_ms))) {
+            deviceClocks.set(deviceId, { timeMs: Number(device.local_time_ms), receivedAt: Date.now() });
+          }
           const row = document.createElement('div');
           row.className = `device-row${device.online ? ' online' : ''}${deviceId === selectedDeviceId ? ' selected' : ''}`;
           row.addEventListener('click', () => {
@@ -895,9 +906,10 @@
             : 'Joined date unknown';
 
           const localTime = document.createElement('span');
-          localTime.className = 'device-seen';
-          localTime.textContent = device.local_time
-            ? `Device time ${device.local_time}`
+          localTime.className = 'device-seen device-local-time';
+          localTime.dataset.deviceId = deviceId;
+          localTime.textContent = device.local_time_ms
+            ? `Device time ${new Date(Number(device.local_time_ms)).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' })}`
             : 'Device time unavailable';
 
           const user = document.createElement('span');

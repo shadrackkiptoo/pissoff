@@ -556,13 +556,19 @@ def save_message(item):
             return cursor.rowcount > 0
 
 
-def save_device(device_id, device_name, last_seen, started_at, joined_at):
+def save_device(device_id, device_name, last_seen, started_at, joined_at, telemetry=None):
+    telemetry = telemetry or {}
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "last_seen": last_seen,
         "started_at": started_at,
         "joined_at": joined_at,
+        "local_time": telemetry.get("local_time", ""),
+        "local_time_ms": telemetry.get("local_time_ms"),
+        "logged_in_user": telemetry.get("logged_in_user", ""),
+        "battery_percent": telemetry.get("battery_percent"),
+        "battery_status": telemetry.get("battery_status", "Unknown"),
     }
     if not DATABASE_URL:
         return
@@ -616,6 +622,7 @@ class DeviceHeartbeat(BaseModel):
     device_name: str = "Unknown device"
     started_at: int
     local_time: str = ""
+    local_time_ms: int | None = None
     logged_in_user: str = ""
     battery_percent: int | None = None
     battery_status: str = "Unknown"
@@ -818,6 +825,13 @@ async def device_heartbeat(
             now,
             payload.started_at,
             joined_at,
+            {
+                "local_time": payload.local_time,
+                "local_time_ms": payload.local_time_ms,
+                "logged_in_user": payload.logged_in_user,
+                "battery_percent": payload.battery_percent,
+                "battery_status": payload.battery_status,
+            },
         )
     except Exception as error:
         print(f"Could not save device heartbeat: {error}")
