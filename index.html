@@ -48,7 +48,7 @@
     }
     .workspace {
       display: grid;
-      grid-template-columns: 210px minmax(0, 1fr) 220px 270px;
+      grid-template-columns: 270px minmax(0, 1fr) 220px;
       flex: 1;
       min-height: 0;
     }
@@ -56,6 +56,28 @@
       padding: 20px 16px;
       border-right: 1px solid var(--border);
       background: rgba(10, 19, 31, 0.58);
+    }
+    .topbar-status {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      margin-left: auto;
+      margin-right: 18px;
+    }
+    .topbar-metric { min-width: 74px; }
+    .topbar-metric-label {
+      display: block;
+      color: var(--muted);
+      font-size: 0.56rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .topbar-metric-value {
+      display: block;
+      margin-top: 3px;
+      color: var(--text);
+      font-size: 0.68rem;
+      white-space: nowrap;
     }
     .sidebar h2 {
       margin: 0 0 18px;
@@ -582,7 +604,7 @@
       to { opacity: 1; transform: translateY(0); }
     }
     @media (max-width: 900px) {
-      .workspace { grid-template-columns: 180px minmax(0, 1fr) 190px 230px; }
+      .workspace { grid-template-columns: 230px minmax(0, 1fr) 190px; }
       .bubble { max-width: 86%; }
     }
     @media (max-width: 720px) {
@@ -590,9 +612,10 @@
       .app { height: calc(100dvh - 16px); min-height: 480px; border-radius: 18px; }
       .topbar { padding: 14px 16px; }
       .topbar-meta { font-size: 0.6rem; }
+      .topbar-status { gap: 10px; margin-right: 10px; }
       .workspace {
         grid-template-columns: 1fr;
-        grid-template-rows: auto auto minmax(0, 1fr) auto;
+        grid-template-rows: auto minmax(0, 1fr) auto;
       }
       .sidebar {
         display: grid;
@@ -634,6 +657,10 @@
       .device-id, .device-seen, .device-state { font-size: 0.62rem; }
     }
     @media (max-width: 420px) {
+      .topbar { flex-wrap: wrap; gap: 8px; }
+      .topbar-status { order: 3; width: 100%; justify-content: space-between; margin: 0; }
+      .topbar-metric { min-width: 0; }
+      .topbar-metric-value { font-size: 0.62rem; }
       .brand { font-size: 0.64rem; letter-spacing: 0.1em; }
       .topbar-meta { gap: 0; }
       .topbar-meta > span:first-child { display: none; }
@@ -711,6 +738,20 @@
   <div class="app">
     <div class="topbar">
       <div class="brand"><span class="dot"></span> Live Key Feed</div>
+      <div class="topbar-status" aria-label="Service status">
+        <div class="topbar-metric">
+          <span class="topbar-metric-label">Started</span>
+          <span class="topbar-metric-value" id="startedAt">Loading...</span>
+        </div>
+        <div class="topbar-metric">
+          <span class="topbar-metric-label">Uptime</span>
+          <span class="topbar-metric-value" id="uptime">Loading...</span>
+        </div>
+        <div class="topbar-metric">
+          <span class="topbar-metric-label">Messages</span>
+          <span class="topbar-metric-value" id="messageCount">0</span>
+        </div>
+      </div>
       <div class="topbar-meta">
         <span>Realtime monitor</span>
         <span class="stream-pill">Live stream</span>
@@ -721,19 +762,17 @@
       </div>
     </div>
     <div class="workspace">
-      <aside class="sidebar" aria-label="Service status">
-        <h2>Service status</h2>
-        <div class="metric">
-          <span class="metric-label">Started</span>
-          <span class="metric-value" id="startedAt">Loading…</span>
+      <aside class="devices-panel" aria-label="Connected devices">
+        <div class="devices-heading">
+          <h2>Devices</h2>
+          <span class="device-count" id="deviceCount">0</span>
         </div>
-        <div class="metric">
-          <span class="metric-label">Current uptime</span>
-          <span class="metric-value" id="uptime">Loading…</span>
+        <div class="device-summary">
+          <span class="online-count" id="onlineCount">0 online</span>
+          <span class="device-refresh" id="deviceUpdated">Checking...</span>
         </div>
-        <div class="metric">
-          <span class="metric-label">Messages stored</span>
-          <span class="metric-value" id="messageCount">0</span>
+        <div class="device-list" id="deviceList">
+          <span class="device-seen">Loading...</span>
         </div>
       </aside>
       <section class="feed-panel">
@@ -766,19 +805,6 @@
         <ul class="open-apps-list" id="openAppsList">
           <li>Select a device to view open apps</li>
         </ul>
-      </aside>
-      <aside class="devices-panel" aria-label="Connected devices">
-        <div class="devices-heading">
-          <h2>Devices</h2>
-          <span class="device-count" id="deviceCount">0</span>
-        </div>
-        <div class="device-summary">
-          <span class="online-count" id="onlineCount">0 online</span>
-          <span class="device-refresh" id="deviceUpdated">Checking...</span>
-        </div>
-        <div class="device-list" id="deviceList">
-          <span class="device-seen">Loading...</span>
-        </div>
       </aside>
     </div>
   </div>
