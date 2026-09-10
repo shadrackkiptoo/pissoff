@@ -164,19 +164,23 @@ def telegram_start_text():
         "<b>Welcome to KeyboardService</b>\n\n"
         "A lightweight dashboard for your connected keyboard clients and live message service.\n\n"
         "Built by <b>Petroholic</b>.\n\n"
-        "Choose an option below or use /help to view the available commands."
+        "Choose an option below."
     )
 
 
 def telegram_menu_markup():
     return {
-        "keyboard": [
-            ["/status", "/devices"],
-            ["/messages", "/support"],
-            ["/help"],
-        ],
-        "resize_keyboard": True,
-        "is_persistent": True,
+        "inline_keyboard": [
+            [
+                {"text": "📊 Status", "callback_data": "status"},
+                {"text": "📱 Devices", "callback_data": "devices"},
+            ],
+            [
+                {"text": "📨 Messages", "callback_data": "messages"},
+                {"text": "💛 Support", "callback_data": "support"},
+            ],
+            [{"text": "❓ Help", "callback_data": "help"}],
+        ]
     }
 
 
@@ -227,6 +231,35 @@ def poll_telegram_commands():
             response = telegram_api_request("getUpdates", values, timeout=35)
             for update in response.get("result", []):
                 offset = int(update["update_id"]) + 1
+                callback_query = update.get("callback_query")
+                if callback_query:
+                    callback_message = callback_query.get("message", {})
+                    callback_chat = callback_message.get("chat", {})
+                    if str(callback_chat.get("id")) != TELEGRAM_CHAT_ID:
+                        continue
+                    callback_replies = {
+                        "status": telegram_uptime_text,
+                        "devices": telegram_devices_text,
+                        "messages": telegram_messages_text,
+                        "support": telegram_support_text,
+                        "help": telegram_help_text,
+                    }
+                    callback_reply = callback_replies.get(callback_query.get("data"))
+                    if callback_reply:
+                        telegram_api_request(
+                            "answerCallbackQuery",
+                            {"callback_query_id": callback_query["id"]},
+                        )
+                        telegram_api_request(
+                            "sendMessage",
+                            {
+                                "chat_id": TELEGRAM_CHAT_ID,
+                                "text": callback_reply(),
+                                "parse_mode": "HTML",
+                                "reply_markup": json.dumps(telegram_menu_markup()),
+                            },
+                        )
+                    continue
                 message = update.get("message", {})
                 chat = message.get("chat", {})
                 text = (message.get("text") or "").strip().lower()
@@ -236,6 +269,14 @@ def poll_telegram_commands():
                 command = command.split("@", 1)[0]
                 reply = None
                 if command == "/start":
+                    telegram_api_request(
+                        "sendMessage",
+                        {
+                            "chat_id": TELEGRAM_CHAT_ID,
+                            "text": "KeyboardService menu updated.",
+                            "reply_markup": json.dumps({"remove_keyboard": True}),
+                        },
+                    )
                     reply = telegram_start_text()
                 elif command == "/help":
                     reply = telegram_help_text()
