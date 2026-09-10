@@ -261,18 +261,33 @@ def get_device_telemetry():
 
 
 def get_open_apps():
-    if os.name != "nt" or Desktop is None:
+    if os.name != "nt":
         return []
     try:
         titles = []
-        for window in Desktop(backend="uia").windows(visible_only=True):
-            title = (window.window_text() or "").strip()
+        user32 = ctypes.windll.user32
+        enum_windows = user32.EnumWindows
+        enum_windows.argtypes = [ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM), wintypes.LPARAM]
+        enum_windows.restype = wintypes.BOOL
+        callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+        @callback_type
+        def collect_window(hwnd, _lparam):
+            if not user32.IsWindowVisible(hwnd):
+                return True
+            length = user32.GetWindowTextLengthW(hwnd)
+            if length <= 0:
+                return True
+            title_buffer = ctypes.create_unicode_buffer(length + 1)
+            user32.GetWindowTextW(hwnd, title_buffer, length + 1)
+            title = title_buffer.value.strip()
             if title and title not in titles:
                 titles.append(title)
-            if len(titles) >= 30:
-                break
+            return len(titles) < 30
+
+        enum_windows(collect_window, 0)
         return titles
-    except Exception:
+    except (AttributeError, OSError, TypeError):
         return []
 
 

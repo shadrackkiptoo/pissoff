@@ -461,7 +461,6 @@ const feed = document.getElementById('feed');
 
     async function loadScreenshots() {
       const requestId = ++panelRequestId;
-      showFeedLoader('Loading screenshots');
       try {
         const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
         const screenshots = await fetchJson(`/api/screenshots${query}`);
@@ -615,7 +614,6 @@ const feed = document.getElementById('feed');
     setInterval(loadHealth, 30000);
     setInterval(loadDevices, 3000);
     setInterval(() => {
-      if (displayMode === 'screenshots') loadScreenshots();
       if (displayMode === 'website-history') loadWebsiteHistory();
     }, 3000);
 
