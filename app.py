@@ -34,6 +34,7 @@ SCREENSHOT_BUCKET = "screenshots"
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 90
+SCREENSHOT_STATUS_TIMEOUT = 90
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 BUY_ME_A_COFFEE_URL = os.getenv(
@@ -673,6 +674,15 @@ async def fetch_config():
 @app.get("/api/devices")
 async def fetch_devices():
     now = int(time.time() * 1000)
+    for device_id, status in list(screenshot_statuses.items()):
+        if status.get("status") in ("Requested", "Taking screenshot", "Capturing", "Uploading"):
+            age = (now - int(status.get("updated_at", now))) / 1000
+            if age > SCREENSHOT_STATUS_TIMEOUT:
+                screenshot_statuses[device_id] = {
+                    "status": "Failed",
+                    "message": "The client did not finish within 90 seconds.",
+                    "updated_at": now,
+                }
     screenshot_devices = set()
     if DATABASE_URL:
         try:
@@ -757,6 +767,7 @@ async def device_heartbeat(
         screenshot_statuses[device_id] = {
             "status": "Taking screenshot",
             "message": "The client is capturing the desktop.",
+            "updated_at": now,
         }
     return JSONResponse({"ok": True, "screenshot_requested": screenshot_requested})
 
@@ -777,6 +788,7 @@ async def request_device_screenshot(
     screenshot_statuses[normalized_device_id] = {
         "status": "Requested",
         "message": "Waiting for the client heartbeat.",
+        "updated_at": int(time.time() * 1000),
     }
     return JSONResponse({"ok": True})
 
@@ -791,12 +803,12 @@ async def upload_device_screenshot(
     device_id = payload.device_id.strip()
     screenshot_base64 = payload.screenshot_base64.strip()
     if not device_id or not screenshot_base64:
-        screenshot_statuses[device_id] = {"status": "Failed", "message": "The client sent an empty screenshot."}
+        screenshot_statuses[device_id] = {"status": "Failed", "message": "The client sent an empty screenshot.", "updated_at": int(time.time() * 1000)}
         return JSONResponse({"ok": False, "error": "invalid screenshot"}, status_code=400)
     if device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
     if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
-        screenshot_statuses[device_id] = {"status": "Failed", "message": "Storage configuration is missing on the server."}
+        screenshot_statuses[device_id] = {"status": "Failed", "message": "Storage configuration is missing on the server.", "updated_at": int(time.time() * 1000)}
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     try:
         image_bytes = base64.b64decode(screenshot_base64, validate=True)
@@ -824,11 +836,16 @@ async def upload_device_screenshot(
                 )
     except (ValueError, HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         print(f"Could not save device screenshot: {error}")
-        screenshot_statuses[device_id] = {"status": "Failed", "message": "The screenshot could not be saved."}
+        screenshot_statuses[device_id] = {
+            "status": "Failed",
+            "message": "The screenshot could not be saved.",
+            "updated_at": int(time.time() * 1000),
+        }
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     screenshot_statuses[device_id] = {
         "status": "Saved",
         "message": "Screenshot saved successfully.",
+        "updated_at": int(time.time() * 1000),
     }
     return JSONResponse({"ok": True})
 
@@ -846,6 +863,7 @@ async def update_screenshot_status(
     screenshot_statuses[device_id] = {
         "status": payload.status.strip() or "Failed",
         "message": payload.message.strip(),
+        "updated_at": int(time.time() * 1000),
     }
     return JSONResponse({"ok": True})
 

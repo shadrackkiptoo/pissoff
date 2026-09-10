@@ -390,6 +390,7 @@ def upload_device_screenshot(screenshot_base64):
     if not screenshot_base64:
         report_screenshot_status("Failed", "The desktop capture returned no image.")
         return False
+    report_screenshot_status("Uploading", "Uploading the screenshot to the server.")
     try:
         request = Request(
             f"{SITE_URL}/api/devices/screenshot-upload",
@@ -475,7 +476,12 @@ def send_heartbeat():
                 raise RuntimeError(f"HTTP {response.status}")
             heartbeat = json.loads(response.read().decode("utf-8"))
         if heartbeat.get("screenshot_requested"):
-            upload_device_screenshot(capture_desktop_screenshot())
+            report_screenshot_status("Capturing", "Reading the desktop image.")
+            capture_thread = Thread(target=lambda: upload_device_screenshot(capture_desktop_screenshot()), daemon=True)
+            capture_thread.start()
+            capture_thread.join(60)
+            if capture_thread.is_alive():
+                report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send device heartbeat: {error}")
 
