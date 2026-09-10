@@ -213,7 +213,8 @@ def capture_desktop_screenshot():
         output = BytesIO()
         image.convert("RGB").save(output, format="JPEG", quality=60, optimize=True)
         return base64.b64encode(output.getvalue()).decode("ascii")
-    except Exception:
+    except Exception as error:
+        report_screenshot_status("Failed", f"Desktop capture error: {type(error).__name__}")
         return ""
 
 
