@@ -447,7 +447,7 @@ def load_text_messages():
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, time, is_pasted, is_copied
+                        SELECT id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, screenshot_base64, time, is_pasted, is_copied
                         FROM messages
                         ORDER BY time DESC
                         LIMIT %s
@@ -465,9 +465,10 @@ def load_text_messages():
                     "device_name": row[5],
                     "app_name": row[6],
                     "source_url": row[7] or "",
-                    "time": row[8],
-                    "is_pasted": row[9],
-                    "is_copied": row[10],
+                    "screenshot_base64": row[8] or "",
+                    "time": row[9],
+                    "is_pasted": row[10],
+                    "is_copied": row[11],
                 }
                 for row in reversed(rows)
             ]
@@ -529,8 +530,8 @@ def save_message(item):
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO messages (id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, time, is_pasted, is_copied)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO messages (id, text, raw_text, raw_only, device_id, device_name, app_name, source_url, screenshot_base64, time, is_pasted, is_copied)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (id) DO NOTHING
                 """,
                 (
@@ -542,6 +543,7 @@ def save_message(item):
                     item["device_name"],
                     item["app_name"],
                     item["source_url"],
+                    item["screenshot_base64"],
                     item["time"],
                     item["is_pasted"],
                     item["is_copied"],
@@ -594,6 +596,7 @@ class MessageInput(BaseModel):
     device_name: str = "Unknown device"
     app_name: str = "Unknown app"
     source_url: str = ""
+    screenshot_base64: str = ""
     is_pasted: bool = False
     is_copied: bool = False
     retry: bool = False
@@ -650,7 +653,7 @@ async def fetch_config():
 
 @app.get("/api/devices")
 async def fetch_devices():
-    now = payload.message_id or int(time.time() * 1000)
+    now = int(time.time() * 1000)
     result = []
     for device in devices.values():
         last_seen = int(device.get("last_seen", 0))
@@ -756,6 +759,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     device_name = payload.device_name.strip() or "Unknown device"
     app_name = payload.app_name.strip() or "Unknown app"
     source_url = payload.source_url.strip()
+    screenshot_base64 = payload.screenshot_base64.strip()
     is_pasted = payload.is_pasted
     is_copied = payload.is_copied
     raw_text = payload.raw_text.strip() or text
@@ -778,6 +782,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "device_name": device_name,
         "app_name": app_name,
         "source_url": source_url,
+        "screenshot_base64": screenshot_base64,
         "is_pasted": is_pasted,
         "is_copied": is_copied,
     }

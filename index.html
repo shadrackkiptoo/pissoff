@@ -364,6 +364,17 @@
       margin-top: 7px;
       max-width: 100%;
     }
+    .source-screenshot {
+      display: block;
+      width: min(100%, 560px);
+      max-height: 360px;
+      margin-top: 10px;
+      border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 8px;
+      object-fit: contain;
+      background: rgba(0,0,0,0.2);
+      cursor: zoom-in;
+    }
     .source-link {
       min-width: 0;
       color: #d6fff9;
@@ -518,6 +529,67 @@
       .device-list { grid-template-columns: 1fr; }
       .raw-event { grid-template-columns: 1fr; gap: 3px; }
     }
+
+    /* Focused console treatment: automatic updates stay quiet in the UI. */
+    :root {
+      --bg-1: #111312;
+      --bg-2: #24302a;
+      --panel: rgba(18, 22, 20, 0.96);
+      --bubble: linear-gradient(135deg, #315c4a, #497462);
+      --pasted-bubble: linear-gradient(135deg, #a34f2e, #bd7041);
+      --copied-bubble: linear-gradient(135deg, #7a5a2d, #a6803b);
+      --text: #f3f1e9;
+      --muted: #a8b2aa;
+      --accent: #d9f06d;
+      --border: rgba(217, 240, 109, 0.16);
+      --shadow: rgba(0, 0, 0, 0.52);
+    }
+    html, body {
+      background: radial-gradient(circle at 12% 0%, rgba(217, 240, 109, 0.12), transparent 24%),
+        radial-gradient(circle at 100% 86%, rgba(189, 112, 65, 0.13), transparent 26%),
+        linear-gradient(135deg, var(--bg-1), var(--bg-2));
+    }
+    .app { border-radius: 12px; border-color: rgba(217, 240, 109, 0.22); }
+    .topbar { padding: 19px 22px; background: rgba(13, 16, 14, 0.96); }
+    .brand { color: var(--text); letter-spacing: 0.08em; }
+    .brand::after { color: var(--accent); content: " / OPERATIONS"; font-weight: 400; }
+    .dot { background: var(--accent); box-shadow: 0 0 14px rgba(217, 240, 109, 0.75); }
+    .stream-pill, .device-refresh, .status { display: none; }
+    [hidden] { display: none !important; }
+    .support-link { border-radius: 6px; color: #151812; background: var(--accent); border-color: var(--accent); }
+    .support-link:hover { background: #ecfa9d; }
+    .workspace { grid-template-columns: 230px minmax(0, 1fr) 290px; }
+    .sidebar, .devices-panel { background: rgba(16, 20, 18, 0.68); }
+    .sidebar h2, .devices-heading h2 { color: var(--accent); letter-spacing: 0.16em; }
+    .metric { padding: 15px 0; }
+    .metric-value { font-size: 0.9rem; }
+    .feed-toolbar { padding: 15px 22px 0; }
+    #scopeLabel { color: var(--text); font-size: 0.78rem; font-weight: 700; }
+    .message-search {
+      width: min(260px, 42%);
+      min-height: 32px;
+      padding: 7px 10px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      background: rgba(8, 11, 9, 0.72);
+      font: inherit;
+      font-size: 0.72rem;
+      outline: none;
+    }
+    .message-search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217, 240, 109, 0.1); }
+    .view-switch { border-radius: 6px; }
+    .view-switch button.active { color: #151812; background: var(--accent); }
+    .feed { padding: 20px 22px 28px; }
+    .bubble { border-radius: 10px 10px 10px 3px; box-shadow: 0 12px 24px rgba(0,0,0,0.24); }
+    .device-row { padding: 13px 10px; border-radius: 7px; border-top: 0; }
+    .device-row:hover, .device-row.selected { background: rgba(217, 240, 109, 0.09); }
+    .device-state.online { color: var(--accent); }
+    .device-state.online::before { background: var(--accent); box-shadow: 0 0 10px rgba(217, 240, 109, 0.7); }
+    @media (max-width: 720px) {
+      .workspace { grid-template-columns: 1fr; }
+      .message-search { width: 42%; }
+    }
   </style>
 </head>
 <body>
@@ -553,6 +625,7 @@
         <div class="status" id="status">Waiting for live stream…</div>
         <div class="feed-toolbar">
           <span id="scopeLabel">All devices</span>
+          <input class="message-search" id="messageSearch" type="search" placeholder="Search messages" aria-label="Search messages" />
           <div class="view-switch" aria-label="Message view">
             <button type="button" class="active" data-mode="filtered">Filtered</button>
             <button type="button" data-mode="raw">Raw</button>
@@ -597,6 +670,7 @@
     const supportLinkEl = document.getElementById('supportLink');
     const paymentListEl = document.getElementById('paymentList');
     const scopeLabelEl = document.getElementById('scopeLabel');
+    const messageSearchEl = document.getElementById('messageSearch');
     const rawHistoryControlsEl = document.getElementById('rawHistoryControls');
     const rawDeviceFilterEl = document.getElementById('rawDeviceFilter');
     const rawSessionFilterEl = document.getElementById('rawSessionFilter');
@@ -848,16 +922,31 @@
         bubble.appendChild(sourceLinkRow);
       }
 
+      if (msg.screenshot_base64) {
+        const screenshot = document.createElement('img');
+        screenshot.className = 'source-screenshot';
+        screenshot.src = `data:image/jpeg;base64,${msg.screenshot_base64}`;
+        screenshot.alt = 'Screenshot captured when the message was entered';
+        screenshot.loading = 'lazy';
+        bubble.appendChild(screenshot);
+      }
+
       wrap.appendChild(bubble);
       return wrap;
     }
 
     function visibleMessages() {
+      const search = messageSearchEl.value.trim().toLowerCase();
+      const matchesSearch = (msg) => {
+        if (!search) return true;
+        return [msg.text, msg.raw_text, msg.device_name, msg.device_id, msg.app_name]
+          .some((value) => String(value || '').toLowerCase().includes(search));
+      };
       if (displayMode === 'raw') {
-        const rawMessages = currentMessages.filter((msg) => msg.raw_only);
-        return rawMessages.length ? rawMessages : currentMessages;
+        const rawMessages = currentMessages.filter((msg) => msg.raw_only && matchesSearch(msg));
+        return rawMessages.length ? rawMessages : currentMessages.filter(matchesSearch);
       }
-      return currentMessages.filter((msg) => !msg.raw_only);
+      return currentMessages.filter((msg) => !msg.raw_only && matchesSearch(msg));
     }
 
     function updateMessageCount() {
@@ -993,6 +1082,14 @@
     rawHistoryControlsEl.addEventListener('submit', (event) => {
       event.preventDefault();
       loadRawHistory();
+    });
+
+    messageSearchEl.addEventListener('input', queueFeedRender);
+    window.addEventListener('keydown', (event) => {
+      if (event.key === '/' && document.activeElement !== messageSearchEl) {
+        event.preventDefault();
+        messageSearchEl.focus();
+      }
     });
 
     scopeLabelEl.textContent = selectedDeviceId ? `Device ${selectedDeviceId}` : 'All devices';

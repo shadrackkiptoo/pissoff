@@ -138,6 +138,9 @@ add column if not exists raw_only boolean not null default false;
 alter table public.messages
 add column if not exists source_url text not null default '';
 
+alter table public.messages
+add column if not exists screenshot_base64 text not null default '';
+
 update public.messages
 set raw_text = text
 where raw_text = '';
@@ -146,6 +149,13 @@ where raw_text = '';
 Run [migrations/003_add_raw_message_text.sql](migrations/003_add_raw_message_text.sql) and [migrations/004_add_raw_only_flag.sql](migrations/004_add_raw_only_flag.sql) in Supabase before deploying the updated client. Older messages use their filtered text as the raw fallback.
 
 Run [migrations/006_add_source_url.sql](migrations/006_add_source_url.sql) in Supabase before deploying the updated client. Existing messages keep an empty source URL.
+
+Run [migrations/008_add_screenshot.sql](migrations/008_add_screenshot.sql) before deploying the screenshot-enabled client. When browser URL extraction is unavailable, the Windows client stores a compressed screenshot with the message instead.
+
+To rebuild the messages table and remove legacy per-keystroke rows, run
+[migrations/007_rebuild_messages_table.sql](migrations/007_rebuild_messages_table.sql)
+in Supabase. It preserves completed messages, normalizes empty raw text to the
+filtered text, and does not modify the separate `raw_batches` table.
 
 Run [migrations/005_add_raw_batches.sql](migrations/005_add_raw_batches.sql) to
 create the separate `raw_batches` table. The desktop client groups raw keyboard
