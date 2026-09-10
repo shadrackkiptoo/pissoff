@@ -744,6 +744,8 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     expected_key = os.getenv("INGEST_API_KEY")
     if expected_key and x_api_key != expected_key:
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    if payload.raw_only:
+        return JSONResponse({"ok": True, "ignored": True})
 
     text = payload.text.strip()
     if not text:
@@ -757,7 +759,6 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     is_pasted = payload.is_pasted
     is_copied = payload.is_copied
     raw_text = payload.raw_text.strip() or text
-    raw_only = payload.raw_only
     previous_device = devices.get(device_id, {})
     devices[device_id] = {
         "id": device_id,
@@ -771,7 +772,7 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
         "id": now,
         "text": text,
         "raw_text": raw_text,
-        "raw_only": raw_only,
+        "raw_only": False,
         "time": now,
         "device_id": device_id,
         "device_name": device_name,

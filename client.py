@@ -373,7 +373,7 @@ def post_message(payload, quiet=False):
         return False
 
 
-def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False, raw_only=False):
+def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False):
     global last_message_id
     last_message_id = max(last_message_id + 1, int(time.time() * 1000))
     payload = {
@@ -386,7 +386,6 @@ def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, 
         "source_url": source_url,
         "is_pasted": is_pasted,
         "is_copied": is_copied,
-        "raw_only": raw_only,
     }
     remember_pending_message(payload)
     if post_message(payload):
@@ -492,8 +491,8 @@ def message_sender():
     last_retry_at = 0
     while True:
         try:
-            text, app_name, source_url, raw_text, is_pasted, is_copied, raw_only = message_queue.get(timeout=5)
-            send_message(text, app_name, source_url, raw_text, is_pasted, is_copied, raw_only)
+            text, app_name, source_url, raw_text, is_pasted, is_copied = message_queue.get(timeout=5)
+            send_message(text, app_name, source_url, raw_text, is_pasted, is_copied)
             message_queue.task_done()
         except Exception:
             pass
@@ -530,7 +529,7 @@ def queue_copied_clipboard(target):
     time.sleep(0.1)
     copied_text = get_clipboard_text().strip()
     if copied_text:
-        message_queue.put((copied_text, target, get_browser_url(target), copied_text, False, True, False))
+        message_queue.put((copied_text, target, get_browser_url(target), copied_text, False, True))
 
 
 def flush_message_buffer():
@@ -544,7 +543,7 @@ def flush_message_buffer():
     message_started_ms = None
     if text:
         target = active_target or get_active_app()
-        message_queue.put((text, target, get_browser_url(target), raw_text, False, False, False))
+        message_queue.put((text, target, get_browser_url(target), raw_text, False, False))
     active_target = None
     active_target_key = None
 
@@ -581,7 +580,7 @@ def on_press(key):
             if pasted_text:
                 flush_message_buffer()
                 target, target_key = get_active_target()
-                message_queue.put((pasted_text, target, get_browser_url(target), pasted_text, True, False, False))
+                message_queue.put((pasted_text, target, get_browser_url(target), pasted_text, True, False))
             return
 
         symbol = normalize_key(key)
