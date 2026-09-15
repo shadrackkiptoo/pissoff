@@ -1003,6 +1003,27 @@ async def request_device_screenshot(
     return JSONResponse({"ok": True})
 
 
+@app.get("/api/devices/{device_id}/screenshot-request")
+async def poll_device_screenshot_request(
+    device_id: str, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    normalized_device_id = device_id.strip()
+    if not normalized_device_id or normalized_device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    now = int(time.time() * 1000)
+    screenshot_requested = screenshot_requests.pop(normalized_device_id, None) is not None
+    if screenshot_requested:
+        screenshot_statuses[normalized_device_id] = {
+            "status": "Taking screenshot",
+            "message": "The client is capturing the desktop.",
+            "updated_at": now,
+        }
+    return JSONResponse({"ok": True, "screenshot_requested": screenshot_requested})
+
+
 @app.post("/api/devices/screenshot-upload")
 async def upload_device_screenshot(
     payload: ScreenshotInput, x_api_key: str | None = Header(default=None)

