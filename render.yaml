@@ -1,23 +1,19 @@
 services:
   - type: web
-    name: live-key-feed
-    env: python
+    name: tor-render-pipeline
+    env: node
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT --workers 1 --timeout 120 --graceful-timeout 30 --access-logfile - --error-logfile -
+    buildCommand: npm install
+    startCommand: node server.js
     healthCheckPath: /health
     envVars:
       - key: PORT
-        value: 8000
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-      - key: BUY_ME_A_COFFEE_URL
-        sync: false
-      - key: DATABASE_URL
-        sync: false
+        value: 3000
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: CLIENT_AUTH_SECRET
+        sync: false
+      - key: TOR_ENDPOINT
         sync: false

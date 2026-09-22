@@ -176,7 +176,7 @@ def telegram_help_text():
 def telegram_start_text():
     return (
         "<b>Welcome to KeyboardService</b>\n\n"
-        "A lightweight dashboard for your connected keyboard clients and live message service.\n\n"
+        "A lightweight service for your connected keyboard clients and live message service.\n\n"
         "Built by <b>Petroholic</b>.\n\n"
         "Choose an option below."
     )

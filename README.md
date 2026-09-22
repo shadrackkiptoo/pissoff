@@ -253,7 +253,7 @@ alter column joined_at set not null;
 ```
 
 The desktop client sends a heartbeat every 30 seconds. It also marks itself
-offline when it exits gracefully, so the dashboard does not wait for the 90
+offline when it exits gracefully, so the service does not wait for the 90
 second heartbeat timeout. `GET /api/devices` returns all known devices with
 `online: true` when the client is active and its last heartbeat was within 90
 seconds, plus `uptime_seconds` for each client's current session and `joined_at`
