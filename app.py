@@ -1773,6 +1773,8 @@ def save_screenshot(device_id, screenshot_base64):
         with urllib.request.urlopen(storage_request, timeout=30) as response:
             if response.status >= 400:
                 raise RuntimeError(f"Storage HTTP {response.status}")
+            upload_response = response.read().decode("utf-8", errors="replace")[:500]
+            print(f"Screenshot upload accepted: path={storage_path} response={upload_response}")
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:240]
         raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
@@ -1790,7 +1792,7 @@ def save_screenshot(device_id, screenshot_base64):
             response.read(1)
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:240]
-        raise RuntimeError(f"Storage verification HTTP {error.code}: {detail}") from error
+        raise RuntimeError(f"Storage verification HTTP {error.code} path={storage_path}: {detail}") from error
     with psycopg.connect(DATABASE_URL) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
