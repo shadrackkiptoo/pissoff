@@ -94,6 +94,27 @@ def send_telegram_message(text, parse_mode=None):
         print(f"Could not send Telegram uptime notification: {error}")
 
 
+def send_telegram_log(message):
+    if not telegram_configured():
+        return
+
+    text = str(message).strip()
+    if not text:
+        return
+    escaped = html.escape(text)
+    try:
+        telegram_api_request(
+            "sendMessage",
+            {
+                "chat_id": TELEGRAM_CHAT_ID,
+                "text": f"<b>📋 Log</b>\n<code>{escaped[:4000]}</code>",
+                "parse_mode": "HTML",
+            },
+        )
+    except Exception:
+        pass
+
+
 def format_uptime(seconds):
     days, remainder = divmod(max(0, int(seconds)), 86400)
     hours, remainder = divmod(remainder, 3600)
@@ -121,11 +142,11 @@ def telegram_uptime_text():
 
 def telegram_devices_text():
     if not devices:
-        return "<b>Connected devices</b>\n\nNo devices have checked in yet."
+        return "<b>📱 Connected devices</b>\n\nNo devices have checked in yet."
 
     now = int(time.time() * 1000)
     online_count = 0
-    lines = [f"<b>Connected devices</b> ({len(devices)})", ""]
+    lines = [f"<b>📱 Connected devices</b> • {len(devices)} total", ""]
     for device in sorted(devices.values(), key=lambda item: str(item.get("name", ""))):
         device_key = str(device.get("id", "unknown"))
         last_seen = int(device.get("last_seen", 0))
@@ -138,7 +159,7 @@ def telegram_devices_text():
         age = format_uptime(max(0, (now - last_seen) // 1000))
         name = html.escape(str(device.get("name", "Unknown device")))
         device_id = html.escape(str(device.get("id", "unknown")))
-        lines.append(f"{status} <b>{name}</b>\n   ID: <code>{device_id}</code>\n   Last seen: {age} ago")
+        lines.append(f"• {status} <b>{name}</b>\n  ID: <code>{device_id}</code>\n  Last seen: {age} ago")
     lines.insert(1, f"🟢 {online_count} online  •  🔴 {len(devices) - online_count} offline")
     return "\n".join(lines)
 
@@ -148,36 +169,38 @@ def telegram_messages_text():
     for item in messages:
         device_name = str(item.get("device_name", "Unknown device"))
         counts[device_name] = counts.get(device_name, 0) + 1
-    lines = [f"<b>Message summary</b>\n📨 Stored messages: <b>{len(messages)}</b>"]
+    lines = [f"<b>📨 Message summary</b>", f"Total stored: <b>{len(messages)}</b>"]
     if counts:
-        lines.append("\n<b>By device</b>")
+        lines.append("")
+        lines.append("<b>By device</b>")
         lines.extend(
-            f"• {html.escape(name)}: {count}" for name, count in sorted(counts.items())
+            f"• {html.escape(name)}: <b>{count}</b>" for name, count in sorted(counts.items())
         )
     else:
-        lines.append("\nNo messages stored.")
+        lines.append("")
+        lines.append("No messages stored yet.")
     return "\n".join(lines)
 
 
 def telegram_help_text():
     return (
-        "<b>KeyboardService Bot</b>\n\n"
+        "<b>🤖 KeyboardService Bot</b>\n\n"
         "Monitor your service and connected devices from Telegram.\n\n"
         "<b>Commands</b>\n"
-        "🏠 /start - Welcome message\n"
-        "📊 /status - Service health and uptime\n"
-        "📱 /devices - Connected device status\n"
-        "📨 /messages - Message totals by device\n"
-        "💛 /support - Payment and support options\n"
-        "❓ /help - Show this help"
+        "🏠 /start — welcome screen\n"
+        "📊 /status — health and uptime\n"
+        "📱 /devices — device status\n"
+        "📨 /messages — stored message totals\n"
+        "💛 /support — support options\n"
+        "❓ /help — command list"
     )
 
 
 def telegram_start_text():
     return (
-        "<b>Welcome to KeyboardService</b>\n\n"
-        "A lightweight service for your connected keyboard clients and live message service.\n\n"
-        "Built by <b>Petroholic</b>.\n\n"
+        "<b>👋 Welcome to KeyboardService</b>\n\n"
+        "Your connected keyboard clients and live message feed are ready.\n\n"
+        "Built by <b>Petroholic</b>\n\n"
         "Choose an option below."
     )
 
@@ -200,13 +223,13 @@ def telegram_menu_markup():
 
 def telegram_support_text():
     if SUPPORT_METHODS:
-        lines = ["<b>Support KeyboardService</b>", ""]
+        lines = ["<b>💛 Support KeyboardService</b>", ""]
         for method in SUPPORT_METHODS:
             name = html.escape(method["name"])
             value = html.escape(method["value"])
             lines.append(f"<b>{name}</b>\n<code>{value}</code>")
         return "\n\n".join(lines)
-    return f"<b>Support KeyboardService</b>\n{html.escape(BUY_ME_A_COFFEE_URL)}"
+    return f"<b>💛 Support KeyboardService</b>\n{html.escape(BUY_ME_A_COFFEE_URL)}"
 
 
 def configure_telegram_menu():
@@ -330,9 +353,10 @@ def poll_telegram_commands():
 
 
 def notify_device_status(device_id, device_name, online):
-    status = "online" if online else "offline"
+    status = "🟢 online" if online else "🔴 offline"
     send_telegram_message(
-        f"Device {status}: {device_name} ({device_id})"
+        f"<b>Device status</b>\n{status} • <b>{html.escape(device_name)}</b>\nID: <code>{html.escape(device_id)}</code>",
+        parse_mode="HTML",
     )
 
 

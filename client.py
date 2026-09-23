@@ -90,7 +90,11 @@ def send_telegram_log(message):
     if not text:
         return
     try:
-        payload = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": text[:4000]}).encode("utf-8")
+        payload = json.dumps({
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": f"<b>📋 Log</b>\n<code>{text[:4000]}</code>",
+            "parse_mode": "HTML",
+        }).encode("utf-8")
         request = Request(
             f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
             data=payload,
