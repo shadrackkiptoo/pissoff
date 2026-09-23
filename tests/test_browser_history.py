@@ -53,6 +53,12 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertEqual(app.devices["dev-version-test"]["client_version"], "1.2.3")
         app.devices.pop("dev-version-test", None)
 
+    def test_running_from_local_project_detects_dev_build(self):
+        project_root = client.os.path.abspath(client.os.getcwd())
+        project_markers = ["client.py", "KeyboardService.spec", "requirements.txt"]
+        self.assertTrue(all(client.os.path.exists(client.os.path.join(project_root, marker)) for marker in project_markers))
+        self.assertTrue(client.running_from_local_project() or not getattr(client.sys, "frozen", False))
+
 
 if __name__ == "__main__":
     unittest.main()

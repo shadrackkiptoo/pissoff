@@ -1117,8 +1117,30 @@ def register_startup_launch():
         print(f"Could not register automatic startup: {error}")
 
 
+def running_from_local_project():
+    if not getattr(sys, "frozen", False):
+        return False
+
+    project_root = os.path.abspath(os.getcwd())
+    marker_files = ["client.py", "KeyboardService.spec", "requirements.txt"]
+    if not all(os.path.exists(os.path.join(project_root, marker)) for marker in marker_files):
+        return False
+
+    exe_path = os.path.abspath(sys.executable)
+    return exe_path.lower().startswith(project_root.lower())
+
+
 def install_and_relaunch():
     if os.name != "nt" or not getattr(sys, "frozen", False):
+        return False
+
+    if running_from_local_project():
+        stale_installed = os.path.abspath(INSTALL_PATH)
+        if os.path.exists(stale_installed):
+            try:
+                os.remove(stale_installed)
+            except OSError:
+                pass
         return False
 
     current_path = os.path.normcase(os.path.abspath(sys.executable))
