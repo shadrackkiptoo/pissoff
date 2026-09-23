@@ -1482,7 +1482,10 @@ async def fetch_screenshot_image(screenshot_id: int):
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
         return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
     except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
-        print(f"Could not load screenshot image: {error}")
+        detail = ""
+        if isinstance(error, HTTPError):
+            detail = error.read().decode("utf-8", errors="replace")[:240]
+        print(f"Could not load screenshot image: {error}{f' - {detail}' if detail else ''}")
         return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
 
 
@@ -1496,8 +1499,9 @@ def read_screenshot_image(screenshot_id):
             row = cursor.fetchone()
     if not row:
         return None
+    storage_path = urllib.parse.quote(str(row[0]).lstrip("/"), safe="/")
     storage_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{row[0]}",
+        f"{SUPABASE_URL}/storage/v1/object/authenticated/{SCREENSHOT_BUCKET}/{storage_path}",
         headers={
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
             "apikey": SUPABASE_SERVICE_ROLE_KEY,
@@ -1772,27 +1776,35 @@ async def fetch_latest_device_screenshot(device_id: str):
     if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     try:
-        with psycopg.connect(DATABASE_URL) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT storage_path FROM screenshots WHERE device_id = %s ORDER BY captured_at DESC LIMIT 1",
-                    (device_id.strip(),),
-                )
-                row = cursor.fetchone()
-        if not row:
+        image_bytes = await asyncio.to_thread(read_latest_screenshot_image, device_id.strip())
+        if image_bytes is None:
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
-        storage_request = urllib.request.Request(
-            f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{row[0]}",
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                "apikey": SUPABASE_SERVICE_ROLE_KEY,
-            },
-        )
-        with urllib.request.urlopen(storage_request, timeout=30) as response:
-            return Response(response.read(), media_type="image/jpeg")
+        return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
     except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
         print(f"Could not load device screenshot: {error}")
         return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
+
+
+def read_latest_screenshot_image(device_id):
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT storage_path FROM screenshots WHERE device_id = %s ORDER BY captured_at DESC LIMIT 1",
+                (device_id,),
+            )
+            row = cursor.fetchone()
+    if not row:
+        return None
+    storage_path = urllib.parse.quote(str(row[0]).lstrip("/"), safe="/")
+    storage_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/authenticated/{SCREENSHOT_BUCKET}/{storage_path}",
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        },
+    )
+    with urllib.request.urlopen(storage_request, timeout=30) as response:
+        return response.read()
 
 
 @app.post("/api/devices/offline")
