@@ -679,7 +679,10 @@ def upload_device_screenshot(screenshot_base64):
         return True
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not upload device screenshot: {error}")
-        if isinstance(error, URLError):
+        if isinstance(error, HTTPError):
+            detail = error.read().decode("utf-8", errors="replace")[:240]
+            report_screenshot_status("Failed", f"Upload rejected ({error.code}): {detail}")
+        elif isinstance(error, URLError):
             report_screenshot_status("Failed", f"Upload network error: {error.reason}")
         elif isinstance(error, TimeoutError):
             report_screenshot_status("Failed", "Upload timed out.")
@@ -720,9 +723,13 @@ def trigger_screenshot_capture():
 
 def poll_screenshot_request():
     try:
+        headers = {"Content-Type": "application/json"}
+        api_key = os.getenv("INGEST_API_KEY", "").strip()
+        if api_key:
+            headers["x-api-key"] = api_key
         request = Request(
             f"{SITE_URL}/api/devices/{device_id}/screenshot-request",
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="GET",
         )
         with urlopen(request, timeout=10) as response:
@@ -733,7 +740,11 @@ def poll_screenshot_request():
         if data.get("screenshot_requested"):
             trigger_screenshot_capture()
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
-        print(f"Could not poll screenshot request: {error}")
+        if isinstance(error, HTTPError):
+            detail = error.read().decode("utf-8", errors="replace")[:240]
+            print(f"Could not poll screenshot request: HTTP {error.code}: {detail}")
+        else:
+            print(f"Could not poll screenshot request: {error}")
 
 
 def screenshot_request_poller():
