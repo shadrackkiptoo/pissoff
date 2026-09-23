@@ -28,6 +28,7 @@ const feed = document.getElementById('feed');
     const controlsPanelEl = document.getElementById('controlsPanel');
     const controlsDeviceEl = document.getElementById('controlsDevice');
     const captureScreenshotButtonEl = document.getElementById('captureScreenshotButton');
+    const controlsScreenshotProgressEl = document.getElementById('controlsScreenshotProgress');
     const controlsScreenshotStatusEl = document.getElementById('controlsScreenshotStatus');
     const controlsScreenshotPreviewEl = document.getElementById('controlsScreenshotPreview');
     const controlsScreenshotPlaceholderEl = document.getElementById('controlsScreenshotPlaceholder');
@@ -273,12 +274,42 @@ const feed = document.getElementById('feed');
       }
     }
 
+    function updateScreenshotProgress(status) {
+      const stages = ['Queued', 'Capturing', 'Uploading', 'Ready'];
+      const normalized = String(status || '').trim();
+      const stageOrder = {
+        Requested: 0,
+        Queued: 0,
+        Capturing: 1,
+        'Taking screenshot': 1,
+        Uploading: 2,
+        Failed: -1,
+        Ready: 3,
+      };
+      const activeIndex = stageOrder[normalized] ?? (normalized.includes('capture') ? 1 : normalized.includes('upload') ? 2 : 0);
+      controlsScreenshotProgressEl.querySelectorAll('.progress-step').forEach((step, index) => {
+        const stageName = step.dataset.stage;
+        const isActive = index === activeIndex;
+        const isComplete = stageOrder[stageName] !== undefined && (stageOrder[stageName] < activeIndex || (normalized === 'Ready' && stageName === 'Ready'));
+        step.classList.toggle('active', isActive);
+        step.classList.toggle('done', isComplete);
+      });
+      if (normalized === 'Failed') {
+        controlsScreenshotProgressEl.querySelectorAll('.progress-step').forEach((step) => {
+          step.classList.remove('active', 'done');
+        });
+      }
+    }
+
     function updateSelectedDeviceScreenshot() {
       const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
       const defaultStatus = 'Ready to capture';
       if (!selectedDeviceId || !selectedDevice) {
         controlsScreenshotStatusEl.textContent = 'Select a device to preview screenshots.';
         controlsScreenshotStatusEl.className = 'controls-screenshot-status';
+        controlsScreenshotProgressEl.querySelectorAll('.progress-step').forEach((step) => {
+          step.classList.remove('active', 'done');
+        });
         controlsScreenshotPreviewEl.hidden = true;
         controlsScreenshotPreviewEl.removeAttribute('src');
         controlsScreenshotPlaceholderEl.hidden = false;
@@ -290,6 +321,7 @@ const feed = document.getElementById('feed');
       const isBusy = ['Requested', 'Taking screenshot'].includes(status);
       controlsScreenshotStatusEl.textContent = message;
       controlsScreenshotStatusEl.className = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
+      updateScreenshotProgress(status);
       captureScreenshotButtonEl.disabled = !selectedDevice.online || isBusy;
       if (selectedDevice.screenshot_url) {
         controlsScreenshotPreviewEl.src = `${selectedDevice.screenshot_url}?t=${Date.now()}`;

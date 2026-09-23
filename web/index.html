@@ -96,10 +96,16 @@
             <a class="control-button" href="/logout">Log out dashboard</a>
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
           </div>
-          <div class="controls-screenshot" id="controlsScreenshot">
+          <div class="controls-screenshot" id="controlsScreenshot" aria-live="polite">
             <div class="controls-screenshot-header">
               <span class="controls-kicker">Device preview</span>
               <button class="control-button control-button-primary" id="captureScreenshotButton" type="button">Capture screenshot</button>
+            </div>
+            <div class="controls-screenshot-progress" id="controlsScreenshotProgress" aria-label="Screenshot progress">
+              <span class="progress-step" data-stage="Queued">Queued</span>
+              <span class="progress-step" data-stage="Capturing">Capturing</span>
+              <span class="progress-step" data-stage="Uploading">Uploading</span>
+              <span class="progress-step" data-stage="Ready">Ready</span>
             </div>
             <div class="controls-screenshot-status" id="controlsScreenshotStatus">No screenshot available.</div>
             <div class="controls-screenshot-frame">
