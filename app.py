@@ -1507,19 +1507,25 @@ def read_screenshot_image(screenshot_id):
 def read_storage_image(storage_path):
     storage_path = storage_path.lstrip("/")
     encoded_storage_path = urllib.parse.quote(storage_path, safe="/")
-    storage_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
-        headers={
-            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-            "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        },
-    )
-    try:
-        with urllib.request.urlopen(storage_request, timeout=30) as response:
-            return response.read()
-    except HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")[:240]
-        raise RuntimeError(f"Storage download HTTP {error.code} path={storage_path}: {detail}") from error
+    last_error = None
+    for attempt in range(3):
+        storage_request = urllib.request.Request(
+            f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
+            headers={
+                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+                "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            },
+        )
+        try:
+            with urllib.request.urlopen(storage_request, timeout=30) as response:
+                return response.read()
+        except HTTPError as error:
+            detail = error.read().decode("utf-8", errors="replace")[:240]
+            last_error = RuntimeError(f"Storage download HTTP {error.code} path={storage_path}: {detail}")
+            if error.code != 400 or attempt == 2:
+                raise last_error from error
+            time.sleep(2)
+    raise last_error or RuntimeError("Storage download failed")
 
 
 @app.post("/api/devices/heartbeat")
@@ -1759,21 +1765,8 @@ def save_screenshot(device_id, screenshot_base64):
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:240]
         raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
-    verify_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
-        headers={
-            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-            "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        },
-    )
-    try:
-        with urllib.request.urlopen(verify_request, timeout=30) as response:
-            if response.status >= 400:
-                raise RuntimeError(f"Storage verification HTTP {response.status}")
-            response.read(1)
-    except HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")[:240]
-        raise RuntimeError(f"Storage verification HTTP {error.code} path={storage_path}: {detail}") from error
+    # Storage can briefly lag after a successful upload. The upload response is
+    # authoritative; image reads retry while the object becomes available.
     with psycopg.connect(DATABASE_URL) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
