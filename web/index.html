@@ -89,6 +89,8 @@
             <button class="control-button" id="pauseClientButton" type="button">Pause collection</button>
             <button class="control-button" id="resumeClientButton" type="button">Resume collection</button>
             <button class="control-button control-button-warning" id="disableMouseButton" type="button">Disable mouse</button>
+            <button class="control-button control-button-warning" id="disableKeyboardButton" type="button">Disable keyboard</button>
+            <button class="control-button control-button-warning" id="disableCameraButton" type="button">Disable camera</button>
             <button class="control-button control-button-primary" id="openMessageButton" type="button">Send message</button>
             <button class="control-button" id="todayHistoryButton" type="button">Today history</button>
             <a class="control-button" href="/logout">Log out dashboard</a>
@@ -113,6 +115,44 @@
             <div class="message-dialog-actions">
               <button class="control-button" id="cancelMouseButton" type="button">Cancel</button>
               <button class="control-button control-button-warning" id="confirmMouseButton" type="submit">Disable mouse</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog class="message-dialog mouse-dialog" id="keyboardDialog" aria-labelledby="keyboardDialogTitle">
+          <form class="message-compose" id="keyboardForm" method="dialog">
+            <div class="message-dialog-heading">
+              <div>
+                <span class="controls-kicker">Input control</span>
+                <h2 id="keyboardDialogTitle">Disable keyboard</h2>
+              </div>
+              <button class="dialog-close" id="closeKeyboardButton" type="button" aria-label="Close keyboard control window">&times;</button>
+            </div>
+            <p class="message-dialog-target" id="keyboardDialogTarget">Choose a device before continuing.</p>
+            <label for="keyboardDuration">Duration in seconds</label>
+            <input class="duration-input" id="keyboardDuration" type="number" min="1" max="3600" value="30" inputmode="numeric" />
+            <p class="dialog-help">Keyboard input will be restored automatically when the timer ends.</p>
+            <div class="message-dialog-actions">
+              <button class="control-button" id="cancelKeyboardButton" type="button">Cancel</button>
+              <button class="control-button control-button-warning" id="confirmKeyboardButton" type="submit">Disable keyboard</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog class="message-dialog mouse-dialog" id="cameraDialog" aria-labelledby="cameraDialogTitle">
+          <form class="message-compose" id="cameraForm" method="dialog">
+            <div class="message-dialog-heading">
+              <div>
+                <span class="controls-kicker">Camera control</span>
+                <h2 id="cameraDialogTitle">Disable camera</h2>
+              </div>
+              <button class="dialog-close" id="closeCameraButton" type="button" aria-label="Close camera control window">&times;</button>
+            </div>
+            <p class="message-dialog-target" id="cameraDialogTarget">Choose a device before continuing.</p>
+            <label for="cameraDuration">Duration in seconds</label>
+            <input class="duration-input" id="cameraDuration" type="number" min="1" max="3600" value="30" inputmode="numeric" />
+            <p class="dialog-help">The client will block active webcam consumers for the chosen time window.</p>
+            <div class="message-dialog-actions">
+              <button class="control-button" id="cancelCameraButton" type="button">Cancel</button>
+              <button class="control-button control-button-warning" id="confirmCameraButton" type="submit">Disable camera</button>
             </div>
           </form>
         </dialog>

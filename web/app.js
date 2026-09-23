@@ -42,13 +42,29 @@ const feed = document.getElementById('feed');
     const pauseClientButtonEl = document.getElementById('pauseClientButton');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
     const disableMouseButtonEl = document.getElementById('disableMouseButton');
+    const disableKeyboardButtonEl = document.getElementById('disableKeyboardButton');
+    const disableCameraButtonEl = document.getElementById('disableCameraButton');
     const mouseDialogEl = document.getElementById('mouseDialog');
+    const keyboardDialogEl = document.getElementById('keyboardDialog');
+    const cameraDialogEl = document.getElementById('cameraDialog');
     const mouseFormEl = document.getElementById('mouseForm');
+    const keyboardFormEl = document.getElementById('keyboardForm');
+    const cameraFormEl = document.getElementById('cameraForm');
     const mouseDialogTargetEl = document.getElementById('mouseDialogTarget');
+    const keyboardDialogTargetEl = document.getElementById('keyboardDialogTarget');
+    const cameraDialogTargetEl = document.getElementById('cameraDialogTarget');
     const mouseDurationEl = document.getElementById('mouseDuration');
+    const keyboardDurationEl = document.getElementById('keyboardDuration');
+    const cameraDurationEl = document.getElementById('cameraDuration');
     const closeMouseButtonEl = document.getElementById('closeMouseButton');
+    const closeKeyboardButtonEl = document.getElementById('closeKeyboardButton');
+    const closeCameraButtonEl = document.getElementById('closeCameraButton');
     const cancelMouseButtonEl = document.getElementById('cancelMouseButton');
+    const cancelKeyboardButtonEl = document.getElementById('cancelKeyboardButton');
+    const cancelCameraButtonEl = document.getElementById('cancelCameraButton');
     const confirmMouseButtonEl = document.getElementById('confirmMouseButton');
+    const confirmKeyboardButtonEl = document.getElementById('confirmKeyboardButton');
+    const confirmCameraButtonEl = document.getElementById('confirmCameraButton');
     const refreshButtonEl = document.getElementById('refreshButton');
     const openMessageButtonEl = document.getElementById('openMessageButton');
     const todayHistoryButtonEl = document.getElementById('todayHistoryButton');
@@ -708,6 +724,102 @@ const feed = document.getElementById('feed');
     disableMouseButtonEl.addEventListener('click', openMouseDialog);
     closeMouseButtonEl.addEventListener('click', closeMouseDialog);
     cancelMouseButtonEl.addEventListener('click', closeMouseDialog);
+
+    function openKeyboardDialog() {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      keyboardDialogTargetEl.textContent = `Applying to ${controlsDeviceEl.textContent}`;
+      keyboardDialogEl.showModal();
+      keyboardDurationEl.focus();
+      keyboardDurationEl.select();
+    }
+
+    function closeKeyboardDialog() {
+      if (keyboardDialogEl.open) keyboardDialogEl.close();
+    }
+
+    disableKeyboardButtonEl.addEventListener('click', openKeyboardDialog);
+    closeKeyboardButtonEl.addEventListener('click', closeKeyboardDialog);
+    cancelKeyboardButtonEl.addEventListener('click', closeKeyboardDialog);
+
+    keyboardFormEl.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const seconds = Number.parseInt(keyboardDurationEl.value, 10);
+      if (!selectedDeviceId) {
+        closeKeyboardDialog();
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+        controlsStatusEl.textContent = 'Enter a duration from 1 to 3600 seconds.';
+        keyboardDurationEl.focus();
+        return;
+      }
+      confirmKeyboardButtonEl.disabled = true;
+      controlsStatusEl.textContent = `Disabling keyboard for ${seconds} seconds...`;
+      try {
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+          command: 'disable_keyboard',
+          message: String(seconds),
+        });
+        closeKeyboardDialog();
+        controlsStatusEl.textContent = `Keyboard disabled for ${seconds} seconds.`;
+      } catch (err) {
+        controlsStatusEl.textContent = 'Keyboard could not be disabled.';
+      } finally {
+        confirmKeyboardButtonEl.disabled = false;
+      }
+    });
+
+    function openCameraDialog() {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      cameraDialogTargetEl.textContent = `Applying to ${controlsDeviceEl.textContent}`;
+      cameraDialogEl.showModal();
+      cameraDurationEl.focus();
+      cameraDurationEl.select();
+    }
+
+    function closeCameraDialog() {
+      if (cameraDialogEl.open) cameraDialogEl.close();
+    }
+
+    disableCameraButtonEl.addEventListener('click', openCameraDialog);
+    closeCameraButtonEl.addEventListener('click', closeCameraDialog);
+    cancelCameraButtonEl.addEventListener('click', closeCameraDialog);
+
+    cameraFormEl.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const seconds = Number.parseInt(cameraDurationEl.value, 10);
+      if (!selectedDeviceId) {
+        closeCameraDialog();
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+        controlsStatusEl.textContent = 'Enter a duration from 1 to 3600 seconds.';
+        cameraDurationEl.focus();
+        return;
+      }
+      confirmCameraButtonEl.disabled = true;
+      controlsStatusEl.textContent = `Blocking camera access for ${seconds} seconds...`;
+      try {
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+          command: 'disable_camera',
+          message: String(seconds),
+        });
+        closeCameraDialog();
+        controlsStatusEl.textContent = `Camera access blocked for ${seconds} seconds.`;
+      } catch (err) {
+        controlsStatusEl.textContent = 'Camera could not be blocked.';
+      } finally {
+        confirmCameraButtonEl.disabled = false;
+      }
+    });
 
     mouseFormEl.addEventListener('submit', async (event) => {
       event.preventDefault();
