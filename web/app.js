@@ -42,6 +42,12 @@ const feed = document.getElementById('feed');
     const pauseClientButtonEl = document.getElementById('pauseClientButton');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
     const refreshButtonEl = document.getElementById('refreshButton');
+    const openMessageButtonEl = document.getElementById('openMessageButton');
+    const messageDialogEl = document.getElementById('messageDialog');
+    const closeMessageButtonEl = document.getElementById('closeMessageButton');
+    const cancelMessageButtonEl = document.getElementById('cancelMessageButton');
+    const messageDialogTargetEl = document.getElementById('messageDialogTarget');
+    const messageLengthEl = document.getElementById('messageLength');
     const messageComposeEl = document.getElementById('messageCompose');
     const clientMessageEl = document.getElementById('clientMessage');
     const sendMessageButtonEl = document.getElementById('sendMessageButton');
@@ -665,6 +671,27 @@ const feed = document.getElementById('feed');
       'resume', resumeClientButtonEl, 'Resume collection on the selected client?'
     ));
 
+    function openMessageDialog() {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      messageDialogTargetEl.textContent = `Sending to ${controlsDeviceEl.textContent}`;
+      messageDialogEl.showModal();
+      clientMessageEl.focus();
+    }
+
+    function closeMessageDialog() {
+      if (messageDialogEl.open) messageDialogEl.close();
+    }
+
+    openMessageButtonEl.addEventListener('click', openMessageDialog);
+    closeMessageButtonEl.addEventListener('click', closeMessageDialog);
+    cancelMessageButtonEl.addEventListener('click', closeMessageDialog);
+    clientMessageEl.addEventListener('input', () => {
+      messageLengthEl.textContent = `${clientMessageEl.value.length} / 2000`;
+    });
+
     messageComposeEl.addEventListener('submit', async (event) => {
       event.preventDefault();
       const message = clientMessageEl.value.trim();
@@ -682,6 +709,8 @@ const feed = document.getElementById('feed');
       try {
         await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, { command: 'message', message });
         clientMessageEl.value = '';
+        messageLengthEl.textContent = '0 / 2000';
+        closeMessageDialog();
         controlsStatusEl.textContent = 'Message queued for the selected client.';
       } catch (err) {
         controlsStatusEl.textContent = 'Message could not be sent.';
