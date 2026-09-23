@@ -15,6 +15,7 @@ const feed = document.getElementById('feed');
     const deviceListEl = document.getElementById('deviceList');
     const openAppsDeviceEl = document.getElementById('openAppsDevice');
     const openAppsListEl = document.getElementById('openAppsList');
+    const closeAllAppsButtonEl = document.getElementById('closeAllAppsButton');
     const supportLinkEl = document.getElementById('supportLink');
     const paymentListEl = document.getElementById('paymentList');
     const scopeLabelEl = document.getElementById('scopeLabel');
@@ -147,9 +148,11 @@ const feed = document.getElementById('feed');
         const item = document.createElement('li');
         item.textContent = 'Select a device to view open apps';
         openAppsListEl.appendChild(item);
+        closeAllAppsButtonEl.disabled = true;
         return;
       }
       openAppsDeviceEl.textContent = `${device.name || 'Unknown device'} Â· ${device.id}`;
+      closeAllAppsButtonEl.disabled = !device.online;
       const apps = Array.isArray(device.open_apps) ? device.open_apps : [];
       if (!apps.length) {
         const item = document.createElement('li');
@@ -193,6 +196,26 @@ const feed = document.getElementById('feed');
         openAppsListEl.appendChild(item);
       });
     }
+
+    closeAllAppsButtonEl.addEventListener('click', async () => {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      closeAllAppsButtonEl.disabled = true;
+      controlsStatusEl.textContent = 'Closing all visible windows...';
+      try {
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+          command: 'close_all_apps',
+          message: '',
+        });
+        controlsStatusEl.textContent = 'Close-all request sent.';
+      } catch (err) {
+        controlsStatusEl.textContent = 'Close-all request failed.';
+      } finally {
+        closeAllAppsButtonEl.disabled = false;
+      }
+    });
 
     function renderPaymentMethods(paymentMethods) {
       paymentListEl.innerHTML = '';
