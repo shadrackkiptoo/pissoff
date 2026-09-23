@@ -145,6 +145,7 @@ create table if not exists public.device_commands (
     command_id text primary key,
     device_id text not null,
     command text not null,
+    message text not null default '',
     requested_by text not null default 'dashboard',
     source text not null default 'dashboard',
     status text not null default 'queued',
@@ -153,6 +154,9 @@ create table if not exists public.device_commands (
     completed_at bigint,
     error text not null default ''
 );
+
+alter table public.device_commands
+    add column if not exists message text not null default '';
 
 create index if not exists device_commands_device_time_idx
     on public.device_commands (device_id, created_at desc);

@@ -91,6 +91,11 @@
             <a class="control-button" href="/logout">Log out dashboard</a>
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
           </div>
+          <form class="message-compose" id="messageCompose">
+            <label for="clientMessage">Send a message to this client</label>
+            <textarea id="clientMessage" maxlength="2000" rows="3" placeholder="Type a message..."></textarea>
+            <button class="control-button" id="sendMessageButton" type="submit">Send message</button>
+          </form>
           <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
           <div class="command-history" id="commandHistory"></div>
         </section>

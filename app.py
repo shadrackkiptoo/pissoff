@@ -289,12 +289,18 @@ def telegram_devices_text():
     return telegram_panel("DEVICES // NETWORK", "\n".join(lines))
 
 
-def queue_device_command(device_id, command):
+def queue_device_command(device_id, command, message=""):
     normalized_device_id = str(device_id).strip()
     normalized_command = str(command).strip().lower()
+    normalized_message = str(message).strip()
     if not normalized_device_id or normalized_device_id not in devices:
         return False, "Device not found. Use /devices to check the device ID."
     if normalized_command not in {"shutdown", "logout", "restart", "lock", "pause", "resume"}:
+        if normalized_command != "message" or not normalized_message:
+            return False, "Unsupported client command."
+    if len(normalized_message) > 2000:
+        return False, "Message is limited to 2000 characters."
+    if normalized_command == "message" and not normalized_message:
         return False, "Unsupported client command."
     command_id = uuid.uuid4().hex
     now = int(time.time() * 1000)
@@ -302,6 +308,7 @@ def queue_device_command(device_id, command):
         "command_id": command_id,
         "device_id": normalized_device_id,
         "command": normalized_command,
+        "message": normalized_message,
         "requested_by": "dashboard",
         "source": "dashboard",
         "status": "queued",
@@ -318,10 +325,10 @@ def queue_device_command(device_id, command):
                     cursor.execute(
                         """
                         INSERT INTO device_commands
-                            (command_id, device_id, command, requested_by, source, status, created_at)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                            (command_id, device_id, command, message, requested_by, source, status, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                         """,
-                        (command_id, normalized_device_id, normalized_command, "dashboard", "dashboard", "queued", now),
+                        (command_id, normalized_device_id, normalized_command, normalized_message, "dashboard", "dashboard", "queued", now),
                     )
         except Exception as error:
             print(f"Could not persist device command: {error}")
@@ -356,7 +363,7 @@ def claim_device_command(device_id):
                 with connection.cursor() as cursor:
                     cursor.execute(
                         """
-                        SELECT command_id, device_id, command, requested_by, source, status, created_at, claimed_at, completed_at, error
+                        SELECT command_id, device_id, command, message, requested_by, source, status, created_at, claimed_at, completed_at, error
                         FROM device_commands
                         WHERE device_id = %s AND status = 'queued'
                         ORDER BY created_at ASC
@@ -374,9 +381,9 @@ def claim_device_command(device_id):
                         (claimed_at, row[0]),
                     )
             return {
-                "command_id": row[0], "device_id": row[1], "command": row[2],
-                "requested_by": row[3], "source": row[4], "status": "claimed",
-                "created_at": row[6], "claimed_at": claimed_at, "completed_at": row[8], "error": row[9],
+                "command_id": row[0], "device_id": row[1], "command": row[2], "message": row[3],
+                "requested_by": row[4], "source": row[5], "status": "claimed",
+                "created_at": row[7], "claimed_at": claimed_at, "completed_at": row[9], "error": row[10],
             }
         except Exception as error:
             print(f"Could not claim device command: {error}")
@@ -397,11 +404,11 @@ def list_device_commands(device_id, limit=50):
             with psycopg.connect(DATABASE_URL) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT command_id, device_id, command, requested_by, source, status, created_at, claimed_at, completed_at, error FROM device_commands WHERE device_id = %s ORDER BY created_at DESC LIMIT %s",
+                        "SELECT command_id, device_id, command, message, requested_by, source, status, created_at, claimed_at, completed_at, error FROM device_commands WHERE device_id = %s ORDER BY created_at DESC LIMIT %s",
                         (device_id, min(max(limit, 1), 100)),
                     )
                     rows = cursor.fetchall()
-            return [dict(zip(("command_id", "device_id", "command", "requested_by", "source", "status", "created_at", "claimed_at", "completed_at", "error"), row)) for row in rows]
+            return [dict(zip(("command_id", "device_id", "command", "message", "requested_by", "source", "status", "created_at", "claimed_at", "completed_at", "error"), row)) for row in rows]
         except Exception as error:
             print(f"Could not list device commands: {error}")
     return [record for record in sorted(device_command_records.values(), key=lambda item: item["created_at"], reverse=True) if record["device_id"] == device_id][:limit]
@@ -1596,6 +1603,7 @@ async def device_heartbeat(
         "screenshot_requested": screenshot_requested,
         "command": command.get("command") if command else None,
         "command_id": command.get("command_id") if command else None,
+        "message": command.get("message", "") if command else "",
     }
     if valid_site_url(CLIENT_SITE_URL):
         response["client_site_url"] = CLIENT_SITE_URL
@@ -1630,9 +1638,9 @@ async def request_device_command(
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
     payload = await request.json()
     command = str(payload.get("command", "")).strip().lower()
-    succeeded, result = queue_device_command(device_id, command)
+    succeeded, result = queue_device_command(device_id, command, payload.get("message", ""))
     if not succeeded:
-        status_code = 400 if "Unsupported" in result else 404
+        status_code = 404 if result.startswith("Device not found") else 400
         return JSONResponse({"ok": False, "error": result.lower()}, status_code=status_code)
     return JSONResponse({"ok": True, "command_id": result})
 

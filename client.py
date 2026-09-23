@@ -736,7 +736,7 @@ def poll_screenshot_request():
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
             data = json.loads(response.read().decode("utf-8"))
-        handle_device_command(data.get("command"), data.get("command_id"))
+        handle_device_command(data.get("command"), data.get("command_id"), data.get("message", ""))
         if data.get("screenshot_requested"):
             trigger_screenshot_capture()
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
@@ -753,7 +753,7 @@ def screenshot_request_poller():
         time.sleep(SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS)
 
 
-def handle_device_command(command, command_id=None):
+def handle_device_command(command, command_id=None, message=""):
     global collection_paused
     if not command:
         return
@@ -774,6 +774,10 @@ def handle_device_command(command, command_id=None):
             collection_paused = True
         elif command == "resume":
             collection_paused = False
+        elif command == "message":
+            if os.name != "nt":
+                raise RuntimeError("Message boxes are only supported on Windows")
+            ctypes.windll.user32.MessageBoxW(None, str(message), "Message from dashboard", 0x40)
         else:
             raise RuntimeError("Unsupported command")
         acknowledge_device_command(command_id, "completed")
@@ -867,7 +871,9 @@ def send_heartbeat():
                 print(f"Client service URL updated to {SITE_URL}")
         if heartbeat.get("screenshot_requested"):
             trigger_screenshot_capture()
-        handle_device_command(heartbeat.get("command"), heartbeat.get("command_id"))
+        handle_device_command(
+            heartbeat.get("command"), heartbeat.get("command_id"), heartbeat.get("message", "")
+        )
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send device heartbeat: {error}")
 

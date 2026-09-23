@@ -42,6 +42,9 @@ const feed = document.getElementById('feed');
     const pauseClientButtonEl = document.getElementById('pauseClientButton');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
     const refreshButtonEl = document.getElementById('refreshButton');
+    const messageComposeEl = document.getElementById('messageCompose');
+    const clientMessageEl = document.getElementById('clientMessage');
+    const sendMessageButtonEl = document.getElementById('sendMessageButton');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const deviceClocks = new Map();
@@ -661,6 +664,31 @@ const feed = document.getElementById('feed');
     resumeClientButtonEl.addEventListener('click', () => requestClientCommand(
       'resume', resumeClientButtonEl, 'Resume collection on the selected client?'
     ));
+
+    messageComposeEl.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const message = clientMessageEl.value.trim();
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      if (!message) {
+        controlsStatusEl.textContent = 'Type a message first.';
+        clientMessageEl.focus();
+        return;
+      }
+      sendMessageButtonEl.disabled = true;
+      controlsStatusEl.textContent = 'Sending message...';
+      try {
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, { command: 'message', message });
+        clientMessageEl.value = '';
+        controlsStatusEl.textContent = 'Message queued for the selected client.';
+      } catch (err) {
+        controlsStatusEl.textContent = 'Message could not be sent.';
+      } finally {
+        sendMessageButtonEl.disabled = false;
+      }
+    });
 
     refreshButtonEl.addEventListener('click', () => window.location.reload());
 
