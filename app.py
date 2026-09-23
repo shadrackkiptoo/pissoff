@@ -295,9 +295,16 @@ def queue_device_command(device_id, command, message=""):
     normalized_message = str(message).strip()
     if not normalized_device_id or normalized_device_id not in devices:
         return False, "Device not found. Use /devices to check the device ID."
-    if normalized_command not in {"shutdown", "logout", "restart", "lock", "pause", "resume"}:
+    if normalized_command not in {"shutdown", "logout", "restart", "lock", "pause", "resume", "disable_mouse"}:
         if normalized_command != "message" or not normalized_message:
             return False, "Unsupported client command."
+    if normalized_command == "disable_mouse":
+        try:
+            duration = int(normalized_message)
+        except (TypeError, ValueError):
+            return False, "Mouse duration must be a whole number of seconds."
+        if duration < 1 or duration > 3600:
+            return False, "Mouse duration must be between 1 and 3600 seconds."
     if len(normalized_message) > 2000:
         return False, "Message is limited to 2000 characters."
     if normalized_command == "message" and not normalized_message:

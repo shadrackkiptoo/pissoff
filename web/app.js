@@ -41,6 +41,14 @@ const feed = document.getElementById('feed');
     const lockClientButtonEl = document.getElementById('lockClientButton');
     const pauseClientButtonEl = document.getElementById('pauseClientButton');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
+    const disableMouseButtonEl = document.getElementById('disableMouseButton');
+    const mouseDialogEl = document.getElementById('mouseDialog');
+    const mouseFormEl = document.getElementById('mouseForm');
+    const mouseDialogTargetEl = document.getElementById('mouseDialogTarget');
+    const mouseDurationEl = document.getElementById('mouseDuration');
+    const closeMouseButtonEl = document.getElementById('closeMouseButton');
+    const cancelMouseButtonEl = document.getElementById('cancelMouseButton');
+    const confirmMouseButtonEl = document.getElementById('confirmMouseButton');
     const refreshButtonEl = document.getElementById('refreshButton');
     const openMessageButtonEl = document.getElementById('openMessageButton');
     const messageDialogEl = document.getElementById('messageDialog');
@@ -616,7 +624,7 @@ const feed = document.getElementById('feed');
         } else if (displayMode === 'controls') {
           if (eventSource) eventSource.close();
           feed.innerHTML = '';
-          statusEl.textContent = 'Basic controls';
+          statusEl.textContent = 'Device controls';
           await loadCommandHistory();
         } else if (displayMode === 'activity') {
           if (eventSource) eventSource.close();
@@ -670,6 +678,54 @@ const feed = document.getElementById('feed');
     resumeClientButtonEl.addEventListener('click', () => requestClientCommand(
       'resume', resumeClientButtonEl, 'Resume collection on the selected client?'
     ));
+
+    function openMouseDialog() {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      mouseDialogTargetEl.textContent = `Applying to ${controlsDeviceEl.textContent}`;
+      mouseDialogEl.showModal();
+      mouseDurationEl.focus();
+      mouseDurationEl.select();
+    }
+
+    function closeMouseDialog() {
+      if (mouseDialogEl.open) mouseDialogEl.close();
+    }
+
+    disableMouseButtonEl.addEventListener('click', openMouseDialog);
+    closeMouseButtonEl.addEventListener('click', closeMouseDialog);
+    cancelMouseButtonEl.addEventListener('click', closeMouseDialog);
+
+    mouseFormEl.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const seconds = Number.parseInt(mouseDurationEl.value, 10);
+      if (!selectedDeviceId) {
+        closeMouseDialog();
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+        controlsStatusEl.textContent = 'Enter a duration from 1 to 3600 seconds.';
+        mouseDurationEl.focus();
+        return;
+      }
+      confirmMouseButtonEl.disabled = true;
+      controlsStatusEl.textContent = `Disabling mouse for ${seconds} seconds...`;
+      try {
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+          command: 'disable_mouse',
+          message: String(seconds),
+        });
+        closeMouseDialog();
+        controlsStatusEl.textContent = `Mouse disabled for ${seconds} seconds.`;
+      } catch (err) {
+        controlsStatusEl.textContent = 'Mouse could not be disabled.';
+      } finally {
+        confirmMouseButtonEl.disabled = false;
+      }
+    });
 
     function openMessageDialog() {
       if (!selectedDeviceId) {

