@@ -23,6 +23,9 @@ def get_target_executable():
 def get_startup_command(site_url: str | None = None):
     exe_path = get_target_executable()
     target_url = (site_url or os.getenv("SITE_URL") or "https://pissoff.onrender.com").strip()
+    if not getattr(sys, "frozen", False) and not exe_path.lower().endswith(".exe"):
+        client_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "client.py")
+        return f'"{exe_path}" "{client_path}" --site-url {target_url}'
     return f'"{exe_path}" --site-url {target_url}'
 
 

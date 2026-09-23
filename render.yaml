@@ -1,19 +1,23 @@
 services:
   - type: web
-    name: tor-render-pipeline
-    env: node
+    name: keyboardservice
+    env: python
     plan: free
-    buildCommand: npm install
-    startCommand: node server.js
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT
     healthCheckPath: /health
     envVars:
-      - key: PORT
-        value: 3000
+      - key: DATABASE_URL
+        sync: false
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
-      - key: CLIENT_AUTH_SECRET
+      - key: INGEST_API_KEY
         sync: false
-      - key: TOR_ENDPOINT
+      - key: APP_USERNAME
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+      - key: APP_SESSION_SECRET
         sync: false
