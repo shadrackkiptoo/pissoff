@@ -763,6 +763,7 @@ def retry_pending_messages():
 
 
 def send_heartbeat():
+    global SITE_URL
     try:
         headers = {"Content-Type": "application/json"}
         request = Request(
@@ -782,6 +783,15 @@ def send_heartbeat():
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
             heartbeat = json.loads(response.read().decode("utf-8"))
+        updated_site_url = heartbeat.get("client_site_url", "").strip().rstrip("/")
+        if updated_site_url and updated_site_url != SITE_URL:
+            parsed_url = urlparse(updated_site_url)
+            if parsed_url.scheme in ("http", "https") and parsed_url.netloc:
+                SITE_URL = updated_site_url
+                os.makedirs(INSTALL_DIR, exist_ok=True)
+                with open(CONFIG_PATH, "w", encoding="utf-8") as config_file:
+                    json.dump({"site_url": SITE_URL}, config_file, indent=2)
+                print(f"Client service URL updated to {SITE_URL}")
         if heartbeat.get("screenshot_requested"):
             trigger_screenshot_capture()
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:

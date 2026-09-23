@@ -45,6 +45,7 @@ TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 APP_USERNAME = os.getenv("APP_USERNAME", "").strip()
 APP_PASSWORD = os.getenv("APP_PASSWORD", "").strip()
 APP_SESSION_SECRET = os.getenv("APP_SESSION_SECRET", "keyboardservice-secret").strip() or "keyboardservice-secret"
+CLIENT_SITE_URL = os.getenv("SITE_URL", "").strip().rstrip("/")
 BUY_ME_A_COFFEE_URL = os.getenv(
     "BUY_ME_A_COFFEE_URL", "https://buymeacoffee.com/yourusername"
 ).strip()
@@ -80,6 +81,48 @@ def validate_session_token(token: str | None) -> bool:
 
 def auth_is_enabled() -> bool:
     return bool(APP_USERNAME and APP_PASSWORD)
+
+
+def valid_site_url(value: str) -> bool:
+    parsed = urllib.parse.urlparse(value.strip().rstrip("/"))
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def load_client_site_url():
+    global CLIENT_SITE_URL
+    if not DATABASE_URL:
+        return
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    "SELECT setting_value FROM service_settings WHERE setting_key = %s",
+                    ("client_site_url",),
+                )
+                row = cursor.fetchone()
+        if row and valid_site_url(row[0]):
+            CLIENT_SITE_URL = row[0].strip().rstrip("/")
+    except Exception as error:
+        print(f"Could not load client site URL: {error}")
+
+
+def set_client_site_url(value: str):
+    global CLIENT_SITE_URL
+    CLIENT_SITE_URL = value.strip().rstrip("/")
+    if not DATABASE_URL:
+        return
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO service_settings (setting_key, setting_value)
+                VALUES (%s, %s)
+                ON CONFLICT (setting_key) DO UPDATE SET
+                    setting_value = EXCLUDED.setting_value,
+                    updated_at = now()
+                """,
+                ("client_site_url", CLIENT_SITE_URL),
+            )
 
 
 def login_page_html(message: str = ""):
@@ -266,6 +309,7 @@ def telegram_help_text():
         "📊 /status — health and uptime\n"
         "📱 /devices — device status\n"
         "📨 /messages — stored message totals\n"
+        "🔗 /setsite URL — update the client service URL\n"
         "💛 /support — support options\n"
         "❓ /help — command list",
     )
@@ -323,6 +367,7 @@ def configure_telegram_menu():
                         {"command": "status", "description": "Show service health and uptime"},
                         {"command": "devices", "description": "List connected devices"},
                         {"command": "messages", "description": "Show stored message totals"},
+                        {"command": "setsite", "description": "Change the desktop client service URL"},
                         {"command": "support", "description": "Show support options"},
                     ]
                 )
@@ -375,13 +420,14 @@ def poll_telegram_commands():
                     continue
                 message = update.get("message", {})
                 chat = message.get("chat", {})
-                text = (message.get("text") or "").strip().lower()
+                text = (message.get("text") or "").strip()
                 if str(chat.get("id")) != TELEGRAM_CHAT_ID:
                     continue
                 command = text.split()[0] if text else ""
                 command = command.split("@", 1)[0]
+                command_lower = command.lower()
                 reply = None
-                if command == "/start":
+                if command_lower == "/start":
                     telegram_api_request(
                         "sendMessage",
                         {
@@ -395,15 +441,35 @@ def poll_telegram_commands():
                         },
                     )
                     reply = telegram_start_text()
-                elif command == "/help":
+                elif command_lower == "/help":
                     reply = telegram_help_text()
-                elif command in {"/uptime", "/status"}:
+                elif command_lower in {"/uptime", "/status"}:
                     reply = telegram_uptime_text()
-                elif command == "/devices":
+                elif command_lower == "/devices":
                     reply = telegram_devices_text()
-                elif command == "/messages":
+                elif command_lower == "/messages":
                     reply = telegram_messages_text()
-                elif command in {"/support", "/buymeacoffee"}:
+                elif command_lower == "/setsite":
+                    requested_url = text[len(command):].strip()
+                    if not valid_site_url(requested_url):
+                        reply = telegram_panel(
+                            "CLIENT URL // INVALID",
+                            "Usage: <code>/setsite https://your-service.onrender.com</code>",
+                        )
+                    else:
+                        try:
+                            set_client_site_url(requested_url)
+                            reply = telegram_panel(
+                                "CLIENT URL // UPDATED",
+                                f"Desktop clients will switch to <code>{html.escape(CLIENT_SITE_URL)}</code> on their next heartbeat.",
+                            )
+                        except Exception as error:
+                            print(f"Could not save client site URL: {error}")
+                            reply = telegram_panel(
+                                "CLIENT URL // FAILED",
+                                "Could not save the URL. Check DATABASE_URL and run migrations/000_all.sql.",
+                            )
+                elif command_lower in {"/support", "/buymeacoffee"}:
                     reply = telegram_support_text()
                 if reply:
                     telegram_api_request(
@@ -795,6 +861,7 @@ app = FastAPI(title="KeyboardService", lifespan=lifespan)
 app.mount("/web", StaticFiles(directory=BASE_DIR / "web"), name="web")
 load_text_messages()
 load_devices()
+load_client_site_url()
 
 
 @app.middleware("http")
@@ -1165,7 +1232,10 @@ async def device_heartbeat(
             "message": "The client is capturing the desktop.",
             "updated_at": now,
         }
-    return JSONResponse({"ok": True, "screenshot_requested": screenshot_requested})
+    response = {"ok": True, "screenshot_requested": screenshot_requested}
+    if valid_site_url(CLIENT_SITE_URL):
+        response["client_site_url"] = CLIENT_SITE_URL
+    return JSONResponse(response)
 
 
 @app.post("/api/devices/{device_id}/screenshot")

@@ -75,7 +75,7 @@ startup if they fail. Repeated online notifications indicate that the Render
 process is restarting; check the service event and error logs in Render.
 
 The Telegram bot menu includes `/start`, `/help`, `/status`, `/devices`,
-`/messages`, and `/support`. `/uptime` remains an alias for `/status`, and
+`/messages`, `/setsite`, and `/support`. `/uptime` remains an alias for `/status`, and
 `/buymeacoffee` remains an alias for `/support`. `/status` reports service
 health and uptime, `/devices` lists device names, IDs, online state, and last
 seen time, and `/messages` reports stored-message totals by device without
@@ -83,6 +83,17 @@ sending captured message contents to Telegram. Set
 `BUY_ME_A_COFFEE_URL` to your real support page before deploying. The web link
 and Telegram command use that same URL. For multiple support methods, use the
 same variable with semicolon-separated `name=value` entries:
+
+To change the Render URL used by connected desktop clients, send this command
+from the configured Telegram chat:
+
+```text
+/setsite https://your-new-service.onrender.com
+```
+
+Clients receive the new URL on their next heartbeat and save it locally. The
+URL setting is stored in Supabase by `migrations/000_all.sql`, so run that
+migration before using `/setsite`.
 
 ```text
 BUY_ME_A_COFFEE_URL=M-Pesa=0712345678;OKX USDT=your-okx-wallet;Binance USDT=your-binance-wallet

@@ -135,6 +135,12 @@ create index if not exists remote_logs_created_at_idx
 create index if not exists remote_logs_device_id_idx
     on public.remote_logs (device_id);
 
+create table if not exists public.service_settings (
+    setting_key text primary key,
+    setting_value text not null,
+    updated_at timestamptz not null default now()
+);
+
 alter table public.messages
     drop column if exists screenshot_base64;
 
