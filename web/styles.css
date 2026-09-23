@@ -388,6 +388,8 @@
     .controls-screenshot-status.ready { color: #86efac; }
     .controls-screenshot-status.taking-screenshot { color: var(--accent); }
     .controls-screenshot-status.capturing { color: var(--accent); }
+    .screenshot-dialog .message-compose { gap: 12px; }
+    .screenshot-dialog .controls-screenshot-frame { min-height: 220px; }
     .controls-screenshot-frame {
       position: relative;
       display: grid;

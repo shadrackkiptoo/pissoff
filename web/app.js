@@ -32,6 +32,15 @@ const feed = document.getElementById('feed');
     const controlsScreenshotStatusEl = document.getElementById('controlsScreenshotStatus');
     const controlsScreenshotPreviewEl = document.getElementById('controlsScreenshotPreview');
     const controlsScreenshotPlaceholderEl = document.getElementById('controlsScreenshotPlaceholder');
+    const screenshotDialogEl = document.getElementById('screenshotDialog');
+    const screenshotDialogTargetEl = document.getElementById('screenshotDialogTarget');
+    const screenshotDialogProgressEl = document.getElementById('screenshotDialogProgress');
+    const screenshotDialogStatusEl = document.getElementById('screenshotDialogStatus');
+    const screenshotDialogPreviewEl = document.getElementById('screenshotDialogPreview');
+    const screenshotDialogPlaceholderEl = document.getElementById('screenshotDialogPlaceholder');
+    const closeScreenshotButtonEl = document.getElementById('closeScreenshotButton');
+    const cancelScreenshotButtonEl = document.getElementById('cancelScreenshotButton');
+    const confirmScreenshotButtonEl = document.getElementById('confirmScreenshotButton');
     const activityPanelEl = document.getElementById('activityPanel');
     const controlsStatusEl = document.getElementById('controlsStatus');
     const commandHistoryEl = document.getElementById('commandHistory');
@@ -274,8 +283,7 @@ const feed = document.getElementById('feed');
       }
     }
 
-    function updateScreenshotProgress(status) {
-      const stages = ['Queued', 'Capturing', 'Uploading', 'Ready'];
+    function updateScreenshotProgress(progressEl, status) {
       const normalized = String(status || '').trim();
       const stageOrder = {
         Requested: 0,
@@ -287,7 +295,7 @@ const feed = document.getElementById('feed');
         Ready: 3,
       };
       const activeIndex = stageOrder[normalized] ?? (normalized.includes('capture') ? 1 : normalized.includes('upload') ? 2 : 0);
-      controlsScreenshotProgressEl.querySelectorAll('.progress-step').forEach((step, index) => {
+      progressEl.querySelectorAll('.progress-step').forEach((step, index) => {
         const stageName = step.dataset.stage;
         const isActive = index === activeIndex;
         const isComplete = stageOrder[stageName] !== undefined && (stageOrder[stageName] < activeIndex || (normalized === 'Ready' && stageName === 'Ready'));
@@ -295,43 +303,65 @@ const feed = document.getElementById('feed');
         step.classList.toggle('done', isComplete);
       });
       if (normalized === 'Failed') {
-        controlsScreenshotProgressEl.querySelectorAll('.progress-step').forEach((step) => {
+        progressEl.querySelectorAll('.progress-step').forEach((step) => {
           step.classList.remove('active', 'done');
         });
       }
     }
 
+    function syncScreenshotPreviewState(selectedDevice, status, message) {
+      if (!selectedDevice) {
+        controlsScreenshotStatusEl.textContent = 'Select a device to preview screenshots.';
+        screenshotDialogStatusEl.textContent = 'Select a device to preview screenshots.';
+        controlsScreenshotStatusEl.className = 'controls-screenshot-status';
+        screenshotDialogStatusEl.className = 'controls-screenshot-status';
+        controlsScreenshotPreviewEl.hidden = true;
+        screenshotDialogPreviewEl.hidden = true;
+        controlsScreenshotPreviewEl.removeAttribute('src');
+        screenshotDialogPreviewEl.removeAttribute('src');
+        controlsScreenshotPlaceholderEl.hidden = false;
+        screenshotDialogPlaceholderEl.hidden = false;
+        return;
+      }
+      const previewUrl = selectedDevice.screenshot_url || '';
+      const previewMessage = message || 'Ready to capture';
+      const statusClass = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
+      controlsScreenshotStatusEl.textContent = previewMessage;
+      screenshotDialogStatusEl.textContent = previewMessage;
+      controlsScreenshotStatusEl.className = statusClass;
+      screenshotDialogStatusEl.className = statusClass;
+      updateScreenshotProgress(controlsScreenshotProgressEl, status);
+      updateScreenshotProgress(screenshotDialogProgressEl, status);
+      if (previewUrl) {
+        controlsScreenshotPreviewEl.src = `${previewUrl}?t=${Date.now()}`;
+        screenshotDialogPreviewEl.src = `${previewUrl}?t=${Date.now()}`;
+        controlsScreenshotPreviewEl.hidden = false;
+        screenshotDialogPreviewEl.hidden = false;
+        controlsScreenshotPlaceholderEl.hidden = true;
+        screenshotDialogPlaceholderEl.hidden = true;
+      } else {
+        controlsScreenshotPreviewEl.hidden = true;
+        screenshotDialogPreviewEl.hidden = true;
+        controlsScreenshotPreviewEl.removeAttribute('src');
+        screenshotDialogPreviewEl.removeAttribute('src');
+        controlsScreenshotPlaceholderEl.hidden = false;
+        screenshotDialogPlaceholderEl.hidden = false;
+      }
+    }
+
     function updateSelectedDeviceScreenshot() {
       const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
-      const defaultStatus = 'Ready to capture';
+      const defaultStatus = 'Ready';
       if (!selectedDeviceId || !selectedDevice) {
-        controlsScreenshotStatusEl.textContent = 'Select a device to preview screenshots.';
-        controlsScreenshotStatusEl.className = 'controls-screenshot-status';
-        controlsScreenshotProgressEl.querySelectorAll('.progress-step').forEach((step) => {
-          step.classList.remove('active', 'done');
-        });
-        controlsScreenshotPreviewEl.hidden = true;
-        controlsScreenshotPreviewEl.removeAttribute('src');
-        controlsScreenshotPlaceholderEl.hidden = false;
+        syncScreenshotPreviewState(null, 'Ready', 'Select a device to preview screenshots.');
         captureScreenshotButtonEl.disabled = true;
         return;
       }
-      const status = selectedDevice.screenshot_status || 'Ready';
-      const message = selectedDevice.screenshot_message || defaultStatus;
-      const isBusy = ['Requested', 'Taking screenshot'].includes(status);
-      controlsScreenshotStatusEl.textContent = message;
-      controlsScreenshotStatusEl.className = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
-      updateScreenshotProgress(status);
+      const status = selectedDevice.screenshot_status || defaultStatus;
+      const message = selectedDevice.screenshot_message || 'Ready to capture';
+      const isBusy = ['Requested', 'Taking screenshot', 'Capturing', 'Uploading'].includes(status);
       captureScreenshotButtonEl.disabled = !selectedDevice.online || isBusy;
-      if (selectedDevice.screenshot_url) {
-        controlsScreenshotPreviewEl.src = `${selectedDevice.screenshot_url}?t=${Date.now()}`;
-        controlsScreenshotPreviewEl.hidden = false;
-        controlsScreenshotPlaceholderEl.hidden = true;
-      } else {
-        controlsScreenshotPreviewEl.hidden = true;
-        controlsScreenshotPreviewEl.removeAttribute('src');
-        controlsScreenshotPlaceholderEl.hidden = false;
-      }
+      syncScreenshotPreviewState(selectedDevice, status, message);
     }
 
     async function loadDevices() {
@@ -945,26 +975,50 @@ const feed = document.getElementById('feed');
       }
     });
 
+    function openScreenshotDialog() {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      screenshotDialogTargetEl.textContent = `Previewing ${controlsDeviceEl.textContent}`;
+      const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
+      if (selectedDevice) {
+        syncScreenshotPreviewState(selectedDevice, selectedDevice.screenshot_status || 'Ready', selectedDevice.screenshot_message || 'Ready to capture');
+      }
+      screenshotDialogEl.showModal();
+    }
+
+    function closeScreenshotDialog() {
+      if (screenshotDialogEl.open) screenshotDialogEl.close();
+    }
+
     captureScreenshotButtonEl.addEventListener('click', async () => {
       if (!selectedDeviceId) {
         controlsStatusEl.textContent = 'Select a device first.';
         return;
       }
+      openScreenshotDialog();
       captureScreenshotButtonEl.disabled = true;
-      controlsScreenshotStatusEl.textContent = 'Requesting screenshot...';
-      controlsScreenshotStatusEl.className = 'controls-screenshot-status requested';
+      screenshotDialogStatusEl.textContent = 'Requesting screenshot...';
+      screenshotDialogStatusEl.className = 'controls-screenshot-status requested';
       try {
         const response = await fetch(`/api/devices/${encodeURIComponent(selectedDeviceId)}/screenshot`, { method: 'POST' });
         if (!response.ok) throw new Error('request failed');
         controlsStatusEl.textContent = 'Screenshot queued for the selected client.';
-        controlsScreenshotStatusEl.textContent = 'Screenshot requested';
-        controlsScreenshotStatusEl.className = 'controls-screenshot-status requested';
+        screenshotDialogStatusEl.textContent = 'Screenshot requested';
+        screenshotDialogStatusEl.className = 'controls-screenshot-status requested';
       } catch (err) {
         controlsStatusEl.textContent = 'Screenshot request failed.';
-        controlsScreenshotStatusEl.textContent = 'Screenshot request failed';
-        controlsScreenshotStatusEl.className = 'controls-screenshot-status failed';
+        screenshotDialogStatusEl.textContent = 'Screenshot request failed';
+        screenshotDialogStatusEl.className = 'controls-screenshot-status failed';
         updateSelectedDeviceScreenshot();
       }
+    });
+
+    closeScreenshotButtonEl.addEventListener('click', closeScreenshotDialog);
+    cancelScreenshotButtonEl.addEventListener('click', closeScreenshotDialog);
+    confirmScreenshotButtonEl.addEventListener('click', async () => {
+      captureScreenshotButtonEl.click();
     });
 
     function openMessageDialog() {
