@@ -1130,11 +1130,19 @@ def running_from_local_project():
     return exe_path.lower().startswith(project_root.lower())
 
 
+def running_from_temp_bundle():
+    if not getattr(sys, "frozen", False):
+        return False
+
+    exe_path = os.path.abspath(sys.executable)
+    return "_MEI" in exe_path.upper() or bool(getattr(sys, "_MEIPASS", None))
+
+
 def install_and_relaunch():
     if os.name != "nt" or not getattr(sys, "frozen", False):
         return False
 
-    if running_from_local_project():
+    if running_from_local_project() or running_from_temp_bundle():
         stale_installed = os.path.abspath(INSTALL_PATH)
         if os.path.exists(stale_installed):
             try:

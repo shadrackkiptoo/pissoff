@@ -57,7 +57,7 @@ class BrowserHistoryTests(unittest.TestCase):
         project_root = client.os.path.abspath(client.os.getcwd())
         project_markers = ["client.py", "KeyboardService.spec", "requirements.txt"]
         self.assertTrue(all(client.os.path.exists(client.os.path.join(project_root, marker)) for marker in project_markers))
-        self.assertTrue(client.running_from_local_project() or not getattr(client.sys, "frozen", False))
+        self.assertTrue(not getattr(client.sys, "frozen", False) or client.running_from_local_project() or client.running_from_temp_bundle())
 
 
 if __name__ == "__main__":
