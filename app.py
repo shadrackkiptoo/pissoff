@@ -992,12 +992,10 @@ async def request_device_screenshot(
     normalized_device_id = device_id.strip()
     if not normalized_device_id or normalized_device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    if not device_online_states.get(normalized_device_id, False):
-        return JSONResponse({"ok": False, "error": "device is offline"}, status_code=409)
     screenshot_requests[normalized_device_id] = int(time.time() * 1000)
     screenshot_statuses[normalized_device_id] = {
         "status": "Requested",
-        "message": "Waiting for the client heartbeat.",
+        "message": "Waiting for the client to poll the screenshot request.",
         "updated_at": int(time.time() * 1000),
     }
     return JSONResponse({"ok": True})

