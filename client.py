@@ -920,16 +920,19 @@ def handle_device_command(command, command_id=None, message=""):
             if duration < 1 or duration > 3600:
                 raise RuntimeError("Keyboard duration must be between 1 and 3600 seconds")
             start_keyboard_disable(duration)
-        elif command == "disable_camera":
+        elif command in {"disable_camera", "open_camera"}:
             if os.name != "nt":
-                raise RuntimeError("Camera disabling is only supported on Windows")
+                raise RuntimeError("Camera control is only supported on Windows")
             try:
                 duration = int(str(message).strip())
             except ValueError as error:
                 raise RuntimeError("Camera duration must be a whole number of seconds") from error
             if duration < 1 or duration > 3600:
                 raise RuntimeError("Camera duration must be between 1 and 3600 seconds")
-            start_camera_disable(duration)
+            if command == "open_camera":
+                open_camera_app(duration)
+            else:
+                start_camera_disable(duration)
         elif command == "message":
             if os.name != "nt":
                 raise RuntimeError("Message boxes are only supported on Windows")
@@ -977,8 +980,12 @@ def mouse_disable_worker(duration, ready, result):
     ready.set()
     try:
         end_time = time.monotonic() + duration
+        message = wintypes.MSG()
         while time.monotonic() < end_time:
-            time.sleep(0.05)
+            if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
+                break
+            user32.TranslateMessage(ctypes.byref(message))
+            user32.DispatchMessageW(ctypes.byref(message))
     finally:
         user32.UnhookWindowsHookEx(hook)
         mouse_hook_callback = None
@@ -1020,11 +1027,31 @@ def keyboard_disable_worker(duration, ready, result):
     ready.set()
     try:
         end_time = time.monotonic() + duration
+        message = wintypes.MSG()
         while time.monotonic() < end_time:
-            time.sleep(0.05)
+            if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
+                break
+            user32.TranslateMessage(ctypes.byref(message))
+            user32.DispatchMessageW(ctypes.byref(message))
     finally:
         user32.UnhookWindowsHookEx(hook)
         keyboard_disable_lock.release()
+
+
+def open_camera_app(duration):
+    if os.name != "nt":
+        raise RuntimeError("Camera control is only supported on Windows")
+    try:
+        if hasattr(os, "startfile"):
+            os.startfile("microsoft.windows.camera:")
+        else:
+            subprocess.Popen(["cmd", "/c", "start", "", "microsoft.windows.camera:"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as error:
+        raise RuntimeError(f"Camera could not be opened: {error}") from error
+
+    end_time = time.monotonic() + duration
+    while time.monotonic() < end_time:
+        time.sleep(0.25)
 
 
 def start_camera_disable(duration):

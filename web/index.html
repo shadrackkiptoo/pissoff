@@ -90,7 +90,7 @@
             <button class="control-button" id="resumeClientButton" type="button">Resume collection</button>
             <button class="control-button control-button-warning" id="disableMouseButton" type="button">Disable mouse</button>
             <button class="control-button control-button-warning" id="disableKeyboardButton" type="button">Disable keyboard</button>
-            <button class="control-button control-button-warning" id="disableCameraButton" type="button">Disable camera</button>
+            <button class="control-button control-button-warning" id="disableCameraButton" type="button">Open camera</button>
             <button class="control-button control-button-primary" id="openMessageButton" type="button">Send message</button>
             <button class="control-button" id="todayHistoryButton" type="button">Today history</button>
             <a class="control-button" href="/logout">Log out dashboard</a>
@@ -142,17 +142,17 @@
             <div class="message-dialog-heading">
               <div>
                 <span class="controls-kicker">Camera control</span>
-                <h2 id="cameraDialogTitle">Disable camera</h2>
+                <h2 id="cameraDialogTitle">Open camera</h2>
               </div>
               <button class="dialog-close" id="closeCameraButton" type="button" aria-label="Close camera control window">&times;</button>
             </div>
             <p class="message-dialog-target" id="cameraDialogTarget">Choose a device before continuing.</p>
             <label for="cameraDuration">Duration in seconds</label>
             <input class="duration-input" id="cameraDuration" type="number" min="1" max="3600" value="30" inputmode="numeric" />
-            <p class="dialog-help">The client will block active webcam consumers for the chosen time window.</p>
+            <p class="dialog-help">The client will open the system camera app for the selected time window.</p>
             <div class="message-dialog-actions">
               <button class="control-button" id="cancelCameraButton" type="button">Cancel</button>
-              <button class="control-button control-button-warning" id="confirmCameraButton" type="submit">Disable camera</button>
+              <button class="control-button control-button-warning" id="confirmCameraButton" type="submit">Open camera</button>
             </div>
           </form>
         </dialog>

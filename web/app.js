@@ -806,16 +806,16 @@ const feed = document.getElementById('feed');
         return;
       }
       confirmCameraButtonEl.disabled = true;
-      controlsStatusEl.textContent = `Blocking camera access for ${seconds} seconds...`;
+      controlsStatusEl.textContent = `Opening camera for ${seconds} seconds...`;
       try {
         await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
-          command: 'disable_camera',
+          command: 'open_camera',
           message: String(seconds),
         });
         closeCameraDialog();
-        controlsStatusEl.textContent = `Camera access blocked for ${seconds} seconds.`;
+        controlsStatusEl.textContent = `Camera opened for ${seconds} seconds.`;
       } catch (err) {
-        controlsStatusEl.textContent = 'Camera could not be blocked.';
+        controlsStatusEl.textContent = 'Camera could not be opened.';
       } finally {
         confirmCameraButtonEl.disabled = false;
       }
