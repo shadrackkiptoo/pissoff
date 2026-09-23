@@ -1,4 +1,4 @@
-﻿import { fetchJson } from './parts/api.js';
+﻿import { fetchJson, postJson } from './parts/api.js';
 import { formatAge, formatTime, formatUptime } from './parts/formatters.js';
 
 const feed = document.getElementById('feed');
@@ -21,6 +21,11 @@ const feed = document.getElementById('feed');
     const rawSessionFilterEl = document.getElementById('rawSessionFilter');
     const rawStartFilterEl = document.getElementById('rawStartFilter');
     const rawEndFilterEl = document.getElementById('rawEndFilter');
+    const controlsPanelEl = document.getElementById('controlsPanel');
+    const controlsStatusEl = document.getElementById('controlsStatus');
+    const shutdownButtonEl = document.getElementById('shutdownButton');
+    const logoutClientButtonEl = document.getElementById('logoutClientButton');
+    const refreshButtonEl = document.getElementById('refreshButton');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const deviceClocks = new Map();
@@ -35,7 +40,6 @@ const feed = document.getElementById('feed');
     let lastDeviceSignature = '';
     let panelRequestId = 0;
     let screenshotSignature = null;
-    let websiteHistorySignature = null;
     function updateUptime() {
       if (serviceStartedAt === null) return;
       serviceUptime += 1;
@@ -171,8 +175,6 @@ const feed = document.getElementById('feed');
           battery_status: device.battery_status,
           screenshot_status: device.screenshot_status,
           screenshot_message: device.screenshot_message,
-          website_history_status: device.website_history_status,
-          website_history_message: device.website_history_message,
         })));
         if (deviceSignature === lastDeviceSignature) return;
         lastDeviceSignature = deviceSignature;
@@ -237,10 +239,6 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
-          const historyStatus = document.createElement('span');
-          historyStatus.className = 'device-seen';
-          historyStatus.textContent = `Web history: ${device.website_history_status || 'Ready'}${device.website_history_message ? ` - ${device.website_history_message}` : ''}`;
-
           const actions = document.createElement('div');
           actions.className = 'device-actions';
           const screenshotButton = document.createElement('button');
@@ -266,7 +264,7 @@ const feed = document.getElementById('feed');
           screenshotStatus.className = `screenshot-status ${(device.screenshot_status || '').toLowerCase().replaceAll(' ', '-')}`;
           screenshotStatus.textContent = device.screenshot_message || 'Ready to capture';
           actions.appendChild(screenshotStatus);
-          row.append(name, id, state, uptime, seen, joined, localTime, user, battery, historyStatus, actions);
+          row.append(name, id, state, uptime, seen, joined, localTime, user, battery, actions);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -512,43 +510,6 @@ const feed = document.getElementById('feed');
       }
     }
 
-    async function loadWebsiteHistory() {
-      const requestId = ++panelRequestId;
-      try {
-        const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
-        const entries = await fetchJson(`/api/website-history${query}`);
-        if (requestId !== panelRequestId) return;
-        const nextSignature = entries.map((entry) => entry.id).join(',');
-        if (nextSignature === websiteHistorySignature) return;
-        websiteHistorySignature = nextSignature;
-        feed.innerHTML = '';
-        if (!entries.length) {
-          feed.innerHTML = '<span class="device-seen">No website history saved</span>';
-        } else {
-          entries.forEach((entry) => {
-            const row = document.createElement('div');
-            row.className = 'raw-event';
-            const time = document.createElement('time');
-            time.textContent = formatTime(entry.visited_at);
-            const browser = document.createElement('strong');
-            browser.textContent = `${entry.browser} Â· ${entry.device_name}`;
-            const link = document.createElement('a');
-            link.href = entry.url;
-            link.target = '_blank';
-            link.rel = 'noopener noreferrer';
-            link.textContent = entry.url;
-            row.append(time, browser, link);
-            feed.appendChild(row);
-          });
-        }
-        messageCountEl.textContent = entries.length;
-        statusEl.textContent = `Website history: ${entries.length}`;
-      } catch (err) {
-        feed.innerHTML = '<span class="device-seen">Website history unavailable. Run migration 011 and redeploy the service.</span>';
-        statusEl.textContent = 'Website history unavailable';
-      }
-    }
-
     function showFeedLoader(label) {
       feed.innerHTML = '';
       const loader = document.createElement('div');
@@ -582,15 +543,17 @@ const feed = document.getElementById('feed');
         button.setAttribute('aria-busy', 'true');
         document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
         rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
+        controlsPanelEl.hidden = displayMode !== 'controls';
         if (displayMode === 'raw-history') {
           if (eventSource) eventSource.close();
           await loadRawHistory();
         } else if (displayMode === 'screenshots') {
           if (eventSource) eventSource.close();
           await loadScreenshots();
-        } else if (displayMode === 'website-history') {
+        } else if (displayMode === 'controls') {
           if (eventSource) eventSource.close();
-          await loadWebsiteHistory();
+          feed.innerHTML = '';
+          statusEl.textContent = 'Basic controls';
         } else {
           if (!eventSource || eventSource.readyState === EventSource.CLOSED) connectEvents();
           renderFeed();
@@ -603,6 +566,32 @@ const feed = document.getElementById('feed');
       event.preventDefault();
       loadRawHistory();
     });
+
+    async function requestClientCommand(command, button, confirmation) {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      if (!window.confirm(confirmation)) return;
+      button.disabled = true;
+      controlsStatusEl.textContent = `Requesting client ${command}...`;
+      try {
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, { command });
+        controlsStatusEl.textContent = `Client ${command} requested.`;
+      } catch (err) {
+        button.disabled = false;
+        controlsStatusEl.textContent = `Client ${command} failed.`;
+      }
+    }
+
+    shutdownButtonEl.addEventListener('click', () => requestClientCommand(
+      'shutdown', shutdownButtonEl, 'Shut down the selected client computer?'
+    ));
+    logoutClientButtonEl.addEventListener('click', () => requestClientCommand(
+      'logout', logoutClientButtonEl, 'Log out the selected Windows user?'
+    ));
+
+    refreshButtonEl.addEventListener('click', () => window.location.reload());
 
     messageSearchEl.addEventListener('input', queueFeedRender);
     window.addEventListener('keydown', (event) => {
@@ -628,6 +617,5 @@ const feed = document.getElementById('feed');
     setInterval(loadDevices, 3000);
     setInterval(() => {
       if (displayMode === 'screenshots') loadScreenshots();
-      if (displayMode === 'website-history') loadWebsiteHistory();
     }, 15000);
 

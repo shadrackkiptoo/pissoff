@@ -57,7 +57,7 @@
             <button type="button" data-mode="raw">Raw</button>
             <button type="button" data-mode="raw-history">Raw history</button>
             <button type="button" data-mode="screenshots">Screenshots</button>
-            <button type="button" data-mode="website-history">Website history</button>
+            <button type="button" data-mode="controls">Basic controls</button>
           </div>
         </div>
         <form class="raw-history-controls" id="rawHistoryControls" hidden>
@@ -67,6 +67,19 @@
           <input id="rawEndFilter" type="datetime-local" aria-label="End time" />
           <button type="submit">Load history</button>
         </form>
+        <section class="controls-panel" id="controlsPanel" hidden aria-label="Basic controls">
+          <div class="controls-heading">
+            <span class="controls-kicker">Service controls</span>
+            <h2>Basic controls</h2>
+          </div>
+          <div class="controls-actions">
+            <button class="control-button control-button-danger" id="shutdownButton" type="button">Shut down client</button>
+            <button class="control-button control-button-danger" id="logoutClientButton" type="button">Log out client</button>
+            <a class="control-button" href="/logout">Log out dashboard</a>
+            <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
+          </div>
+          <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
+        </section>
         <div class="feed" id="feed"></div>
       </section>
       <aside class="open-apps-panel" aria-label="Open applications">

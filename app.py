@@ -30,6 +30,7 @@ website_history: Deque[Dict[str, object]] = deque(maxlen=500)
 devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
 screenshot_requests: Dict[str, int] = {}
+screenshot_commands: Dict[str, str] = {}
 screenshot_statuses: Dict[str, Dict[str, object]] = {}
 website_history_statuses: Dict[str, Dict[str, str]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -39,6 +40,7 @@ SCREENSHOT_BUCKET = "screenshots"
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 90
+WEBSITE_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 SCREENSHOT_STATUS_TIMEOUT = 90
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
@@ -950,17 +952,23 @@ async def fetch_messages(device_id: str | None = None):
 @app.get("/api/website-history")
 async def fetch_website_history(device_id: str | None = None):
     selected_device_id = (device_id or "").strip()
+    cutoff = int(time.time() * 1000) - WEBSITE_HISTORY_MAX_AGE_MS
     if DATABASE_URL:
         try:
             with psycopg.connect(DATABASE_URL) as connection:
                 with connection.cursor() as cursor:
+                    cursor.execute(
+                        "DELETE FROM website_history WHERE visited_at < %s",
+                        (cutoff,),
+                    )
                     query = """
                         SELECT id, device_id, device_name, browser, url, visited_at
                         FROM website_history
                     """
-                    values = []
+                    values = [cutoff]
+                    query += " WHERE visited_at >= %s"
                     if selected_device_id:
-                        query += " WHERE device_id = %s"
+                        query += " AND device_id = %s"
                         values.append(selected_device_id)
                     query += " ORDER BY visited_at DESC LIMIT 500"
                     cursor.execute(query, values)
@@ -977,7 +985,8 @@ async def fetch_website_history(device_id: str | None = None):
             return JSONResponse({"ok": False, "error": "website history unavailable"}, status_code=503)
     return JSONResponse([
         item for item in reversed(website_history)
-        if not selected_device_id or item["device_id"] == selected_device_id
+        if item["visited_at"] >= cutoff
+        and (not selected_device_id or item["device_id"] == selected_device_id)
     ])
 
 
@@ -990,7 +999,12 @@ async def add_website_history(
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
     device_id = payload.device_id.strip()
     url = payload.url.strip()
-    if not device_id or not url.startswith(("http://", "https://")):
+    cutoff = int(time.time() * 1000) - WEBSITE_HISTORY_MAX_AGE_MS
+    if (
+        not device_id
+        or not url.startswith(("http://", "https://"))
+        or payload.visited_at < cutoff
+    ):
         return JSONResponse({"ok": False, "error": "invalid website history"}, status_code=400)
     item = {
         "id": int(time.time() * 1000),
@@ -1236,7 +1250,11 @@ async def device_heartbeat(
             "message": "The client is capturing the desktop.",
             "updated_at": now,
         }
-    response = {"ok": True, "screenshot_requested": screenshot_requested}
+    response = {
+        "ok": True,
+        "screenshot_requested": screenshot_requested,
+        "command": screenshot_commands.pop(device_id, None),
+    }
     if valid_site_url(CLIENT_SITE_URL):
         response["client_site_url"] = CLIENT_SITE_URL
     return JSONResponse(response)
@@ -1261,6 +1279,24 @@ async def request_device_screenshot(
     return JSONResponse({"ok": True})
 
 
+@app.post("/api/devices/{device_id}/command")
+async def request_device_command(
+    device_id: str, request: Request, x_api_key: str | None = Header(default=None)
+):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    normalized_device_id = device_id.strip()
+    if not normalized_device_id or normalized_device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    payload = await request.json()
+    command = str(payload.get("command", "")).strip().lower()
+    if command not in {"shutdown", "logout"}:
+        return JSONResponse({"ok": False, "error": "unsupported command"}, status_code=400)
+    screenshot_commands[normalized_device_id] = command
+    return JSONResponse({"ok": True})
+
+
 @app.get("/api/devices/{device_id}/screenshot-request")
 async def poll_device_screenshot_request(
     device_id: str, x_api_key: str | None = Header(default=None)
@@ -1279,7 +1315,11 @@ async def poll_device_screenshot_request(
             "message": "The client is capturing the desktop.",
             "updated_at": now,
         }
-    return JSONResponse({"ok": True, "screenshot_requested": screenshot_requested})
+    return JSONResponse({
+        "ok": True,
+        "screenshot_requested": screenshot_requested,
+        "command": screenshot_commands.pop(normalized_device_id, None),
+    })
 
 
 @app.post("/api/devices/screenshot-upload")
