@@ -1480,7 +1480,7 @@ async def fetch_screenshot_image(screenshot_id: int):
         image_bytes = await asyncio.to_thread(read_screenshot_image, screenshot_id)
         if image_bytes is None:
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
-        return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
+        return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
     except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
         detail = ""
         if isinstance(error, HTTPError):
