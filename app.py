@@ -1757,8 +1757,9 @@ def save_screenshot(device_id, screenshot_base64):
     image_bytes = base64.b64decode(screenshot_base64, validate=True)
     captured_at = int(time.time() * 1000)
     storage_path = f"{device_id}/{captured_at}.jpg"
+    encoded_storage_path = urllib.parse.quote(storage_path, safe="/")
     storage_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{storage_path}",
+        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
         data=image_bytes,
         headers={
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
@@ -1775,6 +1776,21 @@ def save_screenshot(device_id, screenshot_base64):
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:240]
         raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
+    verify_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/authenticated/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        },
+    )
+    try:
+        with urllib.request.urlopen(verify_request, timeout=30) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Storage verification HTTP {response.status}")
+            response.read(1)
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"Storage verification HTTP {error.code}: {detail}") from error
     with psycopg.connect(DATABASE_URL) as connection:
         with connection.cursor() as cursor:
             cursor.execute(
