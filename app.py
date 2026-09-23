@@ -357,9 +357,10 @@ def configure_telegram_menu():
         telegram_api_request(
             "deleteWebhook", {"drop_pending_updates": "false"}
         )
-        telegram_api_request(
+        command_result = telegram_api_request(
             "setMyCommands",
             {
+                "scope": json.dumps({"type": "chat", "chat_id": TELEGRAM_CHAT_ID}),
                 "commands": json.dumps(
                     [
                         {"command": "start", "description": "Welcome to KeyboardService"},
@@ -373,6 +374,9 @@ def configure_telegram_menu():
                 )
             },
         )
+        if not command_result.get("ok"):
+            raise RuntimeError(f"Telegram rejected command menu: {command_result}")
+        print("Telegram command menu registered: /setsite included")
     except Exception as error:
         print(f"Could not configure Telegram command menu: {error}")
 
