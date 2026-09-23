@@ -284,6 +284,47 @@ def telegram_devices_text():
     return telegram_panel("DEVICES // NETWORK", "\n".join(lines))
 
 
+def queue_device_command(device_id, command):
+    normalized_device_id = str(device_id).strip()
+    normalized_command = str(command).strip().lower()
+    if not normalized_device_id or normalized_device_id not in devices:
+        return False, "Device not found. Use /devices to check the device ID."
+    if normalized_command not in {"shutdown", "logout"}:
+        return False, "Unsupported client command."
+    screenshot_commands[normalized_device_id] = normalized_command
+    return True, normalized_device_id
+
+
+def telegram_controls_markup():
+    rows = []
+    for device in sorted(devices.values(), key=lambda item: str(item.get("name", ""))):
+        device_id = str(device.get("id", ""))
+        if not device_id:
+            continue
+        name = str(device.get("name", "Unknown device"))[:20]
+        rows.append([
+            {"text": f"Shut down {name}", "callback_data": f"control:shutdown:{device_id}"},
+            {"text": f"Log out {name}", "callback_data": f"control:logout:{device_id}"},
+        ])
+    return {"inline_keyboard": rows}
+
+
+def telegram_controls_text():
+    if not devices:
+        return telegram_panel("CONTROLS // CLIENTS", "No devices have checked in yet.")
+    lines = [
+        "Choose a client action below, or use:",
+        "<code>/shutdown DEVICE_ID</code>",
+        "<code>/logout DEVICE_ID</code>",
+        "",
+    ]
+    for device in sorted(devices.values(), key=lambda item: str(item.get("name", ""))):
+        device_id = html.escape(str(device.get("id", "unknown")))
+        name = html.escape(str(device.get("name", "Unknown device")))
+        lines.append(f"• <b>{name}</b> — <code>{device_id}</code>")
+    return telegram_panel("CONTROLS // CLIENTS", "\n".join(lines))
+
+
 def telegram_messages_text():
     counts = {}
     for item in messages:
@@ -413,11 +454,22 @@ def poll_telegram_commands():
                     callback_replies = {
                         "status": telegram_uptime_text,
                         "devices": telegram_devices_text,
+                        "controls": telegram_controls_text,
                         "messages": telegram_messages_text,
                         "support": telegram_support_text,
                         "help": telegram_help_text,
                     }
-                    callback_reply = callback_replies.get(callback_query.get("data"))
+                    callback_data = callback_query.get("data", "")
+                    if callback_data.startswith("control:"):
+                        _, action, device_id = callback_data.split(":", 2)
+                        succeeded, result = queue_device_command(device_id, action)
+                        callback_reply = lambda: telegram_panel(
+                            f"CLIENT // {action.upper()}",
+                            f"Command queued for <code>{html.escape(result)}</code>."
+                            if succeeded else html.escape(result),
+                        )
+                    else:
+                        callback_reply = callback_replies.get(callback_data)
                     if callback_reply:
                         telegram_api_request(
                             "answerCallbackQuery",
@@ -462,6 +514,17 @@ def poll_telegram_commands():
                     reply = telegram_uptime_text()
                 elif command_lower == "/devices":
                     reply = telegram_devices_text()
+                elif command_lower == "/controls":
+                    reply = telegram_controls_text()
+                elif command_lower in {"/shutdown", "/logout"}:
+                    requested_device_id = text[len(command):].strip()
+                    action = command_lower[1:]
+                    succeeded, result = queue_device_command(requested_device_id, action)
+                    reply = telegram_panel(
+                        f"CLIENT // {action.upper()}",
+                        f"Command queued for <code>{html.escape(result)}</code>."
+                        if succeeded else html.escape(result),
+                    )
                 elif command_lower == "/messages":
                     reply = telegram_messages_text()
                 elif command_lower == "/setsite":
@@ -493,7 +556,9 @@ def poll_telegram_commands():
                             "chat_id": TELEGRAM_CHAT_ID,
                             "text": reply,
                             "parse_mode": "HTML",
-                            "reply_markup": json.dumps(telegram_menu_markup()),
+                            "reply_markup": json.dumps(
+                                telegram_controls_markup() if command_lower == "/controls" else telegram_menu_markup()
+                            ),
                         },
                     )
         except HTTPError as error:
@@ -1295,14 +1360,12 @@ async def request_device_command(
     expected_key = os.getenv("INGEST_API_KEY")
     if expected_key and x_api_key != expected_key:
         return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-    normalized_device_id = device_id.strip()
-    if not normalized_device_id or normalized_device_id not in devices:
-        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
     payload = await request.json()
     command = str(payload.get("command", "")).strip().lower()
-    if command not in {"shutdown", "logout"}:
-        return JSONResponse({"ok": False, "error": "unsupported command"}, status_code=400)
-    screenshot_commands[normalized_device_id] = command
+    succeeded, result = queue_device_command(device_id, command)
+    if not succeeded:
+        status_code = 400 if "Unsupported" in result else 404
+        return JSONResponse({"ok": False, "error": result.lower()}, status_code=status_code)
     return JSONResponse({"ok": True})
 
 
