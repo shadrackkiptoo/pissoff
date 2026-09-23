@@ -213,6 +213,14 @@ first run, the packaged client copies itself to
 the installed path for future logins. The downloaded file only needs to be
 opened once.
 
+The packaged client checks the latest GitHub release in the background after
+startup. When a newer release is available, it downloads the
+`KeyboardService.exe` asset, verifies GitHub's SHA-256 digest, replaces the
+installed copy, and starts the new version. Network failures leave the current
+version running. Before publishing a new release, update `APP_VERSION` in
+`client.py`, rebuild the executable, and upload it to GitHub with the exact
+asset name `KeyboardService.exe`.
+
 ## Build the Executable
 
 ```powershell

