@@ -1707,6 +1707,7 @@ async def poll_device_screenshot_request(
         "screenshot_requested": screenshot_requested,
         "command": command.get("command") if command else None,
         "command_id": command.get("command_id") if command else None,
+        "message": command.get("message", "") if command else "",
     })
 
 
