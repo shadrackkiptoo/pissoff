@@ -161,7 +161,35 @@ const feed = document.getElementById('feed');
       }
       apps.forEach((app) => {
         const item = document.createElement('li');
-        item.textContent = app;
+        item.className = 'open-app-item';
+
+        const appLabel = document.createElement('span');
+        appLabel.className = 'open-app-label';
+        appLabel.textContent = app;
+
+        const closeButton = document.createElement('button');
+        closeButton.type = 'button';
+        closeButton.className = 'control-button control-button-warning';
+        closeButton.textContent = 'Close';
+        closeButton.addEventListener('click', async () => {
+          if (!selectedDeviceId) return;
+          closeButton.disabled = true;
+          closeButton.textContent = 'Closing...';
+          try {
+            await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+              command: 'close_app',
+              message: String(app),
+            });
+            controlsStatusEl.textContent = `Close request sent for ${app}.`;
+          } catch (err) {
+            controlsStatusEl.textContent = `Could not close ${app}.`;
+          } finally {
+            closeButton.disabled = false;
+            closeButton.textContent = 'Close';
+          }
+        });
+
+        item.append(appLabel, closeButton);
         openAppsListEl.appendChild(item);
       });
     }

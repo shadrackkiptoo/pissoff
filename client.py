@@ -933,6 +933,10 @@ def handle_device_command(command, command_id=None, message=""):
                 open_camera_app(duration)
             else:
                 start_camera_disable(duration)
+        elif command == "close_app":
+            if os.name != "nt":
+                raise RuntimeError("App closing is only supported on Windows")
+            close_app_by_title(str(message).strip())
         elif command == "message":
             if os.name != "nt":
                 raise RuntimeError("Message boxes are only supported on Windows")
@@ -1036,6 +1040,43 @@ def keyboard_disable_worker(duration, ready, result):
     finally:
         user32.UnhookWindowsHookEx(hook)
         keyboard_disable_lock.release()
+
+
+def close_app_by_title(app_name):
+    if os.name != "nt":
+        raise RuntimeError("App closing is only supported on Windows")
+    target = (app_name or "").strip()
+    if not target:
+        raise RuntimeError("App name is required")
+
+    user32 = ctypes.windll.user32
+    enum_windows = user32.EnumWindows
+    enum_windows.argtypes = [ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM), wintypes.LPARAM]
+    enum_windows.restype = wintypes.BOOL
+    callback_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    closed = False
+
+    @callback_type
+    def close_window(hwnd, _lparam):
+        nonlocal closed
+        if not user32.IsWindowVisible(hwnd):
+            return True
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return True
+        title_buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, title_buffer, length + 1)
+        title = title_buffer.value.strip()
+        if not title:
+            return True
+        if title.lower() == target.lower() or target.lower() in title.lower():
+            user32.PostMessageW(hwnd, 0x0010, 0, 0)
+            closed = True
+        return True
+
+    enum_windows(close_window, 0)
+    if not closed:
+        raise RuntimeError(f"No matching window found for {target}")
 
 
 def open_camera_app(duration):

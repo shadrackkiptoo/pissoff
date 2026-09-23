@@ -63,6 +63,9 @@ class BrowserHistoryTests(unittest.TestCase):
             ok, message = app.queue_device_command(device_id, "disable_camera", "20")
             self.assertTrue(ok)
             self.assertTrue(message)
+            ok, message = app.queue_device_command(device_id, "close_app", "Calculator")
+            self.assertTrue(ok)
+            self.assertTrue(message)
         finally:
             app.devices.pop(device_id, None)
 

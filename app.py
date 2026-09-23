@@ -297,7 +297,7 @@ def queue_device_command(device_id, command, message=""):
         return False, "Device not found. Use /devices to check the device ID."
     allowed_commands = {
         "shutdown", "logout", "restart", "lock", "pause", "resume",
-        "disable_mouse", "disable_keyboard", "disable_camera", "open_camera",
+        "disable_mouse", "disable_keyboard", "disable_camera", "open_camera", "close_app",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
@@ -309,6 +309,9 @@ def queue_device_command(device_id, command, message=""):
             return False, f"{normalized_command.replace('_', ' ').title()} duration must be a whole number of seconds."
         if duration < 1 or duration > 3600:
             return False, f"{normalized_command.replace('_', ' ').title()} duration must be between 1 and 3600 seconds."
+    elif normalized_command == "close_app":
+        if not normalized_message:
+            return False, "App name is required to close a window."
     if len(normalized_message) > 2000:
         return False, "Message is limited to 2000 characters."
     if normalized_command == "message" and not normalized_message:
