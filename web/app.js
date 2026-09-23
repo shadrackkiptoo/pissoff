@@ -1001,16 +1001,23 @@ const feed = document.getElementById('feed');
       captureScreenshotButtonEl.disabled = true;
       screenshotDialogStatusEl.textContent = 'Requesting screenshot...';
       screenshotDialogStatusEl.className = 'controls-screenshot-status requested';
+      controlsScreenshotStatusEl.textContent = 'Requesting screenshot...';
+      controlsScreenshotStatusEl.className = 'controls-screenshot-status requested';
       try {
         const response = await fetch(`/api/devices/${encodeURIComponent(selectedDeviceId)}/screenshot`, { method: 'POST' });
         if (!response.ok) throw new Error('request failed');
         controlsStatusEl.textContent = 'Screenshot queued for the selected client.';
         screenshotDialogStatusEl.textContent = 'Screenshot requested';
+        controlsScreenshotStatusEl.textContent = 'Screenshot requested';
         screenshotDialogStatusEl.className = 'controls-screenshot-status requested';
+        controlsScreenshotStatusEl.className = 'controls-screenshot-status requested';
+        await loadDevices();
       } catch (err) {
         controlsStatusEl.textContent = 'Screenshot request failed.';
         screenshotDialogStatusEl.textContent = 'Screenshot request failed';
+        controlsScreenshotStatusEl.textContent = 'Screenshot request failed';
         screenshotDialogStatusEl.className = 'controls-screenshot-status failed';
+        controlsScreenshotStatusEl.className = 'controls-screenshot-status failed';
         updateSelectedDeviceScreenshot();
       }
     });
