@@ -1485,8 +1485,10 @@ async def fetch_screenshot_image(screenshot_id: int):
         detail = ""
         if isinstance(error, HTTPError):
             detail = error.read().decode("utf-8", errors="replace")[:240]
+        elif isinstance(error, RuntimeError):
+            detail = str(error)
         print(f"Could not load screenshot image: {error}{f' - {detail}' if detail else ''}")
-        return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
+        return JSONResponse({"ok": False, "error": "screenshot unavailable", "detail": detail or "storage request failed"}, status_code=503)
 
 
 def read_screenshot_image(screenshot_id):
@@ -1523,9 +1525,20 @@ def read_storage_image(storage_path):
     signed_path = signed.get("signedURL") or signed.get("signedUrl")
     if not signed_path:
         raise RuntimeError("Storage signing returned no URL")
-    image_url = signed_path if signed_path.startswith("http") else f"{SUPABASE_URL}/storage/v1{signed_path}"
-    with urllib.request.urlopen(image_url, timeout=30) as response:
-        return response.read()
+    if signed_path.startswith("http"):
+        image_url = signed_path
+    elif signed_path.startswith("/storage/v1/"):
+        image_url = f"{SUPABASE_URL}{signed_path}"
+    elif signed_path.startswith("/"):
+        image_url = f"{SUPABASE_URL}/storage/v1{signed_path}"
+    else:
+        image_url = f"{SUPABASE_URL}/storage/v1/{signed_path}"
+    try:
+        with urllib.request.urlopen(image_url, timeout=30) as response:
+            return response.read()
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"Storage download HTTP {error.code}: {detail}") from error
 
 
 @app.post("/api/devices/heartbeat")
