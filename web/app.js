@@ -629,5 +629,5 @@ const feed = document.getElementById('feed');
     setInterval(() => {
       if (displayMode === 'screenshots') loadScreenshots();
       if (displayMode === 'website-history') loadWebsiteHistory();
-    }, 3000);
+    }, 15000);
 

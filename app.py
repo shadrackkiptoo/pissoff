@@ -842,7 +842,11 @@ async def fetch_devices():
                     )
                     screenshot_devices = {str(row[0]) for row in cursor.fetchall()}
         except Exception as error:
-            print(f"Could not load screenshot list: {error}")
+            error_text = str(error)
+            if "does not exist" in error_text or "relation \"screenshots\"" in error_text:
+                print(f"Screenshots table not ready yet: {error}")
+            else:
+                print(f"Could not load screenshot list: {error}")
     result = []
     for device in devices.values():
         device_time_ms = device.get("local_time_ms")
@@ -909,6 +913,10 @@ async def fetch_screenshots(device_id: str | None = None):
             for row in rows
         ])
     except Exception as error:
+        error_text = str(error)
+        if "does not exist" in error_text or "relation \"screenshots\"" in error_text:
+            print(f"Screenshots table not ready yet: {error}")
+            return JSONResponse([])
         print(f"Could not load screenshots: {error}")
         return JSONResponse({"ok": False, "error": "screenshots unavailable"}, status_code=503)
 
