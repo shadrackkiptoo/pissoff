@@ -51,6 +51,7 @@ const feed = document.getElementById('feed');
     const confirmMouseButtonEl = document.getElementById('confirmMouseButton');
     const refreshButtonEl = document.getElementById('refreshButton');
     const openMessageButtonEl = document.getElementById('openMessageButton');
+    const todayHistoryButtonEl = document.getElementById('todayHistoryButton');
     const messageDialogEl = document.getElementById('messageDialog');
     const closeMessageButtonEl = document.getElementById('closeMessageButton');
     const cancelMessageButtonEl = document.getElementById('cancelMessageButton');
@@ -59,6 +60,11 @@ const feed = document.getElementById('feed');
     const messageComposeEl = document.getElementById('messageCompose');
     const clientMessageEl = document.getElementById('clientMessage');
     const sendMessageButtonEl = document.getElementById('sendMessageButton');
+    const historyDialogEl = document.getElementById('historyDialog');
+    const closeHistoryButtonEl = document.getElementById('closeHistoryButton');
+    const closeHistoryDialogButtonEl = document.getElementById('closeHistoryDialogButton');
+    const todayHistoryTargetEl = document.getElementById('todayHistoryTarget');
+    const todayHistoryListEl = document.getElementById('todayHistoryList');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const deviceClocks = new Map();
@@ -746,9 +752,64 @@ const feed = document.getElementById('feed');
       if (messageDialogEl.open) messageDialogEl.close();
     }
 
+    async function openTodayHistoryDialog() {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      if (!historyDialogEl.open) historyDialogEl.showModal();
+      todayHistoryTargetEl.textContent = `Viewing ${controlsDeviceEl.textContent}`;
+      todayHistoryListEl.innerHTML = '<div class="history-empty">Loading today’s browser history...</div>';
+      try {
+        const items = await fetchJson(`/api/website-history?device_id=${encodeURIComponent(selectedDeviceId)}`);
+        const startOfToday = new Date();
+        startOfToday.setHours(0, 0, 0, 0);
+        const todaysEntries = (items || [])
+          .filter((entry) => Number(entry.visited_at) >= startOfToday.getTime())
+          .sort((a, b) => Number(b.visited_at) - Number(a.visited_at));
+
+        todayHistoryListEl.innerHTML = '';
+        if (!todaysEntries.length) {
+          todayHistoryListEl.innerHTML = '<div class="history-empty">No browser history recorded for today.</div>';
+          return;
+        }
+
+        const list = document.createElement('ul');
+        list.className = 'history-items';
+        todaysEntries.forEach((entry) => {
+          const item = document.createElement('li');
+          item.className = 'history-item';
+          const time = document.createElement('span');
+          time.className = 'history-time';
+          time.textContent = formatTime(Number(entry.visited_at));
+          const browser = document.createElement('span');
+          browser.className = 'history-browser';
+          browser.textContent = `${entry.browser || 'Unknown browser'}`;
+          const link = document.createElement('a');
+          link.className = 'history-link';
+          link.href = entry.url;
+          link.target = '_blank';
+          link.rel = 'noopener noreferrer';
+          link.textContent = entry.url;
+          item.append(time, browser, link);
+          list.appendChild(item);
+        });
+        todayHistoryListEl.appendChild(list);
+      } catch (err) {
+        todayHistoryListEl.innerHTML = '<div class="history-empty">Today’s browser history is unavailable.</div>';
+      }
+    }
+
+    function closeHistoryDialog() {
+      if (historyDialogEl.open) historyDialogEl.close();
+    }
+
     openMessageButtonEl.addEventListener('click', openMessageDialog);
     closeMessageButtonEl.addEventListener('click', closeMessageDialog);
     cancelMessageButtonEl.addEventListener('click', closeMessageDialog);
+    todayHistoryButtonEl.addEventListener('click', openTodayHistoryDialog);
+    closeHistoryButtonEl.addEventListener('click', closeHistoryDialog);
+    closeHistoryDialogButtonEl.addEventListener('click', closeHistoryDialog);
     clientMessageEl.addEventListener('input', () => {
       messageLengthEl.textContent = `${clientMessageEl.value.length} / 2000`;
     });

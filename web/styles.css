@@ -734,6 +734,20 @@
     }
     .dialog-close:hover { color: var(--text); border-color: var(--accent); }
     .message-dialog-target { margin: 2px 0 8px; color: var(--accent); font-size: 0.7rem; }
+    .history-dialog .message-compose { gap: 12px; }
+    .history-list { max-height: 420px; overflow-y: auto; margin: 0; }
+    .history-list .history-empty { color: var(--muted); font-size: 0.7rem; }
+    .history-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .history-item {
+      display: grid;
+      gap: 6px;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: rgba(120, 217, 209, 0.05);
+    }
+    .history-time, .history-browser { color: var(--muted); font-size: 0.62rem; }
+    .history-link { color: var(--accent); font-size: 0.7rem; overflow-wrap: anywhere; }
     .message-compose label { color: var(--muted); font-size: 0.68rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
     .duration-input {
       width: 140px;

