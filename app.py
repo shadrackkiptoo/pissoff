@@ -1506,39 +1506,20 @@ def read_screenshot_image(screenshot_id):
 
 def read_storage_image(storage_path):
     storage_path = storage_path.lstrip("/")
-    sign_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/sign/{SCREENSHOT_BUCKET}/{urllib.parse.quote(storage_path, safe='/')}",
-        data=json.dumps({"expiresIn": 300}).encode("utf-8"),
+    encoded_storage_path = urllib.parse.quote(storage_path, safe="/")
+    storage_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
         headers={
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
             "apikey": SUPABASE_SERVICE_ROLE_KEY,
-            "Content-Type": "application/json",
         },
-        method="POST",
     )
     try:
-        with urllib.request.urlopen(sign_request, timeout=30) as response:
-            signed = json.loads(response.read().decode("utf-8"))
-    except HTTPError as error:
-        detail = error.read().decode("utf-8", errors="replace")[:240]
-        raise RuntimeError(f"Storage signing HTTP {error.code}: {detail}") from error
-    signed_path = signed.get("signedURL") or signed.get("signedUrl")
-    if not signed_path:
-        raise RuntimeError("Storage signing returned no URL")
-    if signed_path.startswith("http"):
-        image_url = signed_path
-    elif signed_path.startswith("/storage/v1/"):
-        image_url = f"{SUPABASE_URL}{signed_path}"
-    elif signed_path.startswith("/"):
-        image_url = f"{SUPABASE_URL}/storage/v1{signed_path}"
-    else:
-        image_url = f"{SUPABASE_URL}/storage/v1/{signed_path}"
-    try:
-        with urllib.request.urlopen(image_url, timeout=30) as response:
+        with urllib.request.urlopen(storage_request, timeout=30) as response:
             return response.read()
     except HTTPError as error:
         detail = error.read().decode("utf-8", errors="replace")[:240]
-        raise RuntimeError(f"Storage download HTTP {error.code}: {detail}") from error
+        raise RuntimeError(f"Storage download HTTP {error.code} path={storage_path}: {detail}") from error
 
 
 @app.post("/api/devices/heartbeat")
@@ -1779,7 +1760,7 @@ def save_screenshot(device_id, screenshot_base64):
         detail = error.read().decode("utf-8", errors="replace")[:240]
         raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
     verify_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/authenticated/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
+        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
         headers={
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
             "apikey": SUPABASE_SERVICE_ROLE_KEY,
