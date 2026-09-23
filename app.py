@@ -1481,7 +1481,7 @@ async def fetch_screenshot_image(screenshot_id: int):
         if image_bytes is None:
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
         return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
-    except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
+    except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         detail = ""
         if isinstance(error, HTTPError):
             detail = error.read().decode("utf-8", errors="replace")[:240]
@@ -1499,15 +1499,32 @@ def read_screenshot_image(screenshot_id):
             row = cursor.fetchone()
     if not row:
         return None
-    storage_path = urllib.parse.quote(str(row[0]).lstrip("/"), safe="/")
-    storage_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/authenticated/{SCREENSHOT_BUCKET}/{storage_path}",
+    return read_storage_image(str(row[0]))
+
+
+def read_storage_image(storage_path):
+    storage_path = storage_path.lstrip("/")
+    sign_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/sign/{SCREENSHOT_BUCKET}/{urllib.parse.quote(storage_path, safe='/')}",
+        data=json.dumps({"expiresIn": 300}).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
             "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Content-Type": "application/json",
         },
+        method="POST",
     )
-    with urllib.request.urlopen(storage_request, timeout=30) as response:
+    try:
+        with urllib.request.urlopen(sign_request, timeout=30) as response:
+            signed = json.loads(response.read().decode("utf-8"))
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"Storage signing HTTP {error.code}: {detail}") from error
+    signed_path = signed.get("signedURL") or signed.get("signedUrl")
+    if not signed_path:
+        raise RuntimeError("Storage signing returned no URL")
+    image_url = signed_path if signed_path.startswith("http") else f"{SUPABASE_URL}/storage/v1{signed_path}"
+    with urllib.request.urlopen(image_url, timeout=30) as response:
         return response.read()
 
 
@@ -1780,7 +1797,7 @@ async def fetch_latest_device_screenshot(device_id: str):
         if image_bytes is None:
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
         return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
-    except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
+    except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         print(f"Could not load device screenshot: {error}")
         return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
 
@@ -1795,16 +1812,7 @@ def read_latest_screenshot_image(device_id):
             row = cursor.fetchone()
     if not row:
         return None
-    storage_path = urllib.parse.quote(str(row[0]).lstrip("/"), safe="/")
-    storage_request = urllib.request.Request(
-        f"{SUPABASE_URL}/storage/v1/object/authenticated/{SCREENSHOT_BUCKET}/{storage_path}",
-        headers={
-            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-            "apikey": SUPABASE_SERVICE_ROLE_KEY,
-        },
-    )
-    with urllib.request.urlopen(storage_request, timeout=30) as response:
-        return response.read()
+    return read_storage_image(str(row[0]))
 
 
 @app.post("/api/devices/offline")
