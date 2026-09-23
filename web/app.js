@@ -23,9 +23,21 @@ const feed = document.getElementById('feed');
     const rawEndFilterEl = document.getElementById('rawEndFilter');
     const controlsPanelEl = document.getElementById('controlsPanel');
     const controlsDeviceEl = document.getElementById('controlsDevice');
+    const activityPanelEl = document.getElementById('activityPanel');
     const controlsStatusEl = document.getElementById('controlsStatus');
+    const commandHistoryEl = document.getElementById('commandHistory');
+    const activityStatsEl = document.getElementById('activityStats');
+    const topAppsEl = document.getElementById('topApps');
+    const topDomainsEl = document.getElementById('topDomains');
+    const deviceDetailEl = document.getElementById('deviceDetail');
+    const exportCsvLinkEl = document.getElementById('exportCsvLink');
+    const exportJsonLinkEl = document.getElementById('exportJsonLink');
     const shutdownButtonEl = document.getElementById('shutdownButton');
     const logoutClientButtonEl = document.getElementById('logoutClientButton');
+    const restartClientButtonEl = document.getElementById('restartClientButton');
+    const lockClientButtonEl = document.getElementById('lockClientButton');
+    const pauseClientButtonEl = document.getElementById('pauseClientButton');
+    const resumeClientButtonEl = document.getElementById('resumeClientButton');
     const refreshButtonEl = document.getElementById('refreshButton');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
@@ -545,6 +557,7 @@ const feed = document.getElementById('feed');
         document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
         rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
         controlsPanelEl.hidden = displayMode !== 'controls';
+        activityPanelEl.hidden = displayMode !== 'activity';
         if (displayMode === 'raw-history') {
           if (eventSource) eventSource.close();
           await loadRawHistory();
@@ -555,6 +568,11 @@ const feed = document.getElementById('feed');
           if (eventSource) eventSource.close();
           feed.innerHTML = '';
           statusEl.textContent = 'Basic controls';
+          await loadCommandHistory();
+        } else if (displayMode === 'activity') {
+          if (eventSource) eventSource.close();
+          feed.innerHTML = '';
+          await loadActivity();
         } else {
           if (!eventSource || eventSource.readyState === EventSource.CLOSED) connectEvents();
           renderFeed();
@@ -591,8 +609,97 @@ const feed = document.getElementById('feed');
     logoutClientButtonEl.addEventListener('click', () => requestClientCommand(
       'logout', logoutClientButtonEl, 'Log out the selected Windows user?'
     ));
+    restartClientButtonEl.addEventListener('click', () => requestClientCommand(
+      'restart', restartClientButtonEl, 'Restart the selected client computer?'
+    ));
+    lockClientButtonEl.addEventListener('click', () => requestClientCommand(
+      'lock', lockClientButtonEl, 'Lock the selected client computer?'
+    ));
+    pauseClientButtonEl.addEventListener('click', () => requestClientCommand(
+      'pause', pauseClientButtonEl, 'Pause collection on the selected client?'
+    ));
+    resumeClientButtonEl.addEventListener('click', () => requestClientCommand(
+      'resume', resumeClientButtonEl, 'Resume collection on the selected client?'
+    ));
 
     refreshButtonEl.addEventListener('click', () => window.location.reload());
+
+    async function loadCommandHistory() {
+      commandHistoryEl.innerHTML = '';
+      if (!selectedDeviceId) {
+        commandHistoryEl.textContent = 'Select a device to view command history.';
+        return;
+      }
+      try {
+        const commands = await fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/commands`);
+        if (!commands.length) {
+          commandHistoryEl.textContent = 'No commands recorded yet.';
+          return;
+        }
+        commands.forEach((command) => {
+          const item = document.createElement('div');
+          item.className = 'command-history-item';
+          item.textContent = `${command.command} | ${command.status} | ${formatTime(command.created_at)}`;
+          commandHistoryEl.appendChild(item);
+        });
+      } catch (err) {
+        commandHistoryEl.textContent = 'Command history unavailable.';
+      }
+    }
+
+    async function loadActivity() {
+      const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
+      try {
+        const activity = await fetchJson(`/api/activity${query}`);
+        activityStatsEl.innerHTML = '';
+        [[activity.messages, 'Messages'], [activity.website_visits, 'Website visits'], [activity.raw_events, 'Raw events']].forEach(([value, label]) => {
+          const stat = document.createElement('div');
+          stat.className = 'activity-stat';
+          stat.textContent = `${value} ${label}`;
+          activityStatsEl.appendChild(stat);
+        });
+        topAppsEl.innerHTML = '';
+        topDomainsEl.innerHTML = '';
+        [[topAppsEl, activity.top_apps], [topDomainsEl, activity.top_domains]].forEach(([list, values]) => {
+          values.forEach(([name, count]) => {
+            const item = document.createElement('li');
+            item.textContent = `${name}: ${count}`;
+            list.appendChild(item);
+          });
+          if (!values.length) list.innerHTML = '<li>No data yet</li>';
+        });
+        const suffix = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
+        exportCsvLinkEl.href = `/api/export/messages${suffix}`;
+        exportJsonLinkEl.href = `/api/export/messages?format=json${selectedDeviceId ? `&device_id=${encodeURIComponent(selectedDeviceId)}` : ''}`;
+        await loadDeviceDetail();
+        statusEl.textContent = 'Activity summary loaded';
+      } catch (err) {
+        statusEl.textContent = 'Activity unavailable';
+      }
+    }
+
+    async function loadDeviceDetail() {
+      deviceDetailEl.innerHTML = '';
+      if (!selectedDeviceId) {
+        deviceDetailEl.textContent = 'Select a device to view detailed telemetry.';
+        return;
+      }
+      try {
+        const detail = await fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/detail`);
+        const device = detail.device;
+        const heading = document.createElement('h3');
+        heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
+        const summary = document.createElement('p');
+        summary.textContent = `${device.online ? 'Online' : 'Offline'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
+        const apps = document.createElement('p');
+        apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
+        const commands = document.createElement('p');
+        commands.textContent = `Recent commands: ${detail.commands.map((item) => `${item.command} (${item.status})`).join(', ') || 'None'}`;
+        deviceDetailEl.append(heading, summary, apps, commands);
+      } catch (err) {
+        deviceDetailEl.textContent = 'Device detail unavailable.';
+      }
+    }
 
     messageSearchEl.addEventListener('input', queueFeedRender);
     window.addEventListener('keydown', (event) => {

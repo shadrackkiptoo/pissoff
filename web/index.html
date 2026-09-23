@@ -58,6 +58,7 @@
             <button type="button" data-mode="raw-history">Raw history</button>
             <button type="button" data-mode="screenshots">Screenshots</button>
             <button type="button" data-mode="controls">Basic controls</button>
+            <button type="button" data-mode="activity">Activity</button>
           </div>
         </div>
         <form class="raw-history-controls" id="rawHistoryControls" hidden>
@@ -76,10 +77,31 @@
           <div class="controls-actions">
             <button class="control-button control-button-danger" id="shutdownButton" type="button">Shut down client</button>
             <button class="control-button control-button-danger" id="logoutClientButton" type="button">Log out client</button>
+            <button class="control-button control-button-danger" id="restartClientButton" type="button">Restart client</button>
+            <button class="control-button" id="lockClientButton" type="button">Lock client</button>
+            <button class="control-button" id="pauseClientButton" type="button">Pause collection</button>
+            <button class="control-button" id="resumeClientButton" type="button">Resume collection</button>
             <a class="control-button" href="/logout">Log out dashboard</a>
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
           </div>
           <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
+          <div class="command-history" id="commandHistory"></div>
+        </section>
+        <section class="activity-panel" id="activityPanel" hidden aria-label="Activity summary">
+          <div class="controls-heading">
+            <span class="controls-kicker">Telemetry summary</span>
+            <h2>Activity</h2>
+          </div>
+          <div class="activity-actions">
+            <a class="control-button" id="exportCsvLink" href="/api/export/messages">Export CSV</a>
+            <a class="control-button" id="exportJsonLink" href="/api/export/messages?format=json">Export JSON</a>
+          </div>
+          <div class="activity-stats" id="activityStats"></div>
+          <div class="activity-columns">
+            <div><h3>Top applications</h3><ul id="topApps"></ul></div>
+            <div><h3>Top websites</h3><ul id="topDomains"></ul></div>
+          </div>
+          <div class="device-detail" id="deviceDetail"></div>
         </section>
         <div class="feed" id="feed"></div>
       </section>

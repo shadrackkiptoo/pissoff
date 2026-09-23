@@ -141,6 +141,38 @@ create table if not exists public.service_settings (
     updated_at timestamptz not null default now()
 );
 
+create table if not exists public.device_commands (
+    command_id text primary key,
+    device_id text not null,
+    command text not null,
+    requested_by text not null default 'dashboard',
+    source text not null default 'dashboard',
+    status text not null default 'queued',
+    created_at bigint not null,
+    claimed_at bigint,
+    completed_at bigint,
+    error text not null default ''
+);
+
+create index if not exists device_commands_device_time_idx
+    on public.device_commands (device_id, created_at desc);
+
+create index if not exists device_commands_status_idx
+    on public.device_commands (status, created_at desc);
+
+create table if not exists public.audit_events (
+    id bigint generated always as identity primary key,
+    event_type text not null,
+    actor text not null default 'system',
+    source text not null default 'server',
+    device_id text not null default '',
+    details jsonb not null default '{}'::jsonb,
+    created_at bigint not null
+);
+
+create index if not exists audit_events_time_idx
+    on public.audit_events (created_at desc);
+
 alter table public.messages
     drop column if exists screenshot_base64;
 
