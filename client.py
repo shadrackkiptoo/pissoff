@@ -917,6 +917,7 @@ def send_heartbeat():
                 {
                     "device_id": device_id,
                     "device_name": device_name,
+                    "client_version": APP_VERSION,
                     "started_at": client_started_at,
                     **get_device_telemetry(),
                 }

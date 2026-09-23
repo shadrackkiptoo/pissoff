@@ -264,6 +264,7 @@
       font-weight: 700;
     }
     .device-id,
+    .device-version,
     .device-seen {
       display: block;
       margin-top: 4px;
@@ -271,6 +272,7 @@
       font-size: 0.66rem;
       overflow-wrap: anywhere;
     }
+    .device-version { color: var(--accent); font-weight: 700; }
     .device-state {
       display: inline-flex;
       align-items: center;

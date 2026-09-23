@@ -950,16 +950,17 @@ def load_devices():
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT device_id, device_name, last_seen, started_at, joined_at
+                    SELECT device_id, device_name, client_version, last_seen, started_at, joined_at
                     FROM devices
                     ORDER BY last_seen DESC
                     """
                 )
                 rows = cursor.fetchall()
-        for device_id, device_name, last_seen, started_at, joined_at in rows:
+        for device_id, device_name, client_version, last_seen, started_at, joined_at in rows:
             devices[str(device_id)] = {
                 "id": device_id,
                 "name": device_name,
+            "client_version": client_version or "",
                 "last_seen": last_seen,
                 "started_at": started_at,
                 "joined_at": joined_at,
@@ -1073,6 +1074,7 @@ class MessageInput(BaseModel):
 class DeviceHeartbeat(BaseModel):
     device_id: str
     device_name: str = "Unknown device"
+    client_version: str = ""
     started_at: int
     local_time: str = ""
     local_time_ms: int | None = None
@@ -1571,6 +1573,7 @@ async def device_heartbeat(
             payload.started_at,
             joined_at,
             {
+                "client_version": payload.client_version,
                 "local_time": payload.local_time,
                 "local_time_ms": payload.local_time_ms,
                 "logged_in_user": payload.logged_in_user,

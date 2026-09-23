@@ -217,6 +217,7 @@ const feed = document.getElementById('feed');
         const deviceSignature = JSON.stringify(devices.map((device) => ({
           id: device.id,
           name: device.name,
+          client_version: device.client_version,
           online: device.online,
           status: device.status,
           open_apps: device.open_apps,
@@ -247,6 +248,10 @@ const feed = document.getElementById('feed');
           const id = document.createElement('span');
           id.className = 'device-id';
           id.textContent = `ID: ${device.id || 'unknown'}`;
+
+          const version = document.createElement('span');
+          version.className = 'device-version';
+          version.textContent = `Client v${device.client_version || 'unknown'}`;
 
           const state = document.createElement('span');
           state.className = `device-state ${device.online ? 'online' : 'offline'}`;
@@ -313,7 +318,7 @@ const feed = document.getElementById('feed');
           screenshotStatus.className = `screenshot-status ${(device.screenshot_status || '').toLowerCase().replaceAll(' ', '-')}`;
           screenshotStatus.textContent = device.screenshot_message || 'Ready to capture';
           actions.appendChild(screenshotStatus);
-          row.append(name, id, state, uptime, seen, joined, localTime, user, battery, actions);
+          row.append(name, id, version, state, uptime, seen, joined, localTime, user, battery, actions);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -843,7 +848,7 @@ const feed = document.getElementById('feed');
         const heading = document.createElement('h3');
         heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
         const summary = document.createElement('p');
-        summary.textContent = `${device.online ? 'Online' : 'Offline'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
+        summary.textContent = `${device.online ? 'Online' : 'Offline'} | Client v${device.client_version || 'unknown'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
         const apps = document.createElement('p');
         apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
         const commands = document.createElement('p');
