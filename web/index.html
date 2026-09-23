@@ -96,6 +96,17 @@
             <a class="control-button" href="/logout">Log out dashboard</a>
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
           </div>
+          <div class="controls-screenshot" id="controlsScreenshot">
+            <div class="controls-screenshot-header">
+              <span class="controls-kicker">Device preview</span>
+              <button class="control-button control-button-primary" id="captureScreenshotButton" type="button">Capture screenshot</button>
+            </div>
+            <div class="controls-screenshot-status" id="controlsScreenshotStatus">No screenshot available.</div>
+            <div class="controls-screenshot-frame">
+              <img id="controlsScreenshotPreview" alt="Selected device screenshot" hidden />
+              <div class="controls-screenshot-placeholder" id="controlsScreenshotPlaceholder">No screenshot captured yet.</div>
+            </div>
+          </div>
           <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
           <div class="command-history" id="commandHistory"></div>
         </section>

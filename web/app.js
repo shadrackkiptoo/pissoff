@@ -27,6 +27,10 @@ const feed = document.getElementById('feed');
     const rawEndFilterEl = document.getElementById('rawEndFilter');
     const controlsPanelEl = document.getElementById('controlsPanel');
     const controlsDeviceEl = document.getElementById('controlsDevice');
+    const captureScreenshotButtonEl = document.getElementById('captureScreenshotButton');
+    const controlsScreenshotStatusEl = document.getElementById('controlsScreenshotStatus');
+    const controlsScreenshotPreviewEl = document.getElementById('controlsScreenshotPreview');
+    const controlsScreenshotPlaceholderEl = document.getElementById('controlsScreenshotPlaceholder');
     const activityPanelEl = document.getElementById('activityPanel');
     const controlsStatusEl = document.getElementById('controlsStatus');
     const commandHistoryEl = document.getElementById('commandHistory');
@@ -85,6 +89,7 @@ const feed = document.getElementById('feed');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const deviceClocks = new Map();
+    let latestDevices = [];
     let selectedDeviceId = new URLSearchParams(window.location.search).get('device') || '';
     let displayMode = 'filtered';
     let currentMessages = [];
@@ -268,13 +273,44 @@ const feed = document.getElementById('feed');
       }
     }
 
+    function updateSelectedDeviceScreenshot() {
+      const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
+      const defaultStatus = 'Ready to capture';
+      if (!selectedDeviceId || !selectedDevice) {
+        controlsScreenshotStatusEl.textContent = 'Select a device to preview screenshots.';
+        controlsScreenshotStatusEl.className = 'controls-screenshot-status';
+        controlsScreenshotPreviewEl.hidden = true;
+        controlsScreenshotPreviewEl.removeAttribute('src');
+        controlsScreenshotPlaceholderEl.hidden = false;
+        captureScreenshotButtonEl.disabled = true;
+        return;
+      }
+      const status = selectedDevice.screenshot_status || 'Ready';
+      const message = selectedDevice.screenshot_message || defaultStatus;
+      const isBusy = ['Requested', 'Taking screenshot'].includes(status);
+      controlsScreenshotStatusEl.textContent = message;
+      controlsScreenshotStatusEl.className = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
+      captureScreenshotButtonEl.disabled = !selectedDevice.online || isBusy;
+      if (selectedDevice.screenshot_url) {
+        controlsScreenshotPreviewEl.src = `${selectedDevice.screenshot_url}?t=${Date.now()}`;
+        controlsScreenshotPreviewEl.hidden = false;
+        controlsScreenshotPlaceholderEl.hidden = true;
+      } else {
+        controlsScreenshotPreviewEl.hidden = true;
+        controlsScreenshotPreviewEl.removeAttribute('src');
+        controlsScreenshotPlaceholderEl.hidden = false;
+      }
+    }
+
     async function loadDevices() {
       try {
         const devices = await fetchJson('/api/devices');
+        latestDevices = devices;
         renderOpenApps(devices);
         deviceCountEl.textContent = devices.length;
         onlineCountEl.textContent = `${devices.filter((device) => device.online).length} online`;
         deviceUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+        updateSelectedDeviceScreenshot();
         devices.forEach((device) => {
           const deviceId = String(device.id || 'unknown');
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
@@ -366,32 +402,7 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
-          const actions = document.createElement('div');
-          actions.className = 'device-actions';
-          const screenshotButton = document.createElement('button');
-          screenshotButton.className = 'screenshot-request';
-          screenshotButton.type = 'button';
-          screenshotButton.textContent = device.screenshot_status || 'Screenshot';
-          screenshotButton.disabled = !device.online || ['Requested', 'Taking screenshot'].includes(device.screenshot_status);
-          screenshotButton.addEventListener('click', async (event) => {
-            event.stopPropagation();
-            screenshotButton.disabled = true;
-            screenshotButton.textContent = 'Requesting...';
-            try {
-              const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/screenshot`, { method: 'POST' });
-              if (!response.ok) throw new Error('request failed');
-              screenshotButton.textContent = 'Requested';
-            } catch (err) {
-              screenshotButton.textContent = 'Retry';
-              screenshotButton.disabled = false;
-            }
-          });
-          actions.appendChild(screenshotButton);
-          const screenshotStatus = document.createElement('span');
-          screenshotStatus.className = `screenshot-status ${(device.screenshot_status || '').toLowerCase().replaceAll(' ', '-')}`;
-          screenshotStatus.textContent = device.screenshot_message || 'Ready to capture';
-          actions.appendChild(screenshotStatus);
-          row.append(name, id, version, state, uptime, seen, joined, localTime, user, battery, actions);
+          row.append(name, id, version, state, uptime, seen, joined, localTime, user, battery);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -675,6 +686,7 @@ const feed = document.getElementById('feed');
       screenshotSignature = null;
       scopeLabelEl.textContent = `Device ${selectedDeviceId}`;
       controlsDeviceEl.textContent = `Selected device: ${selectedDeviceId}`;
+      updateSelectedDeviceScreenshot();
       if (eventSource) eventSource.close();
       await loadInitialMessages();
       connectEvents();
@@ -901,6 +913,28 @@ const feed = document.getElementById('feed');
       }
     });
 
+    captureScreenshotButtonEl.addEventListener('click', async () => {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      captureScreenshotButtonEl.disabled = true;
+      controlsScreenshotStatusEl.textContent = 'Requesting screenshot...';
+      controlsScreenshotStatusEl.className = 'controls-screenshot-status requested';
+      try {
+        const response = await fetch(`/api/devices/${encodeURIComponent(selectedDeviceId)}/screenshot`, { method: 'POST' });
+        if (!response.ok) throw new Error('request failed');
+        controlsStatusEl.textContent = 'Screenshot queued for the selected client.';
+        controlsScreenshotStatusEl.textContent = 'Screenshot requested';
+        controlsScreenshotStatusEl.className = 'controls-screenshot-status requested';
+      } catch (err) {
+        controlsStatusEl.textContent = 'Screenshot request failed.';
+        controlsScreenshotStatusEl.textContent = 'Screenshot request failed';
+        controlsScreenshotStatusEl.className = 'controls-screenshot-status failed';
+        updateSelectedDeviceScreenshot();
+      }
+    });
+
     function openMessageDialog() {
       if (!selectedDeviceId) {
         controlsStatusEl.textContent = 'Select a device first.';
@@ -1095,6 +1129,7 @@ const feed = document.getElementById('feed');
     controlsDeviceEl.textContent = selectedDeviceId
       ? `Selected device: ${selectedDeviceId}`
       : 'Select a device from the device list to enable client actions.';
+    updateSelectedDeviceScreenshot();
     async function startApp() {
       await loadInitialMessages();
       connectEvents();
