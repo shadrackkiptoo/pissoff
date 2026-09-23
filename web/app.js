@@ -32,7 +32,8 @@ const feed = document.getElementById('feed');
     const controlsScreenshotStatusEl = document.getElementById('controlsScreenshotStatus');
     const controlsScreenshotPreviewEl = document.getElementById('controlsScreenshotPreview');
     const controlsScreenshotPlaceholderEl = document.getElementById('controlsScreenshotPlaceholder');
-    const screenshotDialogEl = document.getElementById('screenshotDialog');
+    const screenshotOverlayEl = document.getElementById('screenshotOverlay');
+    const screenshotDialogEl = document.getElementById('screenshotOverlay');
     const screenshotDialogTargetEl = document.getElementById('screenshotDialogTarget');
     const screenshotDialogProgressEl = document.getElementById('screenshotDialogProgress');
     const screenshotDialogStatusEl = document.getElementById('screenshotDialogStatus');
@@ -112,6 +113,7 @@ const feed = document.getElementById('feed');
     let panelRequestId = 0;
     let screenshotSignature = null;
     let notificationTimer = null;
+    let screenshotStatusTimer = null;
 
     function showLiveNotification(msg) {
       const preview = String(msg.text || msg.raw_text || '').trim();
@@ -985,11 +987,55 @@ const feed = document.getElementById('feed');
       if (selectedDevice) {
         syncScreenshotPreviewState(selectedDevice, selectedDevice.screenshot_status || 'Ready', selectedDevice.screenshot_message || 'Ready to capture');
       }
-      screenshotDialogEl.showModal();
+      if (typeof screenshotDialogEl.showModal === 'function') {
+        try {
+          screenshotDialogEl.showModal();
+        } catch (err) {
+          screenshotOverlayEl.hidden = false;
+          screenshotOverlayEl.classList.add('show');
+        }
+      } else {
+        screenshotOverlayEl.hidden = false;
+        screenshotOverlayEl.classList.add('show');
+      }
+      if (screenshotOverlayEl && screenshotOverlayEl.hidden === false) {
+        screenshotOverlayEl.classList.add('show');
+      }
+      if (screenshotStatusTimer) clearInterval(screenshotStatusTimer);
+      screenshotStatusTimer = setInterval(async () => {
+        if (!screenshotOverlayEl.hidden && !selectedDeviceId) {
+          clearInterval(screenshotStatusTimer);
+          screenshotStatusTimer = null;
+          return;
+        }
+        await loadDevices();
+        const currentDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
+        if (!currentDevice) {
+          clearInterval(screenshotStatusTimer);
+          screenshotStatusTimer = null;
+          return;
+        }
+        const status = currentDevice.screenshot_status || 'Ready';
+        if (!['Requested', 'Taking screenshot', 'Capturing', 'Uploading'].includes(status)) {
+          clearInterval(screenshotStatusTimer);
+          screenshotStatusTimer = null;
+        }
+        syncScreenshotPreviewState(currentDevice, status, currentDevice.screenshot_message || 'Ready to capture');
+      }, 1000);
     }
 
     function closeScreenshotDialog() {
-      if (screenshotDialogEl.open) screenshotDialogEl.close();
+      if (screenshotStatusTimer) {
+        clearInterval(screenshotStatusTimer);
+        screenshotStatusTimer = null;
+      }
+      if (typeof screenshotDialogEl.close === 'function' && screenshotDialogEl.open) {
+        screenshotDialogEl.close();
+      }
+      if (screenshotOverlayEl) {
+        screenshotOverlayEl.classList.remove('show');
+        screenshotOverlayEl.hidden = true;
+      }
     }
 
     captureScreenshotButtonEl.addEventListener('click', async () => {

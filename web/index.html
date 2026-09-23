@@ -194,33 +194,35 @@
             </div>
           </form>
         </dialog>
-        <dialog class="message-dialog screenshot-dialog" id="screenshotDialog" aria-labelledby="screenshotDialogTitle">
-          <form class="message-compose" id="screenshotCompose" method="dialog">
-            <div class="message-dialog-heading">
-              <div>
-                <span class="controls-kicker">Device preview</span>
-                <h2 id="screenshotDialogTitle">Screenshot</h2>
+        <div class="screenshot-overlay" id="screenshotOverlay" hidden>
+          <div class="message-dialog screenshot-dialog" role="dialog" aria-modal="true" aria-labelledby="screenshotDialogTitle">
+            <div class="message-compose" id="screenshotCompose">
+              <div class="message-dialog-heading">
+                <div>
+                  <span class="controls-kicker">Device preview</span>
+                  <h2 id="screenshotDialogTitle">Screenshot</h2>
+                </div>
+                <button class="dialog-close" id="closeScreenshotButton" type="button" aria-label="Close screenshot window">&times;</button>
               </div>
-              <button class="dialog-close" id="closeScreenshotButton" type="button" aria-label="Close screenshot window">&times;</button>
+              <p class="message-dialog-target" id="screenshotDialogTarget">Choose a device before continuing.</p>
+              <div class="controls-screenshot-progress screenshot-progress" id="screenshotDialogProgress" aria-label="Screenshot progress">
+                <span class="progress-step" data-stage="Queued">Queued</span>
+                <span class="progress-step" data-stage="Capturing">Capturing</span>
+                <span class="progress-step" data-stage="Uploading">Uploading</span>
+                <span class="progress-step" data-stage="Ready">Ready</span>
+              </div>
+              <div class="controls-screenshot-status" id="screenshotDialogStatus">No screenshot available.</div>
+              <div class="controls-screenshot-frame screenshot-dialog-frame">
+                <img id="screenshotDialogPreview" alt="Selected device screenshot" hidden />
+                <div class="controls-screenshot-placeholder" id="screenshotDialogPlaceholder">No screenshot captured yet.</div>
+              </div>
+              <div class="message-dialog-actions">
+                <button class="control-button" id="cancelScreenshotButton" type="button">Close</button>
+                <button class="control-button control-button-primary" id="confirmScreenshotButton" type="button">Capture again</button>
+              </div>
             </div>
-            <p class="message-dialog-target" id="screenshotDialogTarget">Choose a device before continuing.</p>
-            <div class="controls-screenshot-progress screenshot-progress" id="screenshotDialogProgress" aria-label="Screenshot progress">
-              <span class="progress-step" data-stage="Queued">Queued</span>
-              <span class="progress-step" data-stage="Capturing">Capturing</span>
-              <span class="progress-step" data-stage="Uploading">Uploading</span>
-              <span class="progress-step" data-stage="Ready">Ready</span>
-            </div>
-            <div class="controls-screenshot-status" id="screenshotDialogStatus">No screenshot available.</div>
-            <div class="controls-screenshot-frame screenshot-dialog-frame">
-              <img id="screenshotDialogPreview" alt="Selected device screenshot" hidden />
-              <div class="controls-screenshot-placeholder" id="screenshotDialogPlaceholder">No screenshot captured yet.</div>
-            </div>
-            <div class="message-dialog-actions">
-              <button class="control-button" id="cancelScreenshotButton" type="button">Close</button>
-              <button class="control-button control-button-primary" id="confirmScreenshotButton" type="button">Capture again</button>
-            </div>
-          </form>
-        </dialog>
+          </div>
+        </div>
         <dialog class="message-dialog history-dialog" id="historyDialog" aria-labelledby="historyDialogTitle">
           <div class="message-compose">
             <div class="message-dialog-heading">
