@@ -146,6 +146,7 @@
       min-width: 0;
       min-height: 0;
       flex-direction: column;
+      overflow: hidden;
     }
     .open-apps-panel {
       min-width: 0;
@@ -752,6 +753,8 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       background: rgba(10, 19, 31, 0.65);
+      max-height: calc(100% - 110px);
+      overflow-y: auto;
     }
     .controls-kicker {
       color: var(--muted);
@@ -773,6 +776,8 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       background: rgba(10, 19, 31, 0.65);
+      max-height: calc(100% - 110px);
+      overflow-y: auto;
     }
     .activity-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .activity-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
