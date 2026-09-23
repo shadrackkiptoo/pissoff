@@ -739,12 +739,13 @@ def handle_device_command(command, command_id=None):
     if not command:
         return
     try:
+        shutdown_path = os.path.join(os.environ.get("SystemRoot", r"C:\Windows"), "System32", "shutdown.exe")
         if command == "shutdown":
-            subprocess.Popen(["shutdown", "/s", "/t", "0"], close_fds=True)
+            subprocess.Popen([shutdown_path, "/s", "/t", "0"], close_fds=True)
         elif command == "logout":
-            subprocess.Popen(["shutdown", "/l"], close_fds=True)
+            subprocess.Popen([shutdown_path, "/l"], close_fds=True)
         elif command == "restart":
-            subprocess.Popen(["shutdown", "/r", "/t", "0"], close_fds=True)
+            subprocess.Popen([shutdown_path, "/r", "/t", "0"], close_fds=True)
         elif command == "lock":
             if os.name != "nt":
                 raise RuntimeError("Lock is only supported on Windows")
@@ -916,7 +917,12 @@ def install_and_relaunch():
 
     try:
         os.makedirs(INSTALL_DIR, exist_ok=True)
-        if not os.path.exists(INSTALL_PATH):
+        source_is_newer = (
+            not os.path.exists(INSTALL_PATH)
+            or os.path.getsize(sys.executable) != os.path.getsize(INSTALL_PATH)
+            or os.path.getmtime(sys.executable) > os.path.getmtime(INSTALL_PATH)
+        )
+        if source_is_newer:
             shutil.copy2(sys.executable, INSTALL_PATH)
         startup_info = subprocess.STARTUPINFO()
         startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
