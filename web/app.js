@@ -501,7 +501,7 @@ const feed = document.getElementById('feed');
             image.addEventListener('load', () => image.classList.add('loaded'));
             image.addEventListener('error', () => {
               image.classList.add('loaded');
-              image.alt = 'Screenshot unavailable';
+              image.alt = 'Screenshot unavailable - check Render logs and storage configuration';
             });
             image.addEventListener('click', () => window.open(item.image_url, '_blank', 'noopener'));
             const device = document.createElement('strong');

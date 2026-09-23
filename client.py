@@ -660,13 +660,17 @@ def upload_device_screenshot(screenshot_base64):
         return False
     report_screenshot_status("Uploading", "Uploading the screenshot to the server.")
     try:
+        headers = {"Content-Type": "application/json"}
+        api_key = os.getenv("INGEST_API_KEY", "").strip()
+        if api_key:
+            headers["x-api-key"] = api_key
         request = Request(
             f"{SITE_URL}/api/devices/screenshot-upload",
             data=json.dumps({
                 "device_id": device_id,
                 "screenshot_base64": screenshot_base64,
             }).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urlopen(request, timeout=20) as response:
@@ -684,6 +688,10 @@ def upload_device_screenshot(screenshot_base64):
 
 def report_screenshot_status(status, message):
     try:
+        headers = {"Content-Type": "application/json"}
+        api_key = os.getenv("INGEST_API_KEY", "").strip()
+        if api_key:
+            headers["x-api-key"] = api_key
         request = Request(
             f"{SITE_URL}/api/devices/screenshot-status",
             data=json.dumps({
@@ -691,7 +699,7 @@ def report_screenshot_status(status, message):
                 "status": status,
                 "message": message,
             }).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers=headers,
             method="POST",
         )
         with urlopen(request, timeout=10) as response:
