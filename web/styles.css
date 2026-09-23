@@ -425,7 +425,7 @@
       display: block;
       padding: 12vh 24px;
       color: var(--muted);
-      content: "No messages yet. Waiting for the first live event.";
+      content: "No filtered keys yet. Waiting for the first live event.";
       font-size: 0.86rem;
       text-align: center;
     }

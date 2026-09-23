@@ -435,10 +435,10 @@ const feed = document.getElementById('feed');
         const messages = await fetchJson(`/messages${query}`);
         currentMessages = messages;
         renderFeed();
-        statusEl.textContent = selectedDeviceId ? 'Device messages: ' + visibleMessages().length : 'Latest messages: ' + visibleMessages().length;
+        statusEl.textContent = selectedDeviceId ? 'Device filtered keys: ' + visibleMessages().length : 'Latest filtered keys: ' + visibleMessages().length;
         return true;
       } catch (err) {
-        statusEl.textContent = 'Listening for new messagesâ€¦';
+        statusEl.textContent = 'Listening for filtered keysâ€¦';
         return false;
       }
     }
