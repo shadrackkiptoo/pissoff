@@ -42,7 +42,7 @@ const feed = document.getElementById('feed');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const deviceClocks = new Map();
-    const selectedDeviceId = new URLSearchParams(window.location.search).get('device') || '';
+    let selectedDeviceId = new URLSearchParams(window.location.search).get('device') || '';
     let displayMode = 'filtered';
     let currentMessages = [];
     let eventSource = null;
@@ -200,9 +200,7 @@ const feed = document.getElementById('feed');
           const deviceId = String(device.id || 'unknown');
           const row = document.createElement('div');
           row.className = `device-row${device.online ? ' online' : ''}${deviceId === selectedDeviceId ? ' selected' : ''}`;
-          row.addEventListener('click', () => {
-            window.location.href = `/?device=${encodeURIComponent(deviceId)}`;
-          });
+          row.addEventListener('click', () => selectDevice(deviceId));
 
           const name = document.createElement('span');
           name.className = 'device-name';
@@ -547,6 +545,25 @@ const feed = document.getElementById('feed');
       eventSource.onerror = () => {
         statusEl.textContent = 'Reconnect in progressâ€¦';
       };
+    }
+
+    async function selectDevice(deviceId) {
+      if (selectedDeviceId === deviceId) return;
+      selectedDeviceId = deviceId;
+      const query = selectedDeviceId ? `/?device=${encodeURIComponent(selectedDeviceId)}` : '/';
+      window.history.pushState({}, '', query);
+      panelRequestId += 1;
+      currentMessages = [];
+      screenshotSignature = null;
+      scopeLabelEl.textContent = `Device ${selectedDeviceId}`;
+      controlsDeviceEl.textContent = `Selected device: ${selectedDeviceId}`;
+      if (eventSource) eventSource.close();
+      await loadInitialMessages();
+      connectEvents();
+      await loadDevices();
+      if (displayMode === 'screenshots') await loadScreenshots();
+      if (displayMode === 'activity') await loadActivity();
+      if (displayMode === 'controls') await loadCommandHistory();
     }
 
     document.querySelectorAll('[data-mode]').forEach((button) => {

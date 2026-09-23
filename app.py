@@ -46,6 +46,7 @@ DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 90
 WEBSITE_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 SCREENSHOT_STATUS_TIMEOUT = 90
+SCREENSHOT_LIST_LIMIT = 30
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 APP_USERNAME = os.getenv("APP_USERNAME", "").strip()
@@ -1448,7 +1449,8 @@ async def fetch_screenshots(device_id: str | None = None):
                 if device_id and device_id.strip():
                     query += " WHERE screenshots.device_id = %s"
                     values.append(device_id.strip())
-                query += " ORDER BY screenshots.captured_at DESC LIMIT 100"
+                query += " ORDER BY screenshots.captured_at DESC LIMIT %s"
+                values.append(SCREENSHOT_LIST_LIMIT)
                 cursor.execute(query, values)
                 rows = cursor.fetchall()
         return JSONResponse([
@@ -1475,27 +1477,34 @@ async def fetch_screenshot_image(screenshot_id: int):
     if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     try:
-        with psycopg.connect(DATABASE_URL) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "SELECT storage_path FROM screenshots WHERE id = %s",
-                    (screenshot_id,),
-                )
-                row = cursor.fetchone()
-        if not row:
+        image_bytes = await asyncio.to_thread(read_screenshot_image, screenshot_id)
+        if image_bytes is None:
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
-        storage_request = urllib.request.Request(
-            f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{row[0]}",
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                "apikey": SUPABASE_SERVICE_ROLE_KEY,
-            },
-        )
-        with urllib.request.urlopen(storage_request, timeout=30) as response:
-            return Response(response.read(), media_type="image/jpeg")
+        return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
     except (HTTPError, urllib.error.URLError, TimeoutError, psycopg.Error) as error:
         print(f"Could not load screenshot image: {error}")
         return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
+
+
+def read_screenshot_image(screenshot_id):
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT storage_path FROM screenshots WHERE id = %s",
+                (screenshot_id,),
+            )
+            row = cursor.fetchone()
+    if not row:
+        return None
+    storage_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{row[0]}",
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+        },
+    )
+    with urllib.request.urlopen(storage_request, timeout=30) as response:
+        return response.read()
 
 
 @app.post("/api/devices/heartbeat")
@@ -1690,33 +1699,7 @@ async def upload_device_screenshot(
         screenshot_statuses[device_id] = {"status": "Failed", "message": "Storage configuration is missing on the server.", "updated_at": int(time.time() * 1000)}
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     try:
-        image_bytes = base64.b64decode(screenshot_base64, validate=True)
-        captured_at = int(time.time() * 1000)
-        storage_path = f"{device_id}/{captured_at}.jpg"
-        storage_request = urllib.request.Request(
-            f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{storage_path}",
-            data=image_bytes,
-            headers={
-                "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
-                "apikey": SUPABASE_SERVICE_ROLE_KEY,
-                "Content-Type": "image/jpeg",
-                "x-upsert": "false",
-            },
-            method="POST",
-        )
-        try:
-            with urllib.request.urlopen(storage_request, timeout=30) as response:
-                if response.status >= 400:
-                    raise RuntimeError(f"Storage HTTP {response.status}")
-        except HTTPError as error:
-            detail = error.read().decode("utf-8", errors="replace")[:240]
-            raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
-        with psycopg.connect(DATABASE_URL) as connection:
-            with connection.cursor() as cursor:
-                cursor.execute(
-                    "INSERT INTO screenshots (device_id, captured_at, storage_path) VALUES (%s, %s, %s)",
-                    (device_id, captured_at, storage_path),
-                )
+        await asyncio.to_thread(save_screenshot, device_id, screenshot_base64)
     except (ValueError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         print(f"Could not save device screenshot: {error}")
         error_text = str(error)
@@ -1734,6 +1717,36 @@ async def upload_device_screenshot(
         "updated_at": int(time.time() * 1000),
     }
     return JSONResponse({"ok": True})
+
+
+def save_screenshot(device_id, screenshot_base64):
+    image_bytes = base64.b64decode(screenshot_base64, validate=True)
+    captured_at = int(time.time() * 1000)
+    storage_path = f"{device_id}/{captured_at}.jpg"
+    storage_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{storage_path}",
+        data=image_bytes,
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Content-Type": "image/jpeg",
+            "x-upsert": "false",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(storage_request, timeout=30) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Storage HTTP {response.status}")
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "INSERT INTO screenshots (device_id, captured_at, storage_path) VALUES (%s, %s, %s)",
+                (device_id, captured_at, storage_path),
+            )
 
 
 @app.post("/api/devices/screenshot-status")
@@ -1975,6 +1988,7 @@ async def events(
     selected_device_id = (device_id or "").strip()
     async def event_generator():
         last_seen = max(0, since)
+        last_keepalive = time.monotonic()
         while True:
             sent_event = False
             for msg in list(messages):
@@ -1986,6 +2000,9 @@ async def events(
                     last_seen = msg_id
             if await request.is_disconnected():
                 break
+            if time.monotonic() - last_keepalive >= 15:
+                yield ": keepalive\n\n"
+                last_keepalive = time.monotonic()
             if not sent_event:
                 await asyncio.sleep(0.75)
 
