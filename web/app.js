@@ -2,6 +2,9 @@
 import { formatAge, formatTime, formatUptime } from './parts/formatters.js';
 
 const feed = document.getElementById('feed');
+  const liveNotificationEl = document.getElementById('liveNotification');
+  const liveNotificationTextEl = document.getElementById('liveNotificationText');
+  const closeNotificationEl = document.getElementById('closeNotification');
     const statusEl = document.getElementById('status');
     const startedAtEl = document.getElementById('startedAt');
     const uptimeEl = document.getElementById('uptime');
@@ -53,6 +56,24 @@ const feed = document.getElementById('feed');
     let lastDeviceSignature = '';
     let panelRequestId = 0;
     let screenshotSignature = null;
+    let notificationTimer = null;
+
+    function showLiveNotification(msg) {
+      const preview = String(msg.text || msg.raw_text || '').trim();
+      const source = msg.app_name ? ` in ${msg.app_name}` : '';
+      liveNotificationTextEl.textContent = `${preview || 'New activity received'}${source}`;
+      liveNotificationEl.hidden = false;
+      if (notificationTimer) clearTimeout(notificationTimer);
+      notificationTimer = setTimeout(() => {
+        liveNotificationEl.hidden = true;
+      }, 5000);
+    }
+
+    closeNotificationEl.addEventListener('click', () => {
+      liveNotificationEl.hidden = true;
+      if (notificationTimer) clearTimeout(notificationTimer);
+    });
+
     function updateUptime() {
       if (serviceStartedAt === null) return;
       serviceUptime += 1;
@@ -537,8 +558,10 @@ const feed = document.getElementById('feed');
       const query = params.toString() ? `?${params.toString()}` : '';
       eventSource = new EventSource(`/events${query}`);
       eventSource.onmessage = (event) => {
-        currentMessages.push(JSON.parse(event.data));
+        const message = JSON.parse(event.data);
+        currentMessages.push(message);
         if (currentMessages.length > 200) currentMessages.shift();
+        showLiveNotification(message);
         queueFeedRender();
         statusEl.textContent = 'Live stream connected';
       };

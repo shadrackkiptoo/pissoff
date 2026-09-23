@@ -4,10 +4,17 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Live Key Feed</title>
-  <link rel="stylesheet" href="/web/styles.css?v=20260923-2" />
+  <link rel="stylesheet" href="/web/styles.css?v=20260923-3" />
 </head>
 <body>
   <div class="app">
+    <aside class="live-notification" id="liveNotification" role="status" aria-live="polite" aria-atomic="true" hidden>
+      <div class="live-notification-heading">
+        <strong>New activity</strong>
+        <button type="button" id="closeNotification" aria-label="Dismiss notification">Close</button>
+      </div>
+      <p id="liveNotificationText"></p>
+    </aside>
     <div class="topbar">
       <div class="brand"><span class="dot"></span> Live Key Feed</div>
       <div class="topbar-status" aria-label="Service status">
@@ -116,7 +123,7 @@
       </aside>
     </div>
   </div>
-  <script type="module" src="/web/app.js?v=20260923-2"></script>
+  <script type="module" src="/web/app.js?v=20260923-3"></script>
 </body>
 </html>
 
