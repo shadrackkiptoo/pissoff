@@ -310,9 +310,9 @@ def normalize_key(key):
 def capture_desktop_screenshot():
     try:
         image = ImageGrab.grab(all_screens=False)
-        image.thumbnail((1280, 800))
+        image.thumbnail((1024, 640))
         output = BytesIO()
-        image.convert("RGB").save(output, format="JPEG", quality=85, optimize=True)
+        image.convert("RGB").save(output, format="JPEG", quality=70, optimize=True)
         return base64.b64encode(output.getvalue()).decode("ascii")
     except Exception as error:
         report_screenshot_status("Failed", f"Desktop capture error: {type(error).__name__}")
@@ -673,7 +673,7 @@ def upload_device_screenshot(screenshot_base64):
             headers=headers,
             method="POST",
         )
-        with urlopen(request, timeout=20) as response:
+        with urlopen(request, timeout=90) as response:
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
         return True
