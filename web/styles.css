@@ -600,6 +600,7 @@
       color: var(--accent);
       font-size: 1rem;
     }
+    .controls-device { margin: 0 0 14px; color: var(--text); font-size: 0.72rem; }
     .controls-actions {
       display: flex;
       flex-wrap: wrap;

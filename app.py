@@ -310,6 +310,9 @@ def telegram_help_text():
         "🏠 /start — welcome screen\n"
         "📊 /status — health and uptime\n"
         "📱 /devices — device status\n"
+        "🎛️ /controls — show device controls\n"
+        "⏻ /shutdown DEVICE_ID — shut down a client\n"
+        "🔒 /logout DEVICE_ID — log out a client\n"
         "📨 /messages — stored message totals\n"
         "🔗 /setsite URL — update the client service URL\n"
         "💛 /support — support options\n"
@@ -336,6 +339,9 @@ def telegram_menu_markup():
             ],
             [
                 {"text": "Message summary", "callback_data": "messages"},
+                {"text": "Basic controls", "callback_data": "controls"},
+            ],
+            [
                 {"text": "Support", "callback_data": "support"},
             ],
             [{"text": "Help", "callback_data": "help"}],
@@ -369,6 +375,9 @@ def configure_telegram_menu():
                         {"command": "help", "description": "Show available commands"},
                         {"command": "status", "description": "Show service health and uptime"},
                         {"command": "devices", "description": "List connected devices"},
+                        {"command": "controls", "description": "Show basic device controls"},
+                        {"command": "shutdown", "description": "Shut down a client by device ID"},
+                        {"command": "logout", "description": "Log out a client by device ID"},
                         {"command": "messages", "description": "Show stored message totals"},
                         {"command": "setsite", "description": "Change the desktop client service URL"},
                         {"command": "support", "description": "Show support options"},
@@ -378,7 +387,7 @@ def configure_telegram_menu():
         )
         if not command_result.get("ok"):
             raise RuntimeError(f"Telegram rejected command menu: {command_result}")
-        print("Telegram command menu registered: /setsite included")
+        print("Telegram command menu registered: /controls included")
     except Exception as error:
         print(f"Could not configure Telegram command menu: {error}")
 

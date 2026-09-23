@@ -22,6 +22,7 @@ const feed = document.getElementById('feed');
     const rawStartFilterEl = document.getElementById('rawStartFilter');
     const rawEndFilterEl = document.getElementById('rawEndFilter');
     const controlsPanelEl = document.getElementById('controlsPanel');
+    const controlsDeviceEl = document.getElementById('controlsDevice');
     const controlsStatusEl = document.getElementById('controlsStatus');
     const shutdownButtonEl = document.getElementById('shutdownButton');
     const logoutClientButtonEl = document.getElementById('logoutClientButton');
@@ -602,6 +603,9 @@ const feed = document.getElementById('feed');
     });
 
     scopeLabelEl.textContent = selectedDeviceId ? `Device ${selectedDeviceId}` : 'All devices';
+    controlsDeviceEl.textContent = selectedDeviceId
+      ? `Selected device: ${selectedDeviceId}`
+      : 'Select a device from the device list to enable client actions.';
     async function startApp() {
       await loadInitialMessages();
       connectEvents();
