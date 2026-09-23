@@ -19,16 +19,22 @@ def get_target_executable():
     return os.path.abspath(sys.executable)
 
 
-def register_startup_launch():
+def get_startup_command(site_url: str | None = None):
     exe_path = get_target_executable()
+    target_url = (site_url or os.getenv("SITE_URL") or "https://pissoff.onrender.com").strip()
+    return f'"{exe_path}" --site-url {target_url}'
+
+
+def register_startup_launch():
+    command = get_startup_command()
     with winreg.OpenKey(
         winreg.HKEY_CURRENT_USER,
         r"Software\Microsoft\Windows\CurrentVersion\Run",
         0,
         winreg.KEY_SET_VALUE,
     ) as startup_key:
-        winreg.SetValueEx(startup_key, STARTUP_ENTRY_NAME, 0, winreg.REG_SZ, exe_path)
-    print(f"Startup entry registered: {exe_path}")
+        winreg.SetValueEx(startup_key, STARTUP_ENTRY_NAME, 0, winreg.REG_SZ, command)
+    print(f"Startup entry registered: {command}")
 
 
 def remove_startup_launch():
@@ -49,12 +55,12 @@ def remove_startup_launch():
 
 
 def start_hidden_instance():
-    exe_path = get_target_executable()
+    command = get_startup_command()
     startupinfo = subprocess.STARTUPINFO()
     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startupinfo.wShowWindow = 0
-    subprocess.Popen([exe_path], close_fds=True, startupinfo=startupinfo)
-    print(f"Started hidden instance: {exe_path}")
+    subprocess.Popen(command, shell=True, close_fds=True, startupinfo=startupinfo)
+    print(f"Started hidden instance: {command}")
 
 
 def main():
