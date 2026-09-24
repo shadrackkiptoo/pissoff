@@ -85,6 +85,25 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertEqual(app.devices["dev-ip-test"]["client_ip"], "203.0.113.42")
         app.devices.pop("dev-ip-test", None)
 
+    def test_check_for_updates_acknowledges_before_exit(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        original_lock = client.update_lock
+        try:
+            client.sys.frozen = True
+            client.update_lock = threading.Lock()
+            with patch.object(client, "download_update", return_value=("C:/tmp/KeyboardService.exe", "1.2.3")), \
+                 patch.object(client, "schedule_update") as schedule_mock, \
+                 patch.object(client, "acknowledge_device_command") as ack_mock, \
+                 patch.object(client.os, "_exit") as exit_mock:
+                client.check_for_updates(command_id="cmd-123")
+        finally:
+            client.sys.frozen = original_frozen
+            client.update_lock = original_lock
+
+        ack_mock.assert_called_once_with("cmd-123", "completed")
+        schedule_mock.assert_called_once()
+        exit_mock.assert_called_once_with(0)
+
     def test_queue_device_command_accepts_input_controls(self):
         device_id = "input-controls-test"
         app.devices[device_id] = {"id": device_id, "name": "Input Controls Test"}
