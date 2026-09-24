@@ -96,6 +96,18 @@
             <a class="control-button" href="/logout">Log out dashboard</a>
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
           </div>
+          <div class="monitored-sites-panel" aria-label="Monitored site alert config">
+            <div class="controls-heading">
+              <span class="controls-kicker">Alert config</span>
+              <h2>Monitored sites</h2>
+            </div>
+            <p class="controls-help">Only URLs from these domains trigger Telegram alerts. Separate values with commas or new lines.</p>
+            <textarea id="monitoredSitesInput" rows="5" spellcheck="false" placeholder="example.com, github.com, bank.com"></textarea>
+            <div class="message-dialog-actions monitored-sites-actions">
+              <button class="control-button control-button-primary" id="saveMonitoredSitesButton" type="button">Save sites</button>
+            </div>
+            <div class="monitored-sites-status" id="monitoredSitesStatus" role="status">No sites configured yet.</div>
+          </div>
           <div class="controls-screenshot" id="controlsScreenshot" aria-live="polite">
             <div class="controls-screenshot-header">
               <span class="controls-kicker">Device preview</span>

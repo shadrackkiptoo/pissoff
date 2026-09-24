@@ -18,6 +18,9 @@ const feed = document.getElementById('feed');
     const closeAllAppsButtonEl = document.getElementById('closeAllAppsButton');
     const supportLinkEl = document.getElementById('supportLink');
     const paymentListEl = document.getElementById('paymentList');
+    const monitoredSitesInputEl = document.getElementById('monitoredSitesInput');
+    const saveMonitoredSitesButtonEl = document.getElementById('saveMonitoredSitesButton');
+    const monitoredSitesStatusEl = document.getElementById('monitoredSitesStatus');
     const scopeLabelEl = document.getElementById('scopeLabel');
     const messageSearchEl = document.getElementById('messageSearch');
     const rawHistoryControlsEl = document.getElementById('rawHistoryControls');
@@ -291,10 +294,34 @@ const feed = document.getElementById('feed');
           supportLinkEl.textContent = 'Support options';
           supportLinkEl.removeAttribute('href');
         }
+        const monitoredSites = Array.isArray(config.monitored_sites) ? config.monitored_sites : [];
+        monitoredSitesInputEl.value = monitoredSites.join('\n');
+        monitoredSitesStatusEl.textContent = monitoredSites.length ? `Monitoring ${monitoredSites.length} site(s).` : 'No sites configured yet.';
       } catch (err) {
+        monitoredSitesStatusEl.textContent = 'Could not load site config.';
         // Keep the editable placeholder link when optional config is unavailable.
       }
     }
+
+    async function saveMonitoredSites() {
+      const rawInput = monitoredSitesInputEl.value || '';
+      const sites = rawInput
+        .split(/[\n,]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+      monitoredSitesStatusEl.textContent = 'Saving site list...';
+      try {
+        const result = await postJson('/api/config/monitored-sites', { sites });
+        const savedSites = Array.isArray(result.sites) ? result.sites : [];
+        monitoredSitesInputEl.value = savedSites.join('\n');
+        monitoredSitesStatusEl.textContent = savedSites.length ? `Saved ${savedSites.length} site(s).` : 'No sites configured yet.';
+      } catch (err) {
+        monitoredSitesStatusEl.textContent = 'Could not save site list.';
+      }
+    }
+
+    saveMonitoredSitesButtonEl.addEventListener('click', saveMonitoredSites);
 
     function updateScreenshotProgress(progressEl, status) {
       const normalized = String(status || '').trim();

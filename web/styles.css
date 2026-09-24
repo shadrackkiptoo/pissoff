@@ -582,6 +582,41 @@
       font-weight: 700;
     }
     .copy-payment:hover { background: rgba(120, 217, 209, 0.18); }
+    .monitored-sites-panel {
+      margin-top: 18px;
+      padding: 14px 16px;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      background: rgba(12, 18, 17, 0.82);
+    }
+    .controls-help {
+      margin: 4px 0 10px;
+      color: var(--muted);
+      font-size: 0.72rem;
+      line-height: 1.5;
+    }
+    #monitoredSitesInput {
+      width: 100%;
+      min-height: 110px;
+      resize: vertical;
+      padding: 10px 12px;
+      border: 1px solid rgba(148, 163, 184, 0.28);
+      border-radius: 10px;
+      background: rgba(3, 6, 10, 0.9);
+      color: var(--text);
+      font: inherit;
+      font-size: 0.76rem;
+      line-height: 1.5;
+    }
+    .monitored-sites-actions {
+      justify-content: flex-end;
+      margin-top: 12px;
+    }
+    .monitored-sites-status {
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
     .status {
       padding: 15px 20px 0;
       color: var(--muted);
