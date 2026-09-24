@@ -365,6 +365,18 @@ def get_browser_url(app_name):
     return ""
 
 
+def get_message_source_url(app_name):
+    candidate = str(app_name or "").strip()
+    if not candidate:
+        return ""
+    browser_url = get_browser_url(candidate)
+    if browser_url:
+        return browser_url
+    if browser_name_from_active_app(candidate):
+        return latest_browser_history_url(candidate)
+    return ""
+
+
 def windows_filetime_to_epoch_ms(value):
     try:
         integer_value = int(value)
@@ -1306,6 +1318,8 @@ def get_battery_telemetry():
 def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, is_copied=False):
     global last_message_id
     last_message_id = max(last_message_id + 1, int(time.time() * 1000))
+    if not source_url and app_name:
+        source_url = get_message_source_url(app_name)
     payload = {
         "message_id": last_message_id,
         "text": text,
@@ -1320,6 +1334,7 @@ def send_message(text, app_name, source_url="", raw_text=None, is_pasted=False, 
     remember_pending_message(payload)
     if post_message(payload):
         forget_pending_message(payload)
+    return payload
 
 
 def retry_pending_messages():

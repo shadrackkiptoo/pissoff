@@ -248,6 +248,12 @@ class BrowserHistoryTests(unittest.TestCase):
             app.notify_app_open_alerts("dev-1", "Machine A", ["Firefox Browser"])
         self.assertEqual(message_mock.call_count, 2)
 
+    def test_send_message_falls_back_to_recent_browser_url(self):
+        with patch.object(client, "get_browser_url", return_value=""), \
+             patch.object(client, "latest_browser_history_url", return_value="https://example.com/search?q=hello"):
+            payload = client.send_message("hi", "chrome.exe - Example", "")
+        self.assertEqual(payload["source_url"], "https://example.com/search?q=hello")
+
 
 if __name__ == "__main__":
     unittest.main()
