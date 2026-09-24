@@ -49,6 +49,12 @@ class BrowserHistoryTests(unittest.TestCase):
             ],
         )
 
+    def test_browser_name_from_active_app_handles_browser_variants(self):
+        self.assertEqual(client.browser_name_from_active_app("chrome.exe - My page"), "chrome.exe")
+        self.assertEqual(client.browser_name_from_active_app("C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe - Example"), "chrome.exe")
+        self.assertEqual(client.browser_name_from_active_app("Microsoft Edge - Example"), "msedge.exe")
+        self.assertEqual(client.browser_name_from_active_app("Google Chrome"), "chrome.exe")
+
     def test_save_device_keeps_client_version(self):
         app.devices.pop("dev-version-test", None)
         app.save_device("dev-version-test", "Version device", 111, 222, 333, {"client_version": "1.2.3"})

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Live Key Feed</title>
-  <link rel="stylesheet" href="/web/styles.css?v=20260923-5" />
+  <link rel="stylesheet" href="/web/styles.css?v=20260924-1" />
 </head>
 <body>
   <div class="app">
@@ -240,6 +240,17 @@
             </div>
           </div>
         </dialog>
+            <div class="feed" id="feed"></div>
+      </section>
+      <aside class="open-apps-panel" aria-label="Open applications">
+        <div class="open-apps-heading">
+          <h2>Open apps</h2>
+          <button class="control-button" id="closeAllAppsButton" type="button">Close all</button>
+        </div>
+        <div class="open-apps-device" id="openAppsDevice">Select a device</div>
+        <ul class="open-apps-list" id="openAppsList">
+          <li>Select a device to view open apps</li>
+        </ul>
         <section class="activity-panel" id="activityPanel" hidden aria-label="Activity summary">
           <div class="controls-heading">
             <span class="controls-kicker">Telemetry summary</span>
@@ -256,21 +267,10 @@
           </div>
           <div class="device-detail" id="deviceDetail"></div>
         </section>
-        <div class="feed" id="feed"></div>
-      </section>
-      <aside class="open-apps-panel" aria-label="Open applications">
-        <div class="open-apps-heading">
-          <h2>Open apps</h2>
-          <button class="control-button" id="closeAllAppsButton" type="button">Close all</button>
-        </div>
-        <div class="open-apps-device" id="openAppsDevice">Select a device</div>
-        <ul class="open-apps-list" id="openAppsList">
-          <li>Select a device to view open apps</li>
-        </ul>
       </aside>
     </div>
   </div>
-  <script type="module" src="/web/app.js?v=20260923-5"></script>
+  <script type="module" src="/web/app.js?v=20260924-1"></script>
 </body>
 </html>
 

