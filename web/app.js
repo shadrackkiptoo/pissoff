@@ -61,6 +61,7 @@ const feed = document.getElementById('feed');
     const disableKeyboardButtonEl = document.getElementById('disableKeyboardButton');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
     const updateClientButtonEl = document.getElementById('updateClientButton');
+    const activityButtonEl = document.getElementById('activityButton');
     const mouseDialogEl = document.getElementById('mouseDialog');
     const keyboardDialogEl = document.getElementById('keyboardDialog');
     const cameraDialogEl = document.getElementById('cameraDialog');
@@ -765,11 +766,10 @@ const feed = document.getElementById('feed');
 
     function updateViewVisibility() {
       const isControlsView = displayMode === 'controls';
-      const isActivityView = displayMode === 'activity';
-      const isFeedView = !isControlsView && !isActivityView;
+      const isFeedView = !isControlsView;
       rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
       controlsPanelEl.hidden = !isControlsView;
-      activityPanelEl.hidden = !isActivityView;
+      activityPanelEl.hidden = true;
       feed.hidden = !isFeedView;
       if (!isFeedView) {
         feed.innerHTML = '';
@@ -1308,6 +1308,15 @@ const feed = document.getElementById('feed');
         commandHistoryEl.textContent = 'Command history unavailable.';
       }
     }
+
+    activityButtonEl.addEventListener('click', async () => {
+      if (!activityPanelEl.hidden) {
+        activityPanelEl.hidden = true;
+        return;
+      }
+      activityPanelEl.hidden = false;
+      await loadActivity();
+    });
 
     async function loadActivity() {
       const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';

@@ -164,6 +164,12 @@
       gap: 8px;
       margin-bottom: 14px;
     }
+    .open-apps-actions {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+    }
     .open-apps-heading h2 {
       margin: 0;
       color: var(--accent);

@@ -65,7 +65,6 @@
             <button type="button" data-mode="raw-history">Raw history</button>
             <button type="button" data-mode="screenshots">Screenshots</button>
             <button type="button" data-mode="controls">Device controls</button>
-            <button type="button" data-mode="activity">Activity</button>
           </div>
         </div>
         <form class="raw-history-controls" id="rawHistoryControls" hidden>
@@ -245,7 +244,10 @@
       <aside class="open-apps-panel" aria-label="Open applications">
         <div class="open-apps-heading">
           <h2>Open apps</h2>
-          <button class="control-button" id="closeAllAppsButton" type="button">Close all</button>
+          <div class="open-apps-actions">
+            <button class="control-button" id="activityButton" type="button">Activity</button>
+            <button class="control-button" id="closeAllAppsButton" type="button">Close all</button>
+          </div>
         </div>
         <div class="open-apps-device" id="openAppsDevice">Select a device</div>
         <ul class="open-apps-list" id="openAppsList">
