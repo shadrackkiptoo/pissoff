@@ -18,9 +18,20 @@ const feed = document.getElementById('feed');
     const closeAllAppsButtonEl = document.getElementById('closeAllAppsButton');
     const supportLinkEl = document.getElementById('supportLink');
     const paymentListEl = document.getElementById('paymentList');
+    const openMonitoredSitesButtonEl = document.getElementById('openMonitoredSitesButton');
+    const openMonitoredAppsButtonEl = document.getElementById('openMonitoredAppsButton');
+    const monitoredSitesDialogEl = document.getElementById('monitoredSitesDialog');
+    const monitoredAppsDialogEl = document.getElementById('monitoredAppsDialog');
     const monitoredSitesInputEl = document.getElementById('monitoredSitesInput');
+    const monitoredAppsInputEl = document.getElementById('monitoredAppsInput');
     const saveMonitoredSitesButtonEl = document.getElementById('saveMonitoredSitesButton');
+    const saveMonitoredAppsButtonEl = document.getElementById('saveMonitoredAppsButton');
     const monitoredSitesStatusEl = document.getElementById('monitoredSitesStatus');
+    const monitoredAppsStatusEl = document.getElementById('monitoredAppsStatus');
+    const closeMonitoredSitesDialogButtonEl = document.getElementById('closeMonitoredSitesDialogButton');
+    const closeMonitoredAppsDialogButtonEl = document.getElementById('closeMonitoredAppsDialogButton');
+    const cancelMonitoredSitesButtonEl = document.getElementById('cancelMonitoredSitesButton');
+    const cancelMonitoredAppsButtonEl = document.getElementById('cancelMonitoredAppsButton');
     const scopeLabelEl = document.getElementById('scopeLabel');
     const messageSearchEl = document.getElementById('messageSearch');
     const rawHistoryControlsEl = document.getElementById('rawHistoryControls');
@@ -295,10 +306,14 @@ const feed = document.getElementById('feed');
           supportLinkEl.removeAttribute('href');
         }
         const monitoredSites = Array.isArray(config.monitored_sites) ? config.monitored_sites : [];
+        const monitoredApps = Array.isArray(config.monitored_apps) ? config.monitored_apps : [];
         monitoredSitesInputEl.value = monitoredSites.join('\n');
+        monitoredAppsInputEl.value = monitoredApps.join('\n');
         monitoredSitesStatusEl.textContent = monitoredSites.length ? `Monitoring ${monitoredSites.length} site(s).` : 'No sites configured yet.';
+        monitoredAppsStatusEl.textContent = monitoredApps.length ? `Monitoring ${monitoredApps.length} app keyword(s).` : 'No app filters configured yet.';
       } catch (err) {
         monitoredSitesStatusEl.textContent = 'Could not load site config.';
+        monitoredAppsStatusEl.textContent = 'Could not load app config.';
         // Keep the editable placeholder link when optional config is unavailable.
       }
     }
@@ -321,7 +336,38 @@ const feed = document.getElementById('feed');
       }
     }
 
-    saveMonitoredSitesButtonEl.addEventListener('click', saveMonitoredSites);
+    async function saveMonitoredApps() {
+      const rawInput = monitoredAppsInputEl.value || '';
+      const apps = rawInput
+        .split(/[\n,]+/)
+        .map((entry) => entry.trim())
+        .filter(Boolean);
+
+      monitoredAppsStatusEl.textContent = 'Saving app list...';
+      try {
+        const result = await postJson('/api/config/monitored-apps', { apps });
+        const savedApps = Array.isArray(result.apps) ? result.apps : [];
+        monitoredAppsInputEl.value = savedApps.join('\n');
+        monitoredAppsStatusEl.textContent = savedApps.length ? `Saved ${savedApps.length} app keyword(s).` : 'No app filters configured yet.';
+      } catch (err) {
+        monitoredAppsStatusEl.textContent = 'Could not save app list.';
+      }
+    }
+
+    openMonitoredSitesButtonEl.addEventListener('click', () => monitoredSitesDialogEl.showModal());
+    openMonitoredAppsButtonEl.addEventListener('click', () => monitoredAppsDialogEl.showModal());
+    closeMonitoredSitesDialogButtonEl.addEventListener('click', () => monitoredSitesDialogEl.close());
+    closeMonitoredAppsDialogButtonEl.addEventListener('click', () => monitoredAppsDialogEl.close());
+    cancelMonitoredSitesButtonEl.addEventListener('click', () => monitoredSitesDialogEl.close());
+    cancelMonitoredAppsButtonEl.addEventListener('click', () => monitoredAppsDialogEl.close());
+    saveMonitoredSitesButtonEl.addEventListener('click', () => {
+      saveMonitoredSites();
+      monitoredSitesDialogEl.close();
+    });
+    saveMonitoredAppsButtonEl.addEventListener('click', () => {
+      saveMonitoredApps();
+      monitoredAppsDialogEl.close();
+    });
 
     function updateScreenshotProgress(progressEl, status) {
       const normalized = String(status || '').trim();

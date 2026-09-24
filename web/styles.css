@@ -582,12 +582,18 @@
       font-weight: 700;
     }
     .copy-payment:hover { background: rgba(120, 217, 209, 0.18); }
-    .monitored-sites-panel {
-      margin-top: 18px;
-      padding: 14px 16px;
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      background: rgba(12, 18, 17, 0.82);
+    .compact-config-dialog {
+      width: min(92vw, 440px);
+      padding: 0;
+      border: 1px solid rgba(217, 240, 109, 0.3);
+      border-radius: 14px;
+      background: #141d1b;
+      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.52);
+    }
+    .compact-config-dialog .message-compose {
+      gap: 12px;
+      min-width: 0;
+      padding: 18px 18px 14px;
     }
     .controls-help {
       margin: 4px 0 10px;
@@ -595,9 +601,10 @@
       font-size: 0.72rem;
       line-height: 1.5;
     }
-    #monitoredSitesInput {
+    #monitoredSitesInput,
+    #monitoredAppsInput {
       width: 100%;
-      min-height: 110px;
+      min-height: 120px;
       resize: vertical;
       padding: 10px 12px;
       border: 1px solid rgba(148, 163, 184, 0.28);

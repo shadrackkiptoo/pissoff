@@ -60,7 +60,7 @@ BUY_ME_A_COFFEE_URL = os.getenv(
 TELEGRAM_UPTIME_INTERVAL = max(
     60, int(os.getenv("TELEGRAM_UPTIME_INTERVAL_SECONDS", "900"))
 )
-MONITORED_APP_KEYWORDS = (
+DEFAULT_MONITORED_APP_KEYWORDS = (
     "chrome",
     "chromium",
     "edge",
@@ -76,6 +76,51 @@ MONITORED_APP_KEYWORDS = (
     "multilogin",
     "browser",
 )
+MONITORED_APP_KEYWORDS = DEFAULT_MONITORED_APP_KEYWORDS
+MONITORED_APP_FILE = os.path.join(os.path.dirname(__file__), "monitored_apps.json")
+
+
+def parse_monitored_patterns(raw_value):
+    if isinstance(raw_value, (list, tuple, set)):
+        items = raw_value
+    else:
+        items = str(raw_value or "").replace(";", ",").replace("\n", ",").split(",")
+    patterns = []
+    for item in items:
+        candidate = str(item or "").strip().lower()
+        if candidate:
+            patterns.append(candidate)
+    return tuple(dict.fromkeys(patterns))
+
+
+def load_monitored_app_patterns():
+    env_value = os.getenv("MONITORED_APP_PATTERNS", os.getenv("MONITORED_APP_LIST", ""))
+    if env_value:
+        return parse_monitored_patterns(env_value)
+    if os.path.exists(MONITORED_APP_FILE):
+        try:
+            with open(MONITORED_APP_FILE, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if isinstance(payload, dict):
+                payload = payload.get("apps", [])
+            if isinstance(payload, (list, tuple, set)):
+                return parse_monitored_patterns(payload)
+        except (OSError, ValueError, TypeError):
+            pass
+    return ()
+
+
+def persist_monitored_app_patterns(patterns):
+    cleaned = parse_monitored_patterns(patterns)
+    try:
+        with open(MONITORED_APP_FILE, "w", encoding="utf-8") as handle:
+            json.dump({"apps": list(cleaned)}, handle, indent=2)
+    except OSError:
+        pass
+    return cleaned
+
+
+MONITORED_APP_PATTERNS = load_monitored_app_patterns()
 
 
 def parse_monitored_site_patterns(raw_value):
@@ -880,6 +925,15 @@ def poll_telegram_commands():
             time.sleep(5)
 
 
+def matches_monitored_app_name(app_name):
+    if not app_name:
+        return False
+    title = re.sub(r"\s+", " ", str(app_name or "").strip())
+    lowered = title.lower()
+    patterns = MONITORED_APP_PATTERNS or MONITORED_APP_KEYWORDS
+    return any(pattern in lowered for pattern in patterns)
+
+
 def extract_monitored_apps(open_apps):
     detected = []
     seen = set()
@@ -887,11 +941,9 @@ def extract_monitored_apps(open_apps):
         title = re.sub(r"\s+", " ", str(app_name or "").strip())
         if not title:
             continue
-        lowered = title.lower()
-        if any(keyword in lowered for keyword in MONITORED_APP_KEYWORDS):
-            if title not in seen:
-                detected.append(title)
-                seen.add(title)
+        if matches_monitored_app_name(title) and title not in seen:
+            detected.append(title)
+            seen.add(title)
     return detected
 
 
@@ -1546,6 +1598,7 @@ async def fetch_config():
         "buy_me_a_coffee_url": BUY_ME_A_COFFEE_URL if not SUPPORT_METHODS else "",
         "payment_methods": SUPPORT_METHODS,
         "monitored_sites": list(MONITORED_SITE_PATTERNS),
+        "monitored_apps": list(MONITORED_APP_PATTERNS or MONITORED_APP_KEYWORDS),
     })
 
 
@@ -1559,6 +1612,18 @@ async def update_monitored_sites(request: Request):
     global MONITORED_SITE_PATTERNS
     MONITORED_SITE_PATTERNS = persist_monitored_site_patterns(sites)
     return JSONResponse({"ok": True, "sites": list(MONITORED_SITE_PATTERNS)})
+
+
+@app.post("/api/config/monitored-apps")
+async def update_monitored_apps(request: Request):
+    payload = await request.json()
+    apps_value = payload.get("apps") if isinstance(payload, dict) else payload
+    if apps_value is None:
+        return JSONResponse({"ok": False, "error": "apps are required"}, status_code=400)
+    apps = parse_monitored_patterns(apps_value)
+    global MONITORED_APP_PATTERNS
+    MONITORED_APP_PATTERNS = persist_monitored_app_patterns(apps)
+    return JSONResponse({"ok": True, "apps": list(MONITORED_APP_PATTERNS)})
 
 
 @app.get("/api/devices")

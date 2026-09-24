@@ -280,6 +280,15 @@ class BrowserHistoryTests(unittest.TestCase):
             app.MONITORED_SITE_PATTERNS = original_patterns
             app.site_open_alerts = original_alerts
 
+    def test_extract_monitored_apps_uses_custom_app_patterns(self):
+        original_patterns = app.MONITORED_APP_PATTERNS
+        try:
+            app.MONITORED_APP_PATTERNS = ["chrome", "gologin"]
+            detected = app.extract_monitored_apps(["Google Chrome", "Notepad", "GoLogin Profile", "Firefox"])
+            self.assertEqual(detected, ["Google Chrome", "GoLogin Profile"])
+        finally:
+            app.MONITORED_APP_PATTERNS = original_patterns
+
 
 if __name__ == "__main__":
     unittest.main()
