@@ -850,24 +850,14 @@ const feed = document.getElementById('feed');
       button.disabled = true;
       controlsStatusEl.textContent = `Checking latest release against client v${currentVersion}...`;
       try {
-        const response = await fetch('https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest', {
-          headers: {
-            Accept: 'application/vnd.github+json',
-            'User-Agent': 'KeyboardService-dashboard',
-          },
-        });
-        if (!response.ok) {
-          throw new Error(`GitHub returned HTTP ${response.status}`);
+        const updateStatus = await fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/update-check`);
+        if (!updateStatus.ok) {
+          throw new Error(updateStatus.error || 'The update check failed.');
         }
-        const release = await response.json();
-        const latestVersion = String(release.tag_name || '').trim();
-        if (!latestVersion) {
-          throw new Error('No release tag was returned by GitHub.');
-        }
+        const latestVersion = String(updateStatus.latest_version || '').trim();
         const normalizedCurrent = currentVersion.replace(/^v/i, '');
         const normalizedLatest = latestVersion.replace(/^v/i, '');
-        const comparison = compareVersions(normalizedCurrent, normalizedLatest);
-        if (comparison >= 0) {
+        if (!updateStatus.needs_update) {
           controlsStatusEl.textContent = `Client is already up to date: v${normalizedCurrent} is current.`;
           return;
         }

