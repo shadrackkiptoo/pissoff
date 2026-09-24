@@ -43,14 +43,23 @@ const feed = document.getElementById('feed');
     const cancelScreenshotButtonEl = document.getElementById('cancelScreenshotButton');
     const confirmScreenshotButtonEl = document.getElementById('confirmScreenshotButton');
     const activityPanelEl = document.getElementById('activityPanel');
+    const activityDialogEl = document.getElementById('activityDialog');
+    const closeActivityButtonEl = document.getElementById('closeActivityButton');
+    const closeActivityDialogButtonEl = document.getElementById('closeActivityDialogButton');
     const controlsStatusEl = document.getElementById('controlsStatus');
     const commandHistoryEl = document.getElementById('commandHistory');
     const activityStatsEl = document.getElementById('activityStats');
+    const activityDialogStatsEl = document.getElementById('activityDialogStats');
     const topAppsEl = document.getElementById('topApps');
     const topDomainsEl = document.getElementById('topDomains');
+    const topAppsDialogEl = document.getElementById('topAppsDialog');
+    const topDomainsDialogEl = document.getElementById('topDomainsDialog');
     const deviceDetailEl = document.getElementById('deviceDetail');
+    const deviceDetailDialogEl = document.getElementById('deviceDetailDialog');
     const exportCsvLinkEl = document.getElementById('exportCsvLink');
     const exportJsonLinkEl = document.getElementById('exportJsonLink');
+    const exportCsvLinkDialogEl = document.getElementById('exportCsvLinkDialog');
+    const exportJsonLinkDialogEl = document.getElementById('exportJsonLinkDialog');
     const shutdownButtonEl = document.getElementById('shutdownButton');
     const logoutClientButtonEl = document.getElementById('logoutClientButton');
     const restartClientButtonEl = document.getElementById('restartClientButton');
@@ -1313,38 +1322,64 @@ const feed = document.getElementById('feed');
     }
 
     activityButtonEl.addEventListener('click', async () => {
-      if (!activityPanelEl.hidden) {
-        activityPanelEl.hidden = true;
+      if (activityDialogEl.open) {
+        activityDialogEl.close();
         return;
       }
-      activityPanelEl.hidden = false;
+      activityPanelEl.hidden = true;
+      if (typeof activityDialogEl.showModal === 'function') {
+        activityDialogEl.showModal();
+      }
       await loadActivity();
+    });
+
+    closeActivityButtonEl.addEventListener('click', () => {
+      if (typeof activityDialogEl.close === 'function') {
+        activityDialogEl.close();
+      }
+    });
+
+    closeActivityDialogButtonEl.addEventListener('click', () => {
+      if (typeof activityDialogEl.close === 'function') {
+        activityDialogEl.close();
+      }
     });
 
     async function loadActivity() {
       const query = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
       try {
         const activity = await fetchJson(`/api/activity${query}`);
-        activityStatsEl.innerHTML = '';
-        [[activity.messages, 'Messages'], [activity.website_visits, 'Website visits'], [activity.raw_events, 'Raw events']].forEach(([value, label]) => {
-          const stat = document.createElement('div');
-          stat.className = 'activity-stat';
-          stat.textContent = `${value} ${label}`;
-          activityStatsEl.appendChild(stat);
-        });
-        topAppsEl.innerHTML = '';
-        topDomainsEl.innerHTML = '';
-        [[topAppsEl, activity.top_apps], [topDomainsEl, activity.top_domains]].forEach(([list, values]) => {
+        const renderActivitySummary = (container) => {
+          container.innerHTML = '';
+          [[activity.messages, 'Messages'], [activity.website_visits, 'Website visits'], [activity.raw_events, 'Raw events']].forEach(([value, label]) => {
+            const stat = document.createElement('div');
+            stat.className = 'activity-stat';
+            stat.textContent = `${value} ${label}`;
+            container.appendChild(stat);
+          });
+        };
+        renderActivitySummary(activityStatsEl);
+        renderActivitySummary(activityDialogStatsEl);
+        const renderList = (container, values) => {
+          container.innerHTML = '';
           values.forEach(([name, count]) => {
             const item = document.createElement('li');
             item.textContent = `${name}: ${count}`;
-            list.appendChild(item);
+            container.appendChild(item);
           });
-          if (!values.length) list.innerHTML = '<li>No data yet</li>';
-        });
+          if (!values.length) container.innerHTML = '<li>No data yet</li>';
+        };
+        renderList(topAppsEl, activity.top_apps);
+        renderList(topDomainsEl, activity.top_domains);
+        renderList(topAppsDialogEl, activity.top_apps);
+        renderList(topDomainsDialogEl, activity.top_domains);
         const suffix = selectedDeviceId ? `?device_id=${encodeURIComponent(selectedDeviceId)}` : '';
-        exportCsvLinkEl.href = `/api/export/messages${suffix}`;
-        exportJsonLinkEl.href = `/api/export/messages?format=json${selectedDeviceId ? `&device_id=${encodeURIComponent(selectedDeviceId)}` : ''}`;
+        const csvHref = `/api/export/messages${suffix}`;
+        const jsonHref = `/api/export/messages?format=json${selectedDeviceId ? `&device_id=${encodeURIComponent(selectedDeviceId)}` : ''}`;
+        exportCsvLinkEl.href = csvHref;
+        exportJsonLinkEl.href = jsonHref;
+        exportCsvLinkDialogEl.href = csvHref;
+        exportJsonLinkDialogEl.href = jsonHref;
         await loadDeviceDetail();
         statusEl.textContent = 'Activity summary loaded';
       } catch (err) {
@@ -1353,26 +1388,35 @@ const feed = document.getElementById('feed');
     }
 
     async function loadDeviceDetail() {
-      deviceDetailEl.innerHTML = '';
-      if (!selectedDeviceId) {
-        deviceDetailEl.textContent = 'Select a device to view detailed telemetry.';
-        return;
-      }
-      try {
-        const detail = await fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/detail`);
-        const device = detail.device;
-        const heading = document.createElement('h3');
-        heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
-        const summary = document.createElement('p');
-        summary.textContent = `${device.online ? 'Online' : 'Offline'} | Client v${device.client_version || 'unknown'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
-        const apps = document.createElement('p');
-        apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
-        const commands = document.createElement('p');
-        commands.textContent = `Recent commands: ${detail.commands.map((item) => `${item.command} (${item.status})`).join(', ') || 'None'}`;
-        deviceDetailEl.append(heading, summary, apps, commands);
-      } catch (err) {
-        deviceDetailEl.textContent = 'Device detail unavailable.';
-      }
+      const renderDeviceDetail = (container) => {
+        container.innerHTML = '';
+        if (!selectedDeviceId) {
+          container.textContent = 'Select a device to view detailed telemetry.';
+          return;
+        }
+        try {
+          const detail = fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/detail`);
+          detail.then((payload) => {
+            const device = payload.device;
+            const heading = document.createElement('h3');
+            heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
+            const summary = document.createElement('p');
+            summary.textContent = `${device.online ? 'Online' : 'Offline'} | Client v${device.client_version || 'unknown'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
+            const apps = document.createElement('p');
+            apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
+            const commands = document.createElement('p');
+            commands.textContent = `Recent commands: ${payload.commands.map((item) => `${item.command} (${item.status})`).join(', ') || 'None'}`;
+            container.innerHTML = '';
+            container.append(heading, summary, apps, commands);
+          }).catch(() => {
+            container.textContent = 'Device detail unavailable.';
+          });
+        } catch (err) {
+          container.textContent = 'Device detail unavailable.';
+        }
+      };
+      renderDeviceDetail(deviceDetailEl);
+      renderDeviceDetail(deviceDetailDialogEl);
     }
 
     messageSearchEl.addEventListener('input', queueFeedRender);

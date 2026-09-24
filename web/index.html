@@ -270,6 +270,30 @@
           <div class="device-detail" id="deviceDetail"></div>
         </section>
       </aside>
+      <dialog class="message-dialog activity-dialog" id="activityDialog" aria-labelledby="activityDialogTitle">
+        <div class="message-compose">
+          <div class="message-dialog-heading">
+            <div>
+              <span class="controls-kicker">Telemetry summary</span>
+              <h2 id="activityDialogTitle">Activity</h2>
+            </div>
+            <button class="dialog-close" id="closeActivityButton" type="button" aria-label="Close activity popup">&times;</button>
+          </div>
+          <div class="activity-actions">
+            <a class="control-button" id="exportCsvLinkDialog" href="/api/export/messages">Export CSV</a>
+            <a class="control-button" id="exportJsonLinkDialog" href="/api/export/messages?format=json">Export JSON</a>
+          </div>
+          <div class="activity-stats" id="activityDialogStats"></div>
+          <div class="activity-columns">
+            <div><h3>Top applications</h3><ul id="topAppsDialog"></ul></div>
+            <div><h3>Top websites</h3><ul id="topDomainsDialog"></ul></div>
+          </div>
+          <div class="device-detail" id="deviceDetailDialog"></div>
+          <div class="message-dialog-actions">
+            <button class="control-button" id="closeActivityDialogButton" type="button">Close</button>
+          </div>
+        </div>
+      </dialog>
     </div>
   </div>
   <script type="module" src="/web/app.js?v=20260924-1"></script>

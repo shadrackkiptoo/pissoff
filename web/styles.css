@@ -789,6 +789,14 @@
       max-height: min(52vh, 540px);
       overflow-y: auto;
     }
+    .activity-dialog {
+      width: min(92vw, 720px);
+      max-width: min(92vw, 720px);
+    }
+    .activity-dialog .message-compose {
+      max-height: min(82vh, 760px);
+      overflow-y: auto;
+    }
     .activity-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
     .activity-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
     .activity-stat {
