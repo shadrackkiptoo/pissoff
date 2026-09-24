@@ -109,6 +109,7 @@ const feed = document.getElementById('feed');
     const refreshButtonEl = document.getElementById('refreshButton');
     const openMessageButtonEl = document.getElementById('openMessageButton');
     const todayHistoryButtonEl = document.getElementById('todayHistoryButton');
+    const visitedLinksButtonEl = document.getElementById('visitedLinksButton');
     const messageDialogEl = document.getElementById('messageDialog');
     const closeMessageButtonEl = document.getElementById('closeMessageButton');
     const cancelMessageButtonEl = document.getElementById('cancelMessageButton');
@@ -122,6 +123,11 @@ const feed = document.getElementById('feed');
     const closeHistoryDialogButtonEl = document.getElementById('closeHistoryDialogButton');
     const todayHistoryTargetEl = document.getElementById('todayHistoryTarget');
     const todayHistoryListEl = document.getElementById('todayHistoryList');
+    const visitedLinksDialogEl = document.getElementById('visitedLinksDialog');
+    const closeVisitedLinksButtonEl = document.getElementById('closeVisitedLinksButton');
+    const closeVisitedLinksDialogButtonEl = document.getElementById('closeVisitedLinksDialogButton');
+    const visitedLinksTargetEl = document.getElementById('visitedLinksTarget');
+    const visitedLinksListEl = document.getElementById('visitedLinksList');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const deviceClocks = new Map();
@@ -1332,12 +1338,78 @@ const feed = document.getElementById('feed');
       if (historyDialogEl.open) historyDialogEl.close();
     }
 
+    async function openVisitedLinksDialog() {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      if (!visitedLinksDialogEl.open) visitedLinksDialogEl.showModal();
+      visitedLinksTargetEl.textContent = `Viewing visited links for ${controlsDeviceEl.textContent}`;
+      visitedLinksListEl.innerHTML = '<div class="history-empty">Loading saved visits...</div>';
+      try {
+        const items = await fetchJson(`/api/visited-links?device_id=${encodeURIComponent(selectedDeviceId)}`);
+        const sortedEntries = (items || []).sort((a, b) => Number(b.visited_at) - Number(a.visited_at));
+        visitedLinksListEl.innerHTML = '';
+        if (!sortedEntries.length) {
+          visitedLinksListEl.innerHTML = '<div class="history-empty">No visited links saved for this device.</div>';
+          return;
+        }
+
+        const groupMap = new Map();
+        sortedEntries.forEach((entry) => {
+          const dateKey = new Date(Number(entry.visited_at)).toISOString().slice(0, 10);
+          if (!groupMap.has(dateKey)) groupMap.set(dateKey, []);
+          groupMap.get(dateKey).push(entry);
+        });
+
+        const groups = Array.from(groupMap.entries()).sort((a, b) => b[0].localeCompare(a[0]));
+        groups.forEach(([dateKey, entries]) => {
+          const group = document.createElement('div');
+          group.className = 'history-date-group';
+          const dateLabel = document.createElement('div');
+          dateLabel.className = 'history-date';
+          dateLabel.textContent = new Date(`${dateKey}T00:00:00`).toLocaleDateString(undefined, { dateStyle: 'medium' });
+          const list = document.createElement('ul');
+          list.className = 'history-items';
+          entries.forEach((entry) => {
+            const item = document.createElement('li');
+            item.className = 'history-item';
+            const time = document.createElement('span');
+            time.className = 'history-time';
+            time.textContent = formatTime(Number(entry.visited_at));
+            const browser = document.createElement('span');
+            browser.className = 'history-browser';
+            browser.textContent = `${entry.browser || 'Unknown browser'}`;
+            const link = document.createElement('a');
+            link.className = 'history-link';
+            link.href = entry.url;
+            link.target = '_blank';
+            link.rel = 'noopener noreferrer';
+            link.textContent = entry.url;
+            item.append(time, browser, link);
+            list.appendChild(item);
+          });
+          group.append(dateLabel, list);
+          visitedLinksListEl.appendChild(group);
+        });
+      } catch (err) {
+        visitedLinksListEl.innerHTML = '<div class="history-empty">Visited links are unavailable.</div>';
+      }
+    }
+
+    function closeVisitedLinksDialog() {
+      if (visitedLinksDialogEl.open) visitedLinksDialogEl.close();
+    }
+
     openMessageButtonEl.addEventListener('click', openMessageDialog);
     closeMessageButtonEl.addEventListener('click', closeMessageDialog);
     cancelMessageButtonEl.addEventListener('click', closeMessageDialog);
     todayHistoryButtonEl.addEventListener('click', openTodayHistoryDialog);
+    visitedLinksButtonEl.addEventListener('click', openVisitedLinksDialog);
     closeHistoryButtonEl.addEventListener('click', closeHistoryDialog);
     closeHistoryDialogButtonEl.addEventListener('click', closeHistoryDialog);
+    closeVisitedLinksButtonEl.addEventListener('click', closeVisitedLinksDialog);
+    closeVisitedLinksDialogButtonEl.addEventListener('click', closeVisitedLinksDialog);
     clientMessageEl.addEventListener('input', () => {
       messageLengthEl.textContent = `${clientMessageEl.value.length} / 2000`;
     });

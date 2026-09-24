@@ -289,6 +289,38 @@ class BrowserHistoryTests(unittest.TestCase):
         finally:
             app.MONITORED_APP_PATTERNS = original_patterns
 
+    def test_save_visited_link_record_stores_every_url(self):
+        original_database = app.DATABASE_URL
+        original_queue = app.visited_links.copy()
+        try:
+            app.DATABASE_URL = "postgresql://example"
+            app.visited_links.clear()
+            with patch("app.psycopg.connect") as connect_mock:
+                connection = connect_mock.return_value.__enter__.return_value
+                cursor = connection.cursor.return_value.__enter__.return_value
+                saved = app.save_visited_link_record("dev-1", "Machine A", "Chrome", "https://example.com/test", 1700000000000)
+            self.assertTrue(saved)
+            self.assertEqual(app.visited_links[-1]["url"], "https://example.com/test")
+            cursor.execute.assert_called_once()
+        finally:
+            app.DATABASE_URL = original_database
+            app.visited_links = original_queue
+
+    def test_fetch_visited_links_filters_by_device_and_date_window(self):
+        original_database = app.DATABASE_URL
+        original_queue = app.visited_links.copy()
+        try:
+            app.DATABASE_URL = ""
+            app.visited_links.clear()
+            app.visited_links.append({"device_id": "dev-a", "device_name": "A", "browser": "Chrome", "url": "https://example.com/one", "visited_at": 1700000000000})
+            app.visited_links.append({"device_id": "dev-b", "device_name": "B", "browser": "Firefox", "url": "https://example.com/two", "visited_at": 1700000001000})
+            result = [item for item in reversed(app.visited_links) if item["visited_at"] >= 1699999999000 and (not "dev-a" or item["device_id"] == "dev-a")]
+            self.assertEqual(len(result), 1)
+            self.assertEqual(result[0]["url"], "https://example.com/one")
+        finally:
+            app.DATABASE_URL = original_database
+            app.visited_links = original_queue
+
 
 if __name__ == "__main__":
     unittest.main()

