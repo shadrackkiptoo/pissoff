@@ -44,7 +44,7 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SCREENSHOT_BUCKET = "screenshots"
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
-DEVICE_OFFLINE_AFTER = 90
+DEVICE_OFFLINE_AFTER = 45
 WEBSITE_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 SCREENSHOT_STATUS_TIMEOUT = 90
 SCREENSHOT_LIST_LIMIT = 30
@@ -60,6 +60,23 @@ BUY_ME_A_COFFEE_URL = os.getenv(
 TELEGRAM_UPTIME_INTERVAL = max(
     60, int(os.getenv("TELEGRAM_UPTIME_INTERVAL_SECONDS", "900"))
 )
+MONITORED_APP_KEYWORDS = (
+    "chrome",
+    "chromium",
+    "edge",
+    "firefox",
+    "brave",
+    "opera",
+    "vivaldi",
+    "arc",
+    "iexplore",
+    "safari",
+    "morelogin",
+    "gologin",
+    "multilogin",
+    "browser",
+)
+app_open_alerts: Dict[str, int] = {}
 
 
 def telegram_configured():
@@ -810,6 +827,45 @@ def poll_telegram_commands():
         except Exception as error:
             print(f"Could not process Telegram commands: {error}")
             time.sleep(5)
+
+
+def extract_monitored_apps(open_apps):
+    detected = []
+    seen = set()
+    for app_name in open_apps or []:
+        title = re.sub(r"\s+", " ", str(app_name or "").strip())
+        if not title:
+            continue
+        lowered = title.lower()
+        if any(keyword in lowered for keyword in MONITORED_APP_KEYWORDS):
+            if title not in seen:
+                detected.append(title)
+                seen.add(title)
+    return detected
+
+
+def notify_app_open_alerts(device_id, device_name, open_apps):
+    if not telegram_configured():
+        return
+    device_id = str(device_id or "").strip()
+    device_name = str(device_name or "Unknown device").strip() or "Unknown device"
+    matches = extract_monitored_apps(open_apps)
+    if not matches:
+        return
+    now = int(time.time())
+    for app_name in matches:
+        cache_key = (device_id, app_name)
+        previous = app_open_alerts.get(cache_key)
+        if previous and now - previous < 1800:
+            continue
+        app_open_alerts[cache_key] = now
+        send_telegram_message(
+            telegram_panel(
+                "ALERT // APP OPENED",
+                f"🟢 <b>{html.escape(device_name)}</b> opened <b>{html.escape(app_name)}</b>\n"
+                f"ID: <code>{html.escape(device_id)}</code>",
+            )
+        )
 
 
 def notify_device_status(device_id, device_name, online):
@@ -1680,6 +1736,12 @@ async def device_heartbeat(
         await asyncio.to_thread(
             notify_device_status, device_id, device_name, True
         )
+    await asyncio.to_thread(
+        notify_app_open_alerts,
+        device_id,
+        device_name,
+        payload.open_apps,
+    )
     screenshot_requested = screenshot_requests.pop(device_id, None) is not None
     if screenshot_requested:
         screenshot_statuses[device_id] = {

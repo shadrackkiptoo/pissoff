@@ -225,6 +225,29 @@ class BrowserHistoryTests(unittest.TestCase):
             client.sys.frozen = original_frozen
             client.sys.executable = original_executable
 
+    def test_extract_monitored_apps_detects_browsers_and_login_tools(self):
+        with patch.object(app, "telegram_configured", return_value=True):
+            detected = app.extract_monitored_apps([
+                "Google Chrome",
+                "Firefox Browser",
+                "GoLogin - profile 1",
+                "Notepad",
+                "MoreLogin window",
+            ])
+        self.assertEqual(
+            detected,
+            ["Google Chrome", "Firefox Browser", "GoLogin - profile 1", "MoreLogin window"],
+        )
+
+    def test_notify_app_open_alerts_only_once_per_device_per_app(self):
+        app.app_open_alerts.clear()
+        with patch.object(app, "telegram_configured", return_value=True), \
+             patch.object(app, "send_telegram_message") as message_mock:
+            app.notify_app_open_alerts("dev-1", "Machine A", ["Google Chrome", "Notepad"])
+            app.notify_app_open_alerts("dev-1", "Machine A", ["Google Chrome", "Notepad"])
+            app.notify_app_open_alerts("dev-1", "Machine A", ["Firefox Browser"])
+        self.assertEqual(message_mock.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()
