@@ -1,4 +1,6 @@
 import sqlite3
+import threading
+import types
 import unittest
 
 import app
@@ -71,6 +73,65 @@ class BrowserHistoryTests(unittest.TestCase):
             self.assertTrue(message)
         finally:
             app.devices.pop(device_id, None)
+
+    def test_windows_hooks_keep_callback_references_alive(self):
+        def run_worker(worker_func, lock_attr):
+            class DummyUser32:
+                def __init__(self):
+                    self._hooked = threading.Event()
+                    self._allow_exit = threading.Event()
+
+                def SetWindowsHookExW(self, *args):
+                    self._hooked.set()
+                    return 123
+
+                def GetMessageW(self, *args):
+                    self._allow_exit.wait(2)
+                    return 0
+
+                def TranslateMessage(self, *args):
+                    return None
+
+                def DispatchMessageW(self, *args):
+                    return None
+
+                def UnhookWindowsHookEx(self, *args):
+                    return True
+
+            class DummyKernel32:
+                def GetModuleHandleW(self, *args):
+                    return 1
+
+            original_windll = client.ctypes.windll
+            original_lock = getattr(client, lock_attr)
+            original_callback = getattr(client, "keyboard_hook_callback" if lock_attr == "keyboard_disable_lock" else "mouse_hook_callback", None)
+            user32 = DummyUser32()
+            try:
+                client.ctypes.windll = types.SimpleNamespace(user32=user32, kernel32=DummyKernel32())
+                client.__dict__[lock_attr] = threading.Lock()
+                client.__dict__[lock_attr].acquire()
+                setattr(client, "keyboard_hook_callback" if lock_attr == "keyboard_disable_lock" else "mouse_hook_callback", None)
+
+                ready = threading.Event()
+                result = {}
+                worker = threading.Thread(target=worker_func, args=(1, ready, result), daemon=True)
+                worker.start()
+                self.assertTrue(user32._hooked.wait(2))
+                if lock_attr == "keyboard_disable_lock":
+                    self.assertIsNotNone(client.keyboard_hook_callback)
+                else:
+                    self.assertIsNotNone(client.mouse_hook_callback)
+                user32._allow_exit.set()
+                worker.join(2)
+                self.assertFalse(worker.is_alive())
+                self.assertNotIn("error", result)
+            finally:
+                client.ctypes.windll = original_windll
+                client.__dict__[lock_attr] = original_lock
+                setattr(client, "keyboard_hook_callback" if lock_attr == "keyboard_disable_lock" else "mouse_hook_callback", original_callback)
+
+        run_worker(client.keyboard_disable_worker, "keyboard_disable_lock")
+        run_worker(client.mouse_disable_worker, "mouse_disable_lock")
 
     def test_running_from_local_project_detects_dev_build(self):
         project_root = client.os.path.abspath(client.os.getcwd())

