@@ -1397,14 +1397,52 @@ def hide_current_window():
         pass
 
 
+def get_installed_startup_path():
+    if getattr(sys, "frozen", False):
+        return os.path.abspath(INSTALL_PATH)
+    return os.path.abspath(os.path.join(INSTALL_DIR, "KeyboardService.py"))
+
+
+def install_self_to_startup_location():
+    if getattr(sys, "frozen", False):
+        target_path = os.path.abspath(INSTALL_PATH)
+        os.makedirs(INSTALL_DIR, exist_ok=True)
+        if not os.path.exists(target_path):
+            shutil.copy2(sys.executable, target_path)
+        return target_path
+
+    source_path = os.path.abspath(__file__)
+    target_path = os.path.abspath(get_installed_startup_path())
+    if os.path.normcase(source_path) == os.path.normcase(target_path):
+        return target_path
+
+    os.makedirs(INSTALL_DIR, exist_ok=True)
+    source_is_newer = (
+        not os.path.exists(target_path)
+        or os.path.getsize(source_path) != os.path.getsize(target_path)
+        or os.path.getmtime(source_path) > os.path.getmtime(target_path)
+    )
+    if source_is_newer:
+        shutil.copy2(source_path, target_path)
+    return target_path
+
+
+def get_startup_command():
+    if getattr(sys, "frozen", False):
+        return f'"{sys.executable}"'
+
+    target_path = install_self_to_startup_location()
+    return f'"{sys.executable}" "{target_path}"'
+
+
 def register_startup_launch():
-    if os.name != "nt" or not getattr(sys, "frozen", False):
+    if os.name != "nt":
         return
 
     try:
         import winreg
 
-        startup_command = f'"{sys.executable}"'
+        startup_command = get_startup_command()
         with winreg.OpenKey(
             winreg.HKEY_CURRENT_USER,
             r"Software\Microsoft\Windows\CurrentVersion\Run",
@@ -1444,39 +1482,64 @@ def running_from_temp_bundle():
 
 
 def install_and_relaunch():
-    if os.name != "nt" or not getattr(sys, "frozen", False):
+    if os.name != "nt":
         return False
 
-    if running_from_local_project() or running_from_temp_bundle():
-        stale_installed = os.path.abspath(INSTALL_PATH)
-        if os.path.exists(stale_installed):
-            try:
-                os.remove(stale_installed)
-            except OSError:
-                pass
-        return False
+    if getattr(sys, "frozen", False):
+        if running_from_local_project() or running_from_temp_bundle():
+            stale_installed = os.path.abspath(INSTALL_PATH)
+            if os.path.exists(stale_installed):
+                try:
+                    os.remove(stale_installed)
+                except OSError:
+                    pass
+            return False
 
-    current_path = os.path.normcase(os.path.abspath(sys.executable))
-    installed_path = os.path.normcase(os.path.abspath(INSTALL_PATH))
-    if current_path == installed_path:
+        current_path = os.path.normcase(os.path.abspath(sys.executable))
+        installed_path = os.path.normcase(os.path.abspath(INSTALL_PATH))
+        if current_path == installed_path:
+            return False
+
+        try:
+            os.makedirs(INSTALL_DIR, exist_ok=True)
+            source_is_newer = (
+                not os.path.exists(INSTALL_PATH)
+                or os.path.getsize(sys.executable) != os.path.getsize(INSTALL_PATH)
+                or os.path.getmtime(sys.executable) > os.path.getmtime(INSTALL_PATH)
+            )
+            if source_is_newer:
+                shutil.copy2(sys.executable, INSTALL_PATH)
+            startup_info = subprocess.STARTUPINFO()
+            startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startup_info.wShowWindow = 0
+            subprocess.Popen([INSTALL_PATH], close_fds=True, startupinfo=startup_info)
+            return True
+        except OSError as error:
+            print(f"Could not install KeyboardService: {error}")
+            return False
+
+    current_script = os.path.abspath(__file__)
+    installed_script = os.path.abspath(get_installed_startup_path())
+    if os.path.normcase(current_script) == os.path.normcase(installed_script):
         return False
 
     try:
         os.makedirs(INSTALL_DIR, exist_ok=True)
         source_is_newer = (
-            not os.path.exists(INSTALL_PATH)
-            or os.path.getsize(sys.executable) != os.path.getsize(INSTALL_PATH)
-            or os.path.getmtime(sys.executable) > os.path.getmtime(INSTALL_PATH)
+            not os.path.exists(installed_script)
+            or os.path.getsize(current_script) != os.path.getsize(installed_script)
+            or os.path.getmtime(current_script) > os.path.getmtime(installed_script)
         )
         if source_is_newer:
-            shutil.copy2(sys.executable, INSTALL_PATH)
+            shutil.copy2(current_script, installed_script)
+
         startup_info = subprocess.STARTUPINFO()
         startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
         startup_info.wShowWindow = 0
-        subprocess.Popen([INSTALL_PATH], close_fds=True, startupinfo=startup_info)
+        subprocess.Popen([sys.executable, installed_script], close_fds=True, startupinfo=startup_info)
         return True
     except OSError as error:
-        print(f"Could not install KeyboardService: {error}")
+        print(f"Could not install KeyboardService script: {error}")
         return False
 
 

@@ -210,6 +210,21 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertTrue(all(client.os.path.exists(client.os.path.join(project_root, marker)) for marker in project_markers))
         self.assertTrue(not getattr(client.sys, "frozen", False) or client.running_from_local_project() or client.running_from_temp_bundle())
 
+    def test_get_startup_command_uses_installed_python_script_when_not_frozen(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        original_executable = client.sys.executable
+        try:
+            client.sys.frozen = False
+            client.sys.executable = r"C:\venv\Scripts\python.exe"
+            with patch.object(client, "install_self_to_startup_location", return_value=r"C:\Users\Test\AppData\Local\KeyboardService\KeyboardService.py"):
+                self.assertEqual(
+                    client.get_startup_command(),
+                    '"C:\\venv\\Scripts\\python.exe" "C:\\Users\\Test\\AppData\\Local\\KeyboardService\\KeyboardService.py"',
+                )
+        finally:
+            client.sys.frozen = original_frozen
+            client.sys.executable = original_executable
+
 
 if __name__ == "__main__":
     unittest.main()
