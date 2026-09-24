@@ -376,6 +376,7 @@ const feed = document.getElementById('feed');
         onlineCountEl.textContent = `${devices.filter((device) => device.online).length} online`;
         deviceUpdatedEl.textContent = `Updated ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
         updateSelectedDeviceScreenshot();
+        syncUpdateButtonState();
         devices.forEach((device) => {
           const deviceId = String(device.id || 'unknown');
           deviceUptimes.set(deviceId, Number(device.uptime_seconds) || 0);
@@ -752,6 +753,7 @@ const feed = document.getElementById('feed');
       scopeLabelEl.textContent = `Device ${selectedDeviceId}`;
       controlsDeviceEl.textContent = `Selected device: ${selectedDeviceId}`;
       updateSelectedDeviceScreenshot();
+      syncUpdateButtonState();
       if (eventSource) eventSource.close();
       await loadInitialMessages();
       connectEvents();
@@ -761,15 +763,26 @@ const feed = document.getElementById('feed');
       if (displayMode === 'controls') await loadCommandHistory();
     }
 
+    function updateViewVisibility() {
+      const isControlsView = displayMode === 'controls';
+      const isActivityView = displayMode === 'activity';
+      const isFeedView = !isControlsView && !isActivityView;
+      rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
+      controlsPanelEl.hidden = !isControlsView;
+      activityPanelEl.hidden = !isActivityView;
+      feed.hidden = !isFeedView;
+      if (!isFeedView) {
+        feed.innerHTML = '';
+      }
+    }
+
     document.querySelectorAll('[data-mode]').forEach((button) => {
       button.addEventListener('click', async () => {
         panelRequestId += 1;
         displayMode = button.dataset.mode;
         button.setAttribute('aria-busy', 'true');
         document.querySelectorAll('[data-mode]').forEach((item) => item.classList.toggle('active', item === button));
-        rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
-        controlsPanelEl.hidden = displayMode !== 'controls';
-        activityPanelEl.hidden = displayMode !== 'activity';
+        updateViewVisibility();
         if (displayMode === 'raw-history') {
           if (eventSource) eventSource.close();
           await loadRawHistory();
@@ -778,12 +791,10 @@ const feed = document.getElementById('feed');
           await loadScreenshots();
         } else if (displayMode === 'controls') {
           if (eventSource) eventSource.close();
-          feed.innerHTML = '';
           statusEl.textContent = 'Device controls';
           await loadCommandHistory();
         } else if (displayMode === 'activity') {
           if (eventSource) eventSource.close();
-          feed.innerHTML = '';
           await loadActivity();
         } else {
           if (!eventSource || eventSource.readyState === EventSource.CLOSED) connectEvents();
@@ -832,6 +843,36 @@ const feed = document.getElementById('feed');
       return 0;
     }
 
+    function syncUpdateButtonState() {
+      const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
+      if (!selectedDeviceId || !selectedDevice) {
+        updateClientButtonEl.disabled = true;
+        updateClientButtonEl.textContent = 'Update client';
+        return;
+      }
+      const currentVersion = String(selectedDevice.client_version || '').trim();
+      if (!currentVersion || currentVersion === 'unknown') {
+        updateClientButtonEl.disabled = true;
+        updateClientButtonEl.textContent = 'Version unknown';
+        return;
+      }
+      fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/update-check`)
+        .then((updateStatus) => {
+          if (!updateStatus.ok) {
+            updateClientButtonEl.disabled = true;
+            updateClientButtonEl.textContent = 'Update unavailable';
+            return;
+          }
+          const needsUpdate = Boolean(updateStatus.needs_update);
+          updateClientButtonEl.disabled = !needsUpdate;
+          updateClientButtonEl.textContent = needsUpdate ? 'Update client' : 'Latest version';
+        })
+        .catch(() => {
+          updateClientButtonEl.disabled = true;
+          updateClientButtonEl.textContent = 'Update unavailable';
+        });
+    }
+
     async function requestClientUpdate(button) {
       if (!selectedDeviceId) {
         controlsStatusEl.textContent = 'Select a device first.';
@@ -859,6 +900,8 @@ const feed = document.getElementById('feed');
         const normalizedLatest = latestVersion.replace(/^v/i, '');
         if (!updateStatus.needs_update) {
           controlsStatusEl.textContent = `Client is already up to date: v${normalizedCurrent} is current.`;
+          updateClientButtonEl.disabled = true;
+          updateClientButtonEl.textContent = 'Latest version';
           return;
         }
         const deviceLabel = selectedDevice.name || selectedDevice.id;
@@ -868,6 +911,8 @@ const feed = document.getElementById('feed');
         }
         await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, { command: 'update_client' });
         controlsStatusEl.textContent = `Update requested for ${deviceLabel}: v${normalizedCurrent} -> v${normalizedLatest}.`;
+        updateClientButtonEl.disabled = true;
+        updateClientButtonEl.textContent = 'Update queued';
       } catch (err) {
         controlsStatusEl.textContent = `Could not check for client updates: ${err.message || String(err)}`;
       } finally {
