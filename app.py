@@ -95,9 +95,37 @@ def parse_monitored_site_patterns(raw_value):
     return tuple(dict.fromkeys(patterns))
 
 
-MONITORED_SITE_PATTERNS = parse_monitored_site_patterns(
-    os.getenv("MONITORED_SITE_PATTERNS", os.getenv("MONITORED_SITE_LIST", ""))
-)
+MONITORED_SITE_FILE = os.path.join(os.path.dirname(__file__), "monitored_sites.json")
+
+
+def load_monitored_site_patterns():
+    env_value = os.getenv("MONITORED_SITE_PATTERNS", os.getenv("MONITORED_SITE_LIST", ""))
+    if env_value:
+        return parse_monitored_site_patterns(env_value)
+    if os.path.exists(MONITORED_SITE_FILE):
+        try:
+            with open(MONITORED_SITE_FILE, "r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+            if isinstance(payload, dict):
+                payload = payload.get("sites", [])
+            if isinstance(payload, (list, tuple, set)):
+                return parse_monitored_site_patterns(payload)
+        except (OSError, ValueError, TypeError):
+            pass
+    return ()
+
+
+def persist_monitored_site_patterns(patterns):
+    cleaned = parse_monitored_site_patterns(patterns)
+    try:
+        with open(MONITORED_SITE_FILE, "w", encoding="utf-8") as handle:
+            json.dump({"sites": list(cleaned)}, handle, indent=2)
+    except OSError:
+        pass
+    return cleaned
+
+
+MONITORED_SITE_PATTERNS = load_monitored_site_patterns()
 app_open_alerts: Dict[str, int] = {}
 site_open_alerts: Dict[str, int] = {}
 
@@ -1517,7 +1545,20 @@ async def fetch_config():
     return JSONResponse({
         "buy_me_a_coffee_url": BUY_ME_A_COFFEE_URL if not SUPPORT_METHODS else "",
         "payment_methods": SUPPORT_METHODS,
+        "monitored_sites": list(MONITORED_SITE_PATTERNS),
     })
+
+
+@app.post("/api/config/monitored-sites")
+async def update_monitored_sites(request: Request):
+    payload = await request.json()
+    sites_value = payload.get("sites") if isinstance(payload, dict) else payload
+    if sites_value is None:
+        return JSONResponse({"ok": False, "error": "sites are required"}, status_code=400)
+    sites = parse_monitored_site_patterns(sites_value)
+    global MONITORED_SITE_PATTERNS
+    MONITORED_SITE_PATTERNS = persist_monitored_site_patterns(sites)
+    return JSONResponse({"ok": True, "sites": list(MONITORED_SITE_PATTERNS)})
 
 
 @app.get("/api/devices")
