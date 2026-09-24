@@ -306,6 +306,7 @@
       font-weight: 700;
     }
     .device-id,
+    .device-ip,
     .device-version,
     .device-seen {
       display: block;

@@ -425,6 +425,10 @@ const feed = document.getElementById('feed');
           id.className = 'device-id';
           id.textContent = `ID: ${device.id || 'unknown'}`;
 
+          const ip = document.createElement('span');
+          ip.className = 'device-ip';
+          ip.textContent = `IP: ${device.client_ip || device.clientIp || 'Unknown IP'}`;
+
           const version = document.createElement('span');
           version.className = 'device-version';
           version.textContent = `Client v${device.client_version || 'unknown'}`;
@@ -469,7 +473,7 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
-          row.append(name, id, version, state, uptime, seen, joined, localTime, user, battery);
+          row.append(name, id, ip, version, state, uptime, seen, joined, localTime, user, battery);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -1202,24 +1206,23 @@ const feed = document.getElementById('feed');
       }
       if (!historyDialogEl.open) historyDialogEl.showModal();
       todayHistoryTargetEl.textContent = `Viewing ${controlsDeviceEl.textContent}`;
-      todayHistoryListEl.innerHTML = '<div class="history-empty">Loading today’s browser history...</div>';
+      todayHistoryListEl.innerHTML = '<div class="history-empty">Loading web history...</div>';
       try {
         const items = await fetchJson(`/api/website-history?device_id=${encodeURIComponent(selectedDeviceId)}`);
-        const startOfToday = new Date();
-        startOfToday.setHours(0, 0, 0, 0);
-        const todaysEntries = (items || [])
-          .filter((entry) => Number(entry.visited_at) >= startOfToday.getTime())
+        const sevenDaysAgoMs = Date.now() - (7 * 24 * 60 * 60 * 1000);
+        const recentEntries = (items || [])
+          .filter((entry) => Number(entry.visited_at) >= sevenDaysAgoMs)
           .sort((a, b) => Number(b.visited_at) - Number(a.visited_at));
 
         todayHistoryListEl.innerHTML = '';
-        if (!todaysEntries.length) {
-          todayHistoryListEl.innerHTML = '<div class="history-empty">No browser history recorded for today.</div>';
+        if (!recentEntries.length) {
+          todayHistoryListEl.innerHTML = '<div class="history-empty">No web history recorded in the last 7 days.</div>';
           return;
         }
 
         const list = document.createElement('ul');
         list.className = 'history-items';
-        todaysEntries.forEach((entry) => {
+        recentEntries.forEach((entry) => {
           const item = document.createElement('li');
           item.className = 'history-item';
           const time = document.createElement('span');
@@ -1239,7 +1242,7 @@ const feed = document.getElementById('feed');
         });
         todayHistoryListEl.appendChild(list);
       } catch (err) {
-        todayHistoryListEl.innerHTML = '<div class="history-empty">Today’s browser history is unavailable.</div>';
+        todayHistoryListEl.innerHTML = '<div class="history-empty">Web history is unavailable.</div>';
       }
     }
 

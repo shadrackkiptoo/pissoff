@@ -999,17 +999,18 @@ def load_devices():
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT device_id, device_name, client_version, last_seen, started_at, joined_at
+                    SELECT device_id, device_name, client_version, client_ip, last_seen, started_at, joined_at
                     FROM devices
                     ORDER BY last_seen DESC
                     """
                 )
                 rows = cursor.fetchall()
-        for device_id, device_name, client_version, last_seen, started_at, joined_at in rows:
+        for device_id, device_name, client_version, client_ip, last_seen, started_at, joined_at in rows:
             devices[str(device_id)] = {
                 "id": device_id,
                 "name": device_name,
                 "client_version": client_version or "",
+                "client_ip": client_ip or "",
                 "last_seen": last_seen,
                 "started_at": started_at,
                 "joined_at": joined_at,
@@ -1061,10 +1062,12 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
     if not isinstance(local_time_ms, (int, float)) or local_time_ms < 100000000000:
         local_time_ms = previous.get("local_time_ms")
     client_version = telemetry.get("client_version") or previous.get("client_version") or ""
+    client_ip = (telemetry.get("client_ip") or previous.get("client_ip") or "").strip()
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "client_version": client_version,
+        "client_ip": client_ip,
         "last_seen": last_seen,
         "started_at": started_at,
         "joined_at": joined_at,
@@ -1082,11 +1085,12 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices (device_id, device_name, client_version, last_seen, started_at, joined_at)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO devices (device_id, device_name, client_version, client_ip, last_seen, started_at, joined_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (device_id) DO UPDATE SET
                     device_name = EXCLUDED.device_name,
                     client_version = EXCLUDED.client_version,
+                    client_ip = EXCLUDED.client_ip,
                     last_seen = EXCLUDED.last_seen,
                     started_at = EXCLUDED.started_at,
                     joined_at = EXCLUDED.joined_at
@@ -1095,6 +1099,7 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
                     device_id,
                     device_name,
                     client_version,
+                    client_ip,
                     last_seen,
                     started_at,
                     joined_at,
@@ -1136,6 +1141,22 @@ class DeviceHeartbeat(BaseModel):
     battery_percent: int | None = None
     battery_status: str = "Unknown"
     open_apps: list[str] = []
+
+
+def resolve_client_ip(request: Request) -> str:
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        ip = forwarded_for.split(",", 1)[0].strip()
+        if ip:
+            return ip
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    cf_ip = request.headers.get("cf-connecting-ip")
+    if cf_ip:
+        return cf_ip.strip()
+    client = request.client
+    return (client.host if client else "unknown").strip() or "unknown"
 
 
 class DeviceOffline(BaseModel):
@@ -1600,7 +1621,9 @@ def read_storage_image(storage_path):
 
 @app.post("/api/devices/heartbeat")
 async def device_heartbeat(
-    payload: DeviceHeartbeat, x_api_key: str | None = Header(default=None)
+    request: Request,
+    payload: DeviceHeartbeat,
+    x_api_key: str | None = Header(default=None),
 ):
     expected_key = os.getenv("INGEST_API_KEY")
     if expected_key and x_api_key != expected_key:
@@ -1611,6 +1634,7 @@ async def device_heartbeat(
     if not device_id:
         return JSONResponse({"ok": False, "error": "missing device_id"}, status_code=400)
 
+    client_ip = resolve_client_ip(request)
     now = int(time.time() * 1000)
     existing_device = devices.get(device_id, {})
     joined_at = int(existing_device.get("joined_at", now))
@@ -1628,6 +1652,7 @@ async def device_heartbeat(
             joined_at,
             {
                 "client_version": payload.client_version,
+                "client_ip": client_ip,
                 "local_time": payload.local_time,
                 "local_time_ms": payload.local_time_ms,
                 "logged_in_user": payload.logged_in_user,
@@ -1644,6 +1669,7 @@ async def device_heartbeat(
     device_online_states[device_id] = True
     devices[device_id].update(
         {
+            "client_ip": client_ip,
             "local_time": payload.local_time,
             "logged_in_user": payload.logged_in_user or "Unknown user",
             "battery_percent": payload.battery_percent,

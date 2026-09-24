@@ -2,6 +2,7 @@ import sqlite3
 import threading
 import types
 import unittest
+from unittest.mock import patch
 
 import app
 import client
@@ -55,11 +56,34 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertEqual(client.browser_name_from_active_app("Microsoft Edge - Example"), "msedge.exe")
         self.assertEqual(client.browser_name_from_active_app("Google Chrome"), "chrome.exe")
 
+    def test_sync_browser_history_uploads_recent_entries_from_last_week(self):
+        recent_ms = int((client.datetime.now().astimezone() - client.timedelta(days=2)).timestamp() * 1000)
+        old_ms = int((client.datetime.now().astimezone() - client.timedelta(days=12)).timestamp() * 1000)
+        entries = [
+            {"browser": "Chrome", "url": "https://example.com/recent", "visited_at": recent_ms},
+            {"browser": "Chrome", "url": "https://example.com/old", "visited_at": old_ms},
+        ]
+
+        with patch.object(client, "browser_history_paths", return_value=[("Chrome", "C:/tmp/History")]), \
+             patch.object(client, "collect_browser_history_entries", return_value=entries), \
+             patch.object(client, "post_website_history", return_value=True) as post_mock:
+            client.browser_history_seen.clear()
+            client.sync_browser_history()
+
+        self.assertEqual(post_mock.call_count, 1)
+        self.assertEqual(post_mock.call_args_list[0].args[0], "https://example.com/recent")
+
     def test_save_device_keeps_client_version(self):
         app.devices.pop("dev-version-test", None)
         app.save_device("dev-version-test", "Version device", 111, 222, 333, {"client_version": "1.2.3"})
         self.assertEqual(app.devices["dev-version-test"]["client_version"], "1.2.3")
         app.devices.pop("dev-version-test", None)
+
+    def test_save_device_keeps_client_ip(self):
+        app.devices.pop("dev-ip-test", None)
+        app.save_device("dev-ip-test", "IP device", 111, 222, 333, {"client_ip": "203.0.113.42"})
+        self.assertEqual(app.devices["dev-ip-test"]["client_ip"], "203.0.113.42")
+        app.devices.pop("dev-ip-test", None)
 
     def test_queue_device_command_accepts_input_controls(self):
         device_id = "input-controls-test"
