@@ -74,6 +74,16 @@ class BrowserHistoryTests(unittest.TestCase):
         finally:
             app.devices.pop(device_id, None)
 
+    def test_queue_device_command_accepts_update_client(self):
+        device_id = "update-client-test"
+        app.devices[device_id] = {"id": device_id, "name": "Update Test"}
+        try:
+            ok, message = app.queue_device_command(device_id, "update_client", "")
+            self.assertTrue(ok)
+            self.assertTrue(message)
+        finally:
+            app.devices.pop(device_id, None)
+
     def test_windows_hooks_keep_callback_references_alive(self):
         def run_worker(worker_func, lock_attr):
             class DummyUser32:

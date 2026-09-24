@@ -60,6 +60,7 @@ const feed = document.getElementById('feed');
     const disableMouseButtonEl = document.getElementById('disableMouseButton');
     const disableKeyboardButtonEl = document.getElementById('disableKeyboardButton');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
+    const updateClientButtonEl = document.getElementById('updateClientButton');
     const mouseDialogEl = document.getElementById('mouseDialog');
     const keyboardDialogEl = document.getElementById('keyboardDialog');
     const cameraDialogEl = document.getElementById('cameraDialog');
@@ -814,6 +815,76 @@ const feed = document.getElementById('feed');
       }
     }
 
+    function parseVersionParts(version) {
+      const normalized = String(version || '').trim().replace(/^v/i, '').replace(/[^0-9.]+/g, '.');
+      const parts = normalized.split('.').map((part) => Number.parseInt(part, 10) || 0);
+      while (parts.length < 4) parts.push(0);
+      return parts.slice(0, 4);
+    }
+
+    function compareVersions(currentVersion, latestVersion) {
+      const currentParts = parseVersionParts(currentVersion);
+      const latestParts = parseVersionParts(latestVersion);
+      for (let index = 0; index < 4; index += 1) {
+        if (currentParts[index] < latestParts[index]) return -1;
+        if (currentParts[index] > latestParts[index]) return 1;
+      }
+      return 0;
+    }
+
+    async function requestClientUpdate(button) {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
+      if (!selectedDevice) {
+        controlsStatusEl.textContent = 'Selected device is no longer available.';
+        return;
+      }
+      const currentVersion = String(selectedDevice.client_version || '').trim();
+      if (!currentVersion || currentVersion === 'unknown') {
+        controlsStatusEl.textContent = 'The selected device version is unavailable, so no update comparison can be made.';
+        return;
+      }
+      button.disabled = true;
+      controlsStatusEl.textContent = `Checking latest release against client v${currentVersion}...`;
+      try {
+        const response = await fetch('https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest', {
+          headers: {
+            Accept: 'application/vnd.github+json',
+            'User-Agent': 'KeyboardService-dashboard',
+          },
+        });
+        if (!response.ok) {
+          throw new Error(`GitHub returned HTTP ${response.status}`);
+        }
+        const release = await response.json();
+        const latestVersion = String(release.tag_name || '').trim();
+        if (!latestVersion) {
+          throw new Error('No release tag was returned by GitHub.');
+        }
+        const normalizedCurrent = currentVersion.replace(/^v/i, '');
+        const normalizedLatest = latestVersion.replace(/^v/i, '');
+        const comparison = compareVersions(normalizedCurrent, normalizedLatest);
+        if (comparison >= 0) {
+          controlsStatusEl.textContent = `Client is already up to date: v${normalizedCurrent} is current.`;
+          return;
+        }
+        const deviceLabel = selectedDevice.name || selectedDevice.id;
+        if (!window.confirm(`Update ${deviceLabel} from v${normalizedCurrent} to v${normalizedLatest}?`)) {
+          controlsStatusEl.textContent = 'Update cancelled.';
+          return;
+        }
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, { command: 'update_client' });
+        controlsStatusEl.textContent = `Update requested for ${deviceLabel}: v${normalizedCurrent} -> v${normalizedLatest}.`;
+      } catch (err) {
+        controlsStatusEl.textContent = `Could not check for client updates: ${err.message || String(err)}`;
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     shutdownButtonEl.addEventListener('click', () => requestClientCommand(
       'shutdown', shutdownButtonEl, 'Shut down the selected client computer?'
     ));
@@ -832,6 +903,7 @@ const feed = document.getElementById('feed');
     resumeClientButtonEl.addEventListener('click', () => requestClientCommand(
       'resume', resumeClientButtonEl, 'Resume collection on the selected client?'
     ));
+    updateClientButtonEl.addEventListener('click', () => requestClientUpdate(updateClientButtonEl));
 
     function openMouseDialog() {
       if (!selectedDeviceId) {

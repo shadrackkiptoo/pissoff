@@ -948,6 +948,12 @@ def handle_device_command(command, command_id=None, message=""):
             if os.name != "nt":
                 raise RuntimeError("App closing is only supported on Windows")
             close_all_visible_apps()
+        elif command == "update_client":
+            if os.name != "nt":
+                raise RuntimeError("Client updates are only supported on Windows")
+            if not getattr(sys, "frozen", False):
+                raise RuntimeError("This client is not running from an installed build and cannot update itself.")
+            check_for_updates()
         elif command == "message":
             if os.name != "nt":
                 raise RuntimeError("Message boxes are only supported on Windows")

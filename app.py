@@ -298,7 +298,7 @@ def queue_device_command(device_id, command, message=""):
     allowed_commands = {
         "shutdown", "logout", "restart", "lock", "pause", "resume",
         "disable_mouse", "disable_keyboard", "disable_camera", "open_camera",
-        "close_app", "close_all_apps",
+        "close_app", "close_all_apps", "update_client",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
