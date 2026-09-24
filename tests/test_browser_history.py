@@ -73,6 +73,18 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertEqual(post_mock.call_count, 1)
         self.assertEqual(post_mock.call_args_list[0].args[0], "https://example.com/recent")
 
+    def test_recent_browser_history_url_falls_back_to_browser_db_when_ui_access_is_missing(self):
+        recent_ms = int((client.datetime.now().astimezone() - client.timedelta(minutes=2)).timestamp() * 1000)
+        old_ms = int((client.datetime.now().astimezone() - client.timedelta(days=2)).timestamp() * 1000)
+        entries = [
+            {"browser": "Chrome", "url": "https://example.com/older", "visited_at": old_ms},
+            {"browser": "Chrome", "url": "https://example.com/newer", "visited_at": recent_ms},
+        ]
+
+        with patch.object(client, "browser_history_paths", return_value=[("Chrome", "C:/tmp/History")]), \
+             patch.object(client, "collect_browser_history_entries", return_value=entries):
+            self.assertEqual(client.latest_browser_history_url("chrome.exe - Example"), "https://example.com/newer")
+
     def test_save_device_keeps_client_version(self):
         app.devices.pop("dev-version-test", None)
         app.save_device("dev-version-test", "Version device", 111, 222, 333, {"client_version": "1.2.3"})

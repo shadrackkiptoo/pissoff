@@ -292,6 +292,38 @@ def browser_name_from_active_app(app_name):
     return ""
 
 
+def latest_browser_history_url(app_name):
+    app_browser = browser_name_from_active_app(app_name)
+    if not app_browser:
+        return ""
+
+    desired_browser = app_browser.lower().replace(".exe", "")
+    browser_aliases = {
+        "chrome": "Chrome",
+        "msedge": "Edge",
+        "edge": "Edge",
+        "firefox": "Firefox",
+        "brave": "Brave",
+        "opera": "Opera",
+    }
+    target_browser = browser_aliases.get(desired_browser, desired_browser.title())
+
+    latest_url = ""
+    latest_time = -1
+    for browser_name, db_path in browser_history_paths():
+        normalized_db_browser = browser_name.lower()
+        if normalized_db_browser != target_browser.lower():
+            continue
+        for entry in collect_browser_history_entries(browser_name, db_path):
+            if not entry.get("url", "").startswith(("http://", "https://")):
+                continue
+            visited_at = int(entry.get("visited_at", 0) or 0)
+            if visited_at > latest_time:
+                latest_time = visited_at
+                latest_url = str(entry["url"])
+    return latest_url
+
+
 def get_browser_url(app_name):
     if os.name != "nt" or Desktop is None:
         return ""
@@ -827,6 +859,8 @@ def website_history_sender():
             sync_browser_history()
             active_app = get_active_app()
             browser_url = get_browser_url(active_app)
+            if not browser_url and active_app:
+                browser_url = latest_browser_history_url(active_app)
             if not active_app:
                 time.sleep(WEBSITE_HISTORY_INTERVAL_SECONDS)
                 continue
