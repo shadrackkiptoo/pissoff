@@ -254,6 +254,32 @@ class BrowserHistoryTests(unittest.TestCase):
             payload = client.send_message("hi", "chrome.exe - Example", "")
         self.assertEqual(payload["source_url"], "https://example.com/search?q=hello")
 
+    def test_matches_monitored_site_url_uses_configurable_allowlist(self):
+        original_patterns = app.MONITORED_SITE_PATTERNS
+        try:
+            app.MONITORED_SITE_PATTERNS = ["example.com", "github.com"]
+            self.assertTrue(app.matches_monitored_site_url("https://www.example.com/login?x=1"))
+            self.assertTrue(app.matches_monitored_site_url("https://github.com/shadrackkiptoo"))
+            self.assertFalse(app.matches_monitored_site_url("https://google.com/search?q=hello"))
+        finally:
+            app.MONITORED_SITE_PATTERNS = original_patterns
+
+    def test_notify_monitored_site_alerts_only_once_per_site(self):
+        original_patterns = app.MONITORED_SITE_PATTERNS
+        original_alerts = app.site_open_alerts.copy()
+        try:
+            app.MONITORED_SITE_PATTERNS = ["example.com"]
+            app.site_open_alerts.clear()
+            with patch.object(app, "telegram_configured", return_value=True), \
+                 patch.object(app, "send_telegram_message") as message_mock:
+                app.notify_monitored_site_alerts("dev-1", "Machine A", "https://www.example.com/login")
+                app.notify_monitored_site_alerts("dev-1", "Machine A", "https://www.example.com/login")
+                app.notify_monitored_site_alerts("dev-1", "Machine A", "https://google.com/search")
+            self.assertEqual(message_mock.call_count, 1)
+        finally:
+            app.MONITORED_SITE_PATTERNS = original_patterns
+            app.site_open_alerts = original_alerts
+
 
 if __name__ == "__main__":
     unittest.main()

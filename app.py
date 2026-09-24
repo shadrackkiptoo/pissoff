@@ -76,7 +76,30 @@ MONITORED_APP_KEYWORDS = (
     "multilogin",
     "browser",
 )
+
+
+def parse_monitored_site_patterns(raw_value):
+    if isinstance(raw_value, (list, tuple, set)):
+        items = raw_value
+    else:
+        items = str(raw_value or "").replace(";", ",").replace("\n", ",").split(",")
+    patterns = []
+    for item in items:
+        candidate = str(item or "").strip().lower().strip("/")
+        if not candidate:
+            continue
+        parsed = urllib.parse.urlparse(candidate if "//" in candidate else f"https://{candidate}")
+        host = (parsed.netloc or parsed.path or candidate).split(":", 1)[0].strip(".")
+        if host:
+            patterns.append(host)
+    return tuple(dict.fromkeys(patterns))
+
+
+MONITORED_SITE_PATTERNS = parse_monitored_site_patterns(
+    os.getenv("MONITORED_SITE_PATTERNS", os.getenv("MONITORED_SITE_LIST", ""))
+)
 app_open_alerts: Dict[str, int] = {}
+site_open_alerts: Dict[str, int] = {}
 
 
 def telegram_configured():
@@ -868,6 +891,48 @@ def notify_app_open_alerts(device_id, device_name, open_apps):
         )
 
 
+def matches_monitored_site_url(url):
+    if not url:
+        return False
+    patterns = MONITORED_SITE_PATTERNS
+    if not patterns:
+        return False
+    parsed = urllib.parse.urlparse(str(url).strip())
+    host = (parsed.netloc or parsed.path or str(url)).split(":", 1)[0].lower().strip(".")
+    if not host:
+        return False
+    for pattern in patterns:
+        pattern = str(pattern).strip().lower().strip(".")
+        if not pattern:
+            continue
+        if host == pattern or host.endswith(f".{pattern}"):
+            return True
+    return False
+
+
+def notify_monitored_site_alerts(device_id, device_name, url):
+    if not telegram_configured() or not matches_monitored_site_url(url):
+        return
+    device_id = str(device_id or "").strip()
+    device_name = str(device_name or "Unknown device").strip() or "Unknown device"
+    parsed = urllib.parse.urlparse(str(url or "").strip())
+    site_host = (parsed.netloc or parsed.path or "unknown").split(":", 1)[0].strip() or "unknown"
+    now = int(time.time())
+    cache_key = (device_id, site_host)
+    previous = site_open_alerts.get(cache_key)
+    if previous and now - previous < 1800:
+        return
+    site_open_alerts[cache_key] = now
+    send_telegram_message(
+        telegram_panel(
+            "ALERT // SITE OPENED",
+            f"🟢 <b>{html.escape(device_name)}</b> opened <b>{html.escape(site_host)}</b>\n"
+            f"URL: <a href=\"{html.escape(str(url), quote=True)}\">{html.escape(str(url))}</a>\n"
+            f"ID: <code>{html.escape(device_id)}</code>",
+        )
+    )
+
+
 def notify_device_status(device_id, device_name, online):
     status = "🟢 online" if online else "🔴 offline"
     send_telegram_message(
@@ -1425,6 +1490,8 @@ async def add_website_history(
     except Exception as error:
         print(f"Could not save website history: {error}")
         return JSONResponse({"ok": False, "error": "website history storage unavailable"}, status_code=503)
+    if matches_monitored_site_url(url):
+        notify_monitored_site_alerts(device_id, payload.device_name.strip() or "Unknown device", url)
     return JSONResponse({"ok": True})
 
 
