@@ -1388,35 +1388,42 @@ const feed = document.getElementById('feed');
     }
 
     async function loadDeviceDetail() {
-      const renderDeviceDetail = (container) => {
+      const fillContainer = (container, payload) => {
         container.innerHTML = '';
         if (!selectedDeviceId) {
           container.textContent = 'Select a device to view detailed telemetry.';
           return;
         }
-        try {
-          const detail = fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/detail`);
-          detail.then((payload) => {
-            const device = payload.device;
-            const heading = document.createElement('h3');
-            heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
-            const summary = document.createElement('p');
-            summary.textContent = `${device.online ? 'Online' : 'Offline'} | Client v${device.client_version || 'unknown'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
-            const apps = document.createElement('p');
-            apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
-            const commands = document.createElement('p');
-            commands.textContent = `Recent commands: ${payload.commands.map((item) => `${item.command} (${item.status})`).join(', ') || 'None'}`;
-            container.innerHTML = '';
-            container.append(heading, summary, apps, commands);
-          }).catch(() => {
-            container.textContent = 'Device detail unavailable.';
-          });
-        } catch (err) {
+        if (!payload) {
           container.textContent = 'Device detail unavailable.';
+          return;
         }
+        const device = payload.device;
+        const heading = document.createElement('h3');
+        heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
+        const summary = document.createElement('p');
+        summary.textContent = `${device.online ? 'Online' : 'Offline'} | Client v${device.client_version || 'unknown'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
+        const apps = document.createElement('p');
+        apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
+        const commands = document.createElement('p');
+        commands.textContent = `Recent commands: ${(payload.commands || []).map((item) => `${item.command} (${item.status})`).join(', ') || 'None'}`;
+        container.append(heading, summary, apps, commands);
       };
-      renderDeviceDetail(deviceDetailEl);
-      renderDeviceDetail(deviceDetailDialogEl);
+
+      if (!selectedDeviceId) {
+        fillContainer(deviceDetailEl, null);
+        fillContainer(deviceDetailDialogEl, null);
+        return;
+      }
+
+      try {
+        const detail = await fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/detail`);
+        fillContainer(deviceDetailEl, detail);
+        fillContainer(deviceDetailDialogEl, detail);
+      } catch (err) {
+        fillContainer(deviceDetailEl, null);
+        fillContainer(deviceDetailDialogEl, null);
+      }
     }
 
     messageSearchEl.addEventListener('input', queueFeedRender);
