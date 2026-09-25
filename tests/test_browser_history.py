@@ -11,6 +11,27 @@ import client
 
 
 class BrowserHistoryTests(unittest.TestCase):
+    def test_downloaded_frozen_client_is_not_mistaken_for_temp_bundle(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        original_executable = client.sys.executable
+        original_meipass = getattr(client.sys, "_MEIPASS", None)
+        try:
+            client.sys.frozen = True
+            client.sys.executable = r"C:\Users\Test\Downloads\KeyboardService.exe"
+            client.sys._MEIPASS = r"C:\Users\Test\AppData\Local\Temp\_MEI123"
+
+            self.assertFalse(client.running_from_temp_bundle())
+
+            client.sys.executable = r"C:\Users\Test\AppData\Local\Temp\_MEI123\KeyboardService.exe"
+            self.assertTrue(client.running_from_temp_bundle())
+        finally:
+            client.sys.frozen = original_frozen
+            client.sys.executable = original_executable
+            if original_meipass is None:
+                delattr(client.sys, "_MEIPASS")
+            else:
+                client.sys._MEIPASS = original_meipass
+
     def test_windows_filetime_to_epoch_ms(self):
         self.assertEqual(client.windows_filetime_to_epoch_ms(0), -11644473600000)
         self.assertEqual(client.windows_filetime_to_epoch_ms(13250236000000000), 1605762400000)

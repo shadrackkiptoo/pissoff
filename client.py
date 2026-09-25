@@ -1740,8 +1740,16 @@ def running_from_temp_bundle():
     if not getattr(sys, "frozen", False):
         return False
 
-    exe_path = os.path.abspath(sys.executable)
-    return "_MEI" in exe_path.upper() or bool(getattr(sys, "_MEIPASS", None))
+    extraction_path = getattr(sys, "_MEIPASS", None)
+    if not extraction_path:
+        return False
+
+    exe_path = os.path.normcase(os.path.abspath(sys.executable))
+    extraction_path = os.path.normcase(os.path.abspath(extraction_path))
+    try:
+        return os.path.commonpath((exe_path, extraction_path)) == extraction_path
+    except ValueError:
+        return False
 
 
 def schedule_installer_cleanup(source_path):
