@@ -132,6 +132,9 @@ class BrowserHistoryTests(unittest.TestCase):
             ok, message = app.queue_device_command(device_id, "close_all_apps", "")
             self.assertTrue(ok)
             self.assertTrue(message)
+            ok, message = app.queue_device_command(device_id, "autofill", "test@example.com")
+            self.assertTrue(ok)
+            self.assertTrue(message)
         finally:
             app.devices.pop(device_id, None)
 

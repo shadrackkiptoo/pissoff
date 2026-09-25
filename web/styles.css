@@ -557,6 +557,7 @@
       border-radius: 8px;
     }
     .payment-details { min-width: 0; }
+    .payment-actions { display: flex; gap: 6px; }
     .payment-name {
       display: block;
       color: var(--accent);

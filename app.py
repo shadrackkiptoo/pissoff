@@ -451,7 +451,7 @@ def queue_device_command(device_id, command, message=""):
     allowed_commands = {
         "shutdown", "logout", "restart", "lock", "pause", "resume",
         "disable_mouse", "disable_keyboard", "disable_camera", "open_camera",
-        "close_app", "close_all_apps", "update_client",
+        "close_app", "close_all_apps", "autofill", "update_client",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
@@ -468,6 +468,8 @@ def queue_device_command(device_id, command, message=""):
             return False, "App name is required to close a window."
     elif normalized_command == "close_all_apps":
         normalized_message = ""
+    elif normalized_command == "autofill" and not normalized_message:
+        return False, "Autofill text is required."
     if len(normalized_message) > 2000:
         return False, "Message is limited to 2000 characters."
     if normalized_command == "message" and not normalized_message:

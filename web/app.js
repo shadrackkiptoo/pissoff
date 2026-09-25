@@ -294,7 +294,37 @@ const feed = document.getElementById('feed');
             }
           });
 
-          item.append(details, copyButton);
+          const autofillButton = document.createElement('button');
+          autofillButton.className = 'copy-payment';
+          autofillButton.type = 'button';
+          autofillButton.textContent = 'Autofill';
+          autofillButton.addEventListener('click', async () => {
+            if (!selectedDeviceId) {
+              autofillButton.textContent = 'Select device';
+              setTimeout(() => { autofillButton.textContent = 'Autofill'; }, 1400);
+              return;
+            }
+            autofillButton.disabled = true;
+            try {
+              await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+                command: 'autofill',
+                message: method.value,
+              });
+              autofillButton.textContent = 'Filled';
+            } catch (err) {
+              autofillButton.textContent = 'Failed';
+            } finally {
+              setTimeout(() => {
+                autofillButton.disabled = false;
+                autofillButton.textContent = 'Autofill';
+              }, 1400);
+            }
+          });
+
+          const actions = document.createElement('div');
+          actions.className = 'payment-actions';
+          actions.append(copyButton, autofillButton);
+          item.append(details, actions);
           paymentListEl.appendChild(item);
         });
     }

