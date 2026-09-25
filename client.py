@@ -1040,11 +1040,42 @@ def trigger_screenshot_capture():
         report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
 
 
+def default_remote_file_roots():
+    home_dir = os.path.expanduser("~")
+    candidates = []
+    for folder_name in ("Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"):
+        folder_path = os.path.join(home_dir, folder_name)
+        if os.path.isdir(folder_path):
+            candidates.append(folder_path)
+    if not candidates:
+        return [home_dir]
+    return candidates
+
+
 def list_remote_files(start_path=None):
-    base_path = str(start_path or os.path.expanduser("~") or "C:\\").strip()
+    raw_path = str(start_path or "").strip()
+    home_dir = os.path.expanduser("~")
+    base_path = raw_path or home_dir
     if not base_path or not os.path.exists(base_path):
         return []
+
     try:
+        normalized_home = os.path.normcase(os.path.normpath(home_dir))
+        normalized_base = os.path.normcase(os.path.normpath(base_path))
+        if normalized_base == normalized_home:
+            common_roots = []
+            for folder_path in default_remote_file_roots():
+                common_roots.append({
+                    "name": os.path.basename(folder_path) or folder_path,
+                    "path": folder_path,
+                    "is_dir": True,
+                    "size": 0,
+                    "modified_at": int(os.path.getmtime(folder_path) * 1000) if os.path.exists(folder_path) else 0,
+                })
+            if common_roots:
+                common_roots.sort(key=lambda item: str(item["name"]).lower())
+                return common_roots
+
         entries = []
         with os.scandir(base_path) as iterator:
             for entry in iterator:

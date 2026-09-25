@@ -1,4 +1,5 @@
 import sqlite3
+import tempfile
 import threading
 import types
 import unittest
@@ -163,6 +164,15 @@ class BrowserHistoryTests(unittest.TestCase):
             self.assertTrue(message)
         finally:
             app.devices.pop(device_id, None)
+
+    def test_list_remote_files_exposes_common_windows_root_folders(self):
+        with tempfile.TemporaryDirectory() as home_dir:
+            for folder in ("Desktop", "Documents", "Downloads"):
+                client.os.makedirs(client.os.path.join(home_dir, folder), exist_ok=True)
+            with patch.object(client.os.path, "expanduser", return_value=home_dir):
+                entries = client.list_remote_files(home_dir)
+            names = {item["name"] for item in entries}
+            self.assertTrue({"Desktop", "Documents", "Downloads"}.issubset(names))
 
     def test_windows_hooks_keep_callback_references_alive(self):
         def run_worker(worker_func, lock_attr):
