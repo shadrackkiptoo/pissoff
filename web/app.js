@@ -135,6 +135,7 @@ const feed = document.getElementById('feed');
     let screenshotCaptureBaseline = null;
     let screenshotRequestError = '';
     let displayedScreenshotUrl = '';
+    const screenshotSavedCaptureByDevice = new Map();
     const SCREENSHOT_POLL_TIMEOUT_MS = 95000;
     const UPDATE_CHECK_CACHE_MS = 300000;
     const UPDATE_CHECK_ERROR_CACHE_MS = 30000;
@@ -464,12 +465,23 @@ const feed = document.getElementById('feed');
         return;
       }
       const previewUrl = selectedDevice.screenshot_url || '';
-      const previewMessage = message || 'Ready to capture';
-      const statusClass = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
-      const isCapturing = ['Requested', 'Taking screenshot', 'Capturing', 'Uploading'].includes(status);
+      let previewMessage = message || 'Ready to capture';
+      const busyStatuses = ['Requested', 'Taking screenshot', 'Capturing', 'Uploading'];
       const captureTimestamp = Number(selectedDevice.screenshot_captured_at) || 0;
+      const deviceId = String(selectedDevice.id);
+      const hasNewCapture = screenshotCaptureBaseline
+        && screenshotCaptureBaseline.deviceId === deviceId
+        && captureTimestamp > screenshotCaptureBaseline.capturedAt;
+      if (hasNewCapture) screenshotSavedCaptureByDevice.set(deviceId, captureTimestamp);
+      const captureWasSaved = screenshotSavedCaptureByDevice.get(deviceId) === captureTimestamp;
+      if (captureWasSaved && busyStatuses.includes(status)) {
+        status = 'Saved';
+        previewMessage = 'Screenshot saved. Loading preview...';
+      }
+      const statusClass = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
+      const isCapturing = busyStatuses.includes(status);
       const waitingForNewScreenshot = screenshotCaptureBaseline
-        && screenshotCaptureBaseline.deviceId === String(selectedDevice.id)
+        && screenshotCaptureBaseline.deviceId === deviceId
         && captureTimestamp <= screenshotCaptureBaseline.capturedAt;
       screenshotDialogStatusEl.textContent = previewMessage;
       screenshotDialogStatusEl.className = statusClass;
@@ -488,7 +500,7 @@ const feed = document.getElementById('feed');
       }
       if (
         screenshotCaptureBaseline
-        && screenshotCaptureBaseline.deviceId === String(selectedDevice.id)
+        && screenshotCaptureBaseline.deviceId === deviceId
         && captureTimestamp > screenshotCaptureBaseline.capturedAt
       ) {
         screenshotCaptureBaseline = null;
@@ -1331,6 +1343,7 @@ const feed = document.getElementById('feed');
       screenshotDialogTargetEl.textContent = `Previewing ${controlsDeviceEl.textContent}`;
       const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
       if (selectedDevice) {
+        screenshotSavedCaptureByDevice.delete(String(selectedDevice.id));
         screenshotCaptureBaseline = {
           deviceId: String(selectedDevice.id),
           capturedAt: Number(selectedDevice.screenshot_captured_at) || 0,
