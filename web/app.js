@@ -118,6 +118,7 @@ const feed = document.getElementById('feed');
     const deviceUptimes = new Map();
     const deviceOnlineStates = new Map();
     const deviceClocks = new Map();
+    const deviceBlockTimers = new Map();
     let latestDevices = [];
     let selectedDeviceId = new URLSearchParams(window.location.search).get('device') || '';
     let displayMode = 'filtered';
@@ -210,6 +211,22 @@ const feed = document.getElementById('feed');
         if (!clock) return;
         const elapsed = Date.now() - clock.receivedAt;
         timeEl.textContent = `Device time ${new Date(clock.timeMs + elapsed).toLocaleString([], { dateStyle: 'medium', timeStyle: 'medium' })}`;
+      });
+      document.querySelectorAll('.device-block-status').forEach((blockEl) => {
+        const deviceId = blockEl.dataset.deviceId;
+        let remainingSeconds = deviceBlockTimers.get(deviceId);
+        if (remainingSeconds === undefined) {
+          blockEl.textContent = 'Input unlocked';
+          return;
+        }
+        remainingSeconds = Math.max(0, remainingSeconds - 1);
+        deviceBlockTimers.set(deviceId, remainingSeconds);
+        if (remainingSeconds <= 0) {
+          blockEl.textContent = 'Input released';
+          deviceBlockTimers.delete(deviceId);
+          return;
+        }
+        blockEl.textContent = `Input block: ${remainingSeconds}s remaining`;
       });
     }
 
@@ -617,6 +634,13 @@ const feed = document.getElementById('feed');
         }
         devices.forEach((device) => {
           const deviceId = String(device.id || 'unknown');
+          const blockedSeconds = Number(device.input_block_remaining_seconds) || 0;
+          const hasBlock = device.input_block_status === 'Blocked' && blockedSeconds > 0;
+          if (hasBlock) {
+            deviceBlockTimers.set(deviceId, blockedSeconds);
+          } else {
+            deviceBlockTimers.delete(deviceId);
+          }
           const row = document.createElement('div');
           row.className = `device-row${device.online ? ' online' : ''}${deviceId === selectedDeviceId ? ' selected' : ''}`;
           row.addEventListener('click', () => selectDevice(deviceId));
@@ -681,7 +705,12 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
-          row.append(name, id, ip, localIp, version, state, uptime, seen, joined, localTime, user, battery);
+          const blockStatus = document.createElement('span');
+          blockStatus.className = 'device-seen device-block-status';
+          blockStatus.dataset.deviceId = deviceId;
+          blockStatus.textContent = hasBlock ? `Input block: ${blockedSeconds}s remaining` : 'Input unlocked';
+
+          row.append(name, id, ip, localIp, version, state, uptime, seen, joined, localTime, user, battery, blockStatus);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
