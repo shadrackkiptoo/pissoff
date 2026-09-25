@@ -80,6 +80,7 @@ const feed = document.getElementById('feed');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
     const openUltraViewerButtonEl = document.getElementById('openUltraViewerButton');
     const updateClientButtonEl = document.getElementById('updateClientButton');
+    const updateAllClientsButtonEl = document.getElementById('updateAllClientsButton');
     const logoutDashboardButtonEl = document.getElementById('logoutDashboardButton');
     const activityButtonEl = document.getElementById('activityButton');
     const cameraDialogEl = document.getElementById('cameraDialog');
@@ -1296,6 +1297,64 @@ const feed = document.getElementById('feed');
       }
     }
 
+    async function requestAllClientsUpdate(button) {
+      const eligibleDevices = latestDevices.filter((device) => (
+        device.online
+        && device.client_version
+        && String(device.client_version).toLowerCase() !== 'unknown'
+      ));
+      if (!eligibleDevices.length) {
+        controlsStatusEl.textContent = 'No online clients with a known version are available.';
+        return;
+      }
+      if (!window.confirm(`Check ${eligibleDevices.length} online client(s) for updates?`)) return;
+      button.disabled = true;
+      controlsStatusEl.textContent = `Checking ${eligibleDevices.length} client(s) for updates...`;
+      try {
+        const checkedDevices = await Promise.all(eligibleDevices.map(async (device) => {
+          try {
+            const status = await getUpdateStatus(String(device.id), true);
+            return status.needs_update ? { device, status } : null;
+          } catch (error) {
+            return { device, error };
+          }
+        }));
+        const failedChecks = checkedDevices.filter((item) => item?.error);
+        const updates = checkedDevices.filter((item) => item && !item.error);
+        if (!updates.length) {
+          controlsStatusEl.textContent = failedChecks.length
+            ? `No updates queued. ${failedChecks.length} update check(s) failed.`
+            : 'All online clients are already up to date.';
+          return;
+        }
+        if (!window.confirm(`Queue updates for ${updates.length} client(s)?`)) {
+          controlsStatusEl.textContent = 'Update all cancelled.';
+          return;
+        }
+        const queueResults = await Promise.all(updates.map(async ({ device, status }) => {
+          try {
+            const response = await postJson(`/api/devices/${encodeURIComponent(device.id)}/command`, {
+              command: 'update_client',
+            });
+            if (!response.command_id) throw new Error('No command ID returned.');
+            pendingUpdateStates.set(String(device.id), {
+              commandId: response.command_id,
+              latestVersion: status.latest_version,
+              label: 'Update queued',
+            });
+            return true;
+          } catch (error) {
+            return false;
+          }
+        }));
+        const queuedCount = queueResults.filter(Boolean).length;
+        controlsStatusEl.textContent = `Queued updates for ${queuedCount} of ${updates.length} client(s).${failedChecks.length ? ` ${failedChecks.length} check(s) failed.` : ''}`;
+        syncUpdateButtonState();
+      } finally {
+        button.disabled = false;
+      }
+    }
+
     shutdownButtonEl.addEventListener('click', () => requestClientCommand(
       'shutdown', shutdownButtonEl, 'Shut down the selected client computer?'
     ));
@@ -1342,6 +1401,7 @@ const feed = document.getElementById('feed');
       'resume', resumeClientButtonEl, 'Resume collection on the selected client?'
     ));
     updateClientButtonEl.addEventListener('click', () => requestClientUpdate(updateClientButtonEl));
+    updateAllClientsButtonEl.addEventListener('click', () => requestAllClientsUpdate(updateAllClientsButtonEl));
 
     function openCameraDialog() {
       if (!selectedDeviceId) {
