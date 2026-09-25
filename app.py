@@ -1736,15 +1736,15 @@ async def fetch_devices():
                     "message": "The client did not finish within 90 seconds.",
                     "updated_at": now,
                 }
-    screenshot_devices = set()
+    screenshot_captured_at = {}
     if DATABASE_URL:
         try:
             with psycopg.connect(DATABASE_URL) as connection:
                 with connection.cursor() as cursor:
                     cursor.execute(
-                        "SELECT DISTINCT ON (device_id) device_id FROM screenshots ORDER BY device_id, captured_at DESC"
+                        "SELECT DISTINCT ON (device_id) device_id, captured_at FROM screenshots ORDER BY device_id, captured_at DESC"
                     )
-                    screenshot_devices = {str(row[0]) for row in cursor.fetchall()}
+                    screenshot_captured_at = {str(row[0]): int(row[1]) for row in cursor.fetchall()}
         except Exception as error:
             error_text = str(error)
             if "does not exist" in error_text or "relation \"screenshots\"" in error_text:
@@ -1774,9 +1774,10 @@ async def fetch_devices():
                 "local_time_ms": device_time_ms,
                 "screenshot_url": (
                     f"/api/devices/{device['id']}/screenshot/latest"
-                    if str(device["id"]) in screenshot_devices
+                    if str(device["id"]) in screenshot_captured_at
                     else ""
                 ),
+                "screenshot_captured_at": screenshot_captured_at.get(str(device["id"])),
                 "screenshot_status": screenshot_statuses.get(str(device["id"]), {}).get("status", "Ready"),
                 "screenshot_message": screenshot_statuses.get(str(device["id"]), {}).get("message", ""),
                 "website_history_status": website_history_statuses.get(str(device["id"]), {}).get("status", "Ready"),

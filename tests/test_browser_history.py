@@ -118,7 +118,7 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertEqual(app.devices["dev-ip-test"]["client_ip"], "203.0.113.42")
         app.devices.pop("dev-ip-test", None)
 
-    def test_check_for_updates_acknowledges_before_exit(self):
+    def test_check_for_updates_defers_acknowledgement_until_new_process_starts(self):
         original_frozen = getattr(client.sys, "frozen", False)
         original_lock = client.update_lock
         try:
@@ -133,9 +133,32 @@ class BrowserHistoryTests(unittest.TestCase):
             client.sys.frozen = original_frozen
             client.update_lock = original_lock
 
-        ack_mock.assert_called_once_with("cmd-123", "completed")
+        ack_mock.assert_not_called()
         schedule_mock.assert_called_once()
+        self.assertEqual(schedule_mock.call_args.kwargs["command_id"], "cmd-123")
         exit_mock.assert_called_once_with(0)
+
+    def test_update_command_does_not_acknowledge_twice(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        try:
+            client.sys.frozen = True
+            with patch.object(client, "check_for_updates", return_value=False) as update_mock, \
+                 patch.object(client, "acknowledge_device_command") as acknowledge_mock:
+                client.handle_device_command("update_client", "cmd-failed")
+        finally:
+            client.sys.frozen = original_frozen
+        update_mock.assert_called_once_with(command_id="cmd-failed")
+        acknowledge_mock.assert_not_called()
+
+    def test_new_update_process_acknowledges_command_after_startup(self):
+        with patch.object(client, "POST_UPDATE_COMMAND_ID", "cmd-started"), \
+             patch.object(client, "install_and_relaunch", return_value=False), \
+             patch.object(client, "cleanup_update_artifacts"), \
+             patch.object(client, "acknowledge_device_command") as acknowledge_mock, \
+             patch.object(client, "hide_current_window"), \
+             patch.object(client, "start_keyboard_listener"):
+            client.run_client()
+        acknowledge_mock.assert_called_once_with("cmd-started", "completed")
 
     def test_versioned_update_path_is_used_for_startup(self):
         original_frozen = getattr(client.sys, "frozen", False)
@@ -166,11 +189,12 @@ class BrowserHistoryTests(unittest.TestCase):
                 source_file.write(b"new client")
             with patch.object(client.os, "getpid", return_value=123), \
                  patch.object(client.subprocess, "Popen") as process_mock:
-                client.schedule_update(source_path, previous_version="1.2.13", new_version="1.2.14")
+                client.schedule_update(source_path, previous_version="1.2.13", new_version="1.2.14", command_id="cmd-42")
             with open(helper_path, "r", encoding="ascii") as helper_file:
                 helper_script = helper_file.read()
             self.assertIn(f'move /y "{source_path}" "{target_path}"', helper_script)
             self.assertIn(f'start "" "{target_path}"', helper_script)
+            self.assertIn('--update-command-id "cmd-42"', helper_script)
             self.assertNotIn(client.INSTALL_PATH, helper_script)
             process_mock.assert_called_once()
 

@@ -131,6 +131,25 @@ const feed = document.getElementById('feed');
     let screenshotSignature = null;
     let notificationTimer = null;
     let screenshotStatusTimer = null;
+    let screenshotPreviewErrorUrl = '';
+    const SCREENSHOT_POLL_TIMEOUT_MS = 95000;
+
+    screenshotDialogPreviewEl.addEventListener('load', () => {
+      const expectedUrl = screenshotDialogPreviewEl.dataset.previewUrl;
+      if (!expectedUrl || new URL(expectedUrl, window.location.href).href !== screenshotDialogPreviewEl.currentSrc) return;
+      screenshotPreviewErrorUrl = '';
+      screenshotDialogPreviewEl.hidden = false;
+      screenshotDialogPlaceholderEl.hidden = true;
+    });
+    screenshotDialogPreviewEl.addEventListener('error', () => {
+      const expectedUrl = screenshotDialogPreviewEl.dataset.previewUrl;
+      if (!expectedUrl || new URL(expectedUrl, window.location.href).href !== screenshotDialogPreviewEl.currentSrc) return;
+      screenshotPreviewErrorUrl = expectedUrl;
+      screenshotDialogPreviewEl.hidden = true;
+      screenshotDialogPlaceholderEl.textContent = 'Screenshot could not be loaded. Check storage and retry capture.';
+      screenshotDialogPlaceholderEl.hidden = false;
+      screenshotDialogStatusEl.textContent = 'The server has a screenshot, but the preview request failed.';
+    });
 
     function showLiveNotification(msg) {
       const preview = String(msg.text || msg.raw_text || '').trim();
@@ -401,12 +420,13 @@ const feed = document.getElementById('feed');
         Uploading: 2,
         Failed: -1,
         Ready: 3,
+        Saved: 3,
       };
       const activeIndex = stageOrder[normalized] ?? (normalized.includes('capture') ? 1 : normalized.includes('upload') ? 2 : 0);
       progressEl.querySelectorAll('.progress-step').forEach((step, index) => {
         const stageName = step.dataset.stage;
         const isActive = index === activeIndex;
-        const isComplete = stageOrder[stageName] !== undefined && (stageOrder[stageName] < activeIndex || (normalized === 'Ready' && stageName === 'Ready'));
+        const isComplete = stageOrder[stageName] !== undefined && (stageOrder[stageName] < activeIndex || (['Ready', 'Saved'].includes(normalized) && stageName === 'Ready'));
         step.classList.toggle('active', isActive);
         step.classList.toggle('done', isComplete);
       });
@@ -433,13 +453,34 @@ const feed = document.getElementById('feed');
       screenshotDialogStatusEl.textContent = previewMessage;
       screenshotDialogStatusEl.className = statusClass;
       updateScreenshotProgress(screenshotDialogProgressEl, status);
-      if (previewUrl && !isCapturing) {
-        screenshotDialogPreviewEl.src = `${previewUrl}?t=${Date.now()}`;
-        screenshotDialogPreviewEl.hidden = false;
-        screenshotDialogPlaceholderEl.hidden = true;
+      if (previewUrl) {
+        const captureVersion = selectedDevice.screenshot_captured_at || 'latest';
+        const versionedPreviewUrl = `${previewUrl}?t=${encodeURIComponent(captureVersion)}`;
+        if (screenshotDialogPreviewEl.dataset.previewUrl !== versionedPreviewUrl) {
+          screenshotDialogPreviewEl.dataset.previewUrl = versionedPreviewUrl;
+          screenshotPreviewErrorUrl = '';
+          screenshotDialogPreviewEl.hidden = true;
+          screenshotDialogPreviewEl.src = versionedPreviewUrl;
+          screenshotDialogPlaceholderEl.textContent = 'Loading screenshot...';
+          screenshotDialogPlaceholderEl.hidden = false;
+        } else if (screenshotPreviewErrorUrl === versionedPreviewUrl) {
+          screenshotDialogPreviewEl.hidden = true;
+          screenshotDialogPlaceholderEl.textContent = 'Screenshot could not be loaded. Check storage and retry capture.';
+          screenshotDialogPlaceholderEl.hidden = false;
+          screenshotDialogStatusEl.textContent = 'The server has a screenshot, but the preview request failed.';
+        } else if (screenshotDialogPreviewEl.complete && screenshotDialogPreviewEl.naturalWidth > 0) {
+          screenshotDialogPreviewEl.hidden = false;
+          screenshotDialogPlaceholderEl.hidden = true;
+        } else {
+          screenshotDialogPlaceholderEl.textContent = isCapturing ? previewMessage : 'Loading screenshot...';
+          screenshotDialogPlaceholderEl.hidden = false;
+        }
       } else {
         screenshotDialogPreviewEl.hidden = true;
+        screenshotDialogPreviewEl.dataset.previewUrl = '';
         screenshotDialogPreviewEl.removeAttribute('src');
+        screenshotPreviewErrorUrl = '';
+        screenshotDialogPlaceholderEl.textContent = isCapturing ? previewMessage : status === 'Failed' ? previewMessage : 'No screenshot captured yet.';
         screenshotDialogPlaceholderEl.hidden = false;
       }
     }
@@ -496,6 +537,7 @@ const feed = document.getElementById('feed');
           battery_status: device.battery_status,
           screenshot_status: device.screenshot_status,
           screenshot_message: device.screenshot_message,
+          screenshot_captured_at: device.screenshot_captured_at,
           website_history_status: device.website_history_status,
           website_history_message: device.website_history_message,
         })));
@@ -1120,7 +1162,18 @@ const feed = document.getElementById('feed');
         screenshotOverlayEl.classList.add('show');
       }
       if (screenshotStatusTimer) clearInterval(screenshotStatusTimer);
+      const screenshotPollStartedAt = Date.now();
       screenshotStatusTimer = setInterval(async () => {
+        if (Date.now() - screenshotPollStartedAt >= SCREENSHOT_POLL_TIMEOUT_MS) {
+          clearInterval(screenshotStatusTimer);
+          screenshotStatusTimer = null;
+          screenshotDialogStatusEl.textContent = 'Screenshot request timed out. The last saved screenshot remains available.';
+          screenshotDialogStatusEl.className = 'controls-screenshot-status failed';
+          updateScreenshotProgress(screenshotDialogProgressEl, 'Failed');
+          const timedOutDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
+          captureScreenshotButtonEl.disabled = !timedOutDevice?.online;
+          return;
+        }
         if (!screenshotOverlayEl.hidden && !selectedDeviceId) {
           clearInterval(screenshotStatusTimer);
           screenshotStatusTimer = null;
