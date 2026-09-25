@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.21"
+APP_VERSION = "1.2.22"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1831,7 +1831,50 @@ def schedule_update(temporary_path, previous_version=None, new_version=None, com
     subprocess.Popen(["cmd.exe", "/c", helper_path], close_fds=True, startupinfo=startup_info)
 
 
+def cleanup_old_update_versions():
+    if not os.path.isdir(UPDATE_DIR):
+        return
+
+    version_directories = []
+    for entry in os.scandir(UPDATE_DIR):
+        if not entry.is_dir():
+            continue
+        parsed_version = version_tuple(entry.name)
+        if not re.fullmatch(r"\d+(?:\.\d+){0,3}", entry.name):
+            continue
+        version_directories.append((parsed_version, entry.path))
+    if len(version_directories) <= 2:
+        return
+
+    current_path = os.path.abspath(sys.executable)
+    current_version = None
+    if is_in_update_directory(current_path):
+        current_version = os.path.basename(os.path.dirname(os.path.dirname(current_path)))
+    current_tuple = version_tuple(current_version or APP_VERSION)
+    version_directories.sort(key=lambda item: item[0], reverse=True)
+    keep_paths = {
+        path for parsed_version, path in version_directories
+        if parsed_version == current_tuple
+    }
+    if not keep_paths:
+        keep_paths.add(version_directories[0][1])
+    for parsed_version, path in version_directories:
+        if path in keep_paths:
+            continue
+        if parsed_version < current_tuple:
+            keep_paths.add(path)
+            break
+    for _parsed_version, path in version_directories:
+        if path in keep_paths:
+            continue
+        try:
+            shutil.rmtree(path)
+        except OSError as error:
+            print(f"Could not remove old update directory {path}: {error}")
+
+
 def cleanup_update_artifacts():
+    cleanup_old_update_versions()
     stale_paths = [
         os.path.join(INSTALL_DIR, f"{UPDATE_ASSET_NAME}.download"),
         *glob.glob(os.path.join(INSTALL_DIR, "update_*.cmd")),

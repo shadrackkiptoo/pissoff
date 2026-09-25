@@ -267,6 +267,23 @@ class BrowserHistoryTests(unittest.TestCase):
             client.sys.frozen = original_frozen
             client.sys.executable = original_executable
 
+    def test_cleanup_old_update_versions_keeps_current_and_previous(self):
+        original_executable = client.sys.executable
+        with tempfile.TemporaryDirectory() as root:
+            update_dir = client.os.path.join(root, "updates")
+            current_path = client.os.path.join(update_dir, "1.2.21", "current", "KeyboardService.exe")
+            for version in ("1.2.19", "1.2.20", "1.2.21"):
+                client.os.makedirs(client.os.path.join(update_dir, version, "run"))
+            client.sys.executable = current_path
+            try:
+                with patch.object(client, "UPDATE_DIR", update_dir):
+                    client.cleanup_old_update_versions()
+            finally:
+                client.sys.executable = original_executable
+            self.assertTrue(client.os.path.isdir(client.os.path.join(update_dir, "1.2.21")))
+            self.assertTrue(client.os.path.isdir(client.os.path.join(update_dir, "1.2.20")))
+            self.assertFalse(client.os.path.exists(client.os.path.join(update_dir, "1.2.19")))
+
     def test_schedule_update_targets_versioned_staging_executable(self):
         with tempfile.TemporaryDirectory() as update_directory:
             source_path = client.os.path.join(update_directory, "KeyboardService.exe.download")
