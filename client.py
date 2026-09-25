@@ -1374,6 +1374,9 @@ def send_heartbeat():
     global SITE_URL
     try:
         headers = {"Content-Type": "application/json"}
+        api_key = os.getenv("INGEST_API_KEY", "").strip()
+        if api_key:
+            headers["x-api-key"] = api_key
         request = Request(
             f"{SITE_URL}/api/devices/heartbeat",
             data=json.dumps(

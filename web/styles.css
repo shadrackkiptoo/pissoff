@@ -890,18 +890,14 @@
       text-decoration: none;
     }
     .control-button:hover { background: rgba(120, 217, 209, 0.16); }
-    .control-button-primary {
-      color: #151812;
-      border-color: var(--accent);
-      background: var(--accent);
-    }
-    .control-button-primary:hover { background: #ecfa9d; }
+    .control-button-primary,
     .control-button-warning {
-      color: #21170c;
-      border-color: #f1b45b;
-      background: #f1b45b;
+      color: var(--accent);
+      border-color: var(--border);
+      background: rgba(120, 217, 209, 0.08);
     }
-    .control-button-warning:hover { background: #ffd18a; }
+    .control-button-primary:hover,
+    .control-button-warning:hover { background: rgba(120, 217, 209, 0.16); }
     .control-button-danger { color: #ffb3a7; border-color: rgba(255, 120, 100, 0.4); background: rgba(180, 54, 42, 0.14); }
     .control-button-danger:hover { background: rgba(180, 54, 42, 0.25); }
     .control-button:disabled { cursor: wait; opacity: 0.55; }

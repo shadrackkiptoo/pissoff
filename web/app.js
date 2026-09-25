@@ -465,6 +465,7 @@ const feed = document.getElementById('feed');
           id: device.id,
           name: device.name,
           client_version: device.client_version,
+          client_ip: device.client_ip,
           online: device.online,
           status: device.status,
           open_apps: device.open_apps,
@@ -474,6 +475,8 @@ const feed = document.getElementById('feed');
           battery_status: device.battery_status,
           screenshot_status: device.screenshot_status,
           screenshot_message: device.screenshot_message,
+          website_history_status: device.website_history_status,
+          website_history_message: device.website_history_message,
         })));
         if (deviceSignature === lastDeviceSignature) return;
         lastDeviceSignature = deviceSignature;
@@ -503,6 +506,14 @@ const feed = document.getElementById('feed');
           const version = document.createElement('span');
           version.className = 'device-version';
           version.textContent = `Client v${device.client_version || 'unknown'}`;
+
+          const historyStatus = document.createElement('span');
+          historyStatus.className = 'device-seen';
+          historyStatus.textContent = `History sync: ${device.website_history_status || 'No report'}`;
+
+          const screenshotStatus = document.createElement('span');
+          screenshotStatus.className = 'device-seen';
+          screenshotStatus.textContent = `Screenshot: ${device.screenshot_status || 'Ready'}`;
 
           const state = document.createElement('span');
           state.className = `device-state ${device.online ? 'online' : 'offline'}`;
@@ -544,7 +555,7 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
-          row.append(name, id, ip, version, state, uptime, seen, joined, localTime, user, battery);
+          row.append(name, id, ip, version, historyStatus, screenshotStatus, state, uptime, seen, joined, localTime, user, battery);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -1514,6 +1525,7 @@ const feed = document.getElementById('feed');
     }
 
     async function loadDeviceDetail() {
+      let updateLabel = 'Update status unavailable';
       const fillContainer = (container, payload) => {
         container.innerHTML = '';
         if (!selectedDeviceId) {
@@ -1529,11 +1541,15 @@ const feed = document.getElementById('feed');
         heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
         const summary = document.createElement('p');
         summary.textContent = `${device.online ? 'Online' : 'Offline'} | Client v${device.client_version || 'unknown'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
+        const health = document.createElement('p');
+        health.textContent = `Update: ${updateLabel} | History sync: ${device.website_history_status || 'No report'}${device.website_history_message ? ` (${device.website_history_message})` : ''} | Screenshot: ${device.screenshot_status || 'Ready'}${device.screenshot_message ? ` (${device.screenshot_message})` : ''}`;
+        const network = document.createElement('p');
+        network.textContent = `Device IP: ${device.client_ip || 'Unknown IP'}`;
         const apps = document.createElement('p');
         apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
         const commands = document.createElement('p');
         commands.textContent = `Recent commands: ${(payload.commands || []).map((item) => `${item.command} (${item.status})`).join(', ') || 'None'}`;
-        container.append(heading, summary, apps, commands);
+        container.append(heading, summary, health, network, apps, commands);
       };
 
       if (!selectedDeviceId) {
@@ -1543,7 +1559,13 @@ const feed = document.getElementById('feed');
       }
 
       try {
-        const detail = await fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/detail`);
+        const [detail, updateStatus] = await Promise.all([
+          fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/detail`),
+          fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/update-check`).catch(() => null),
+        ]);
+        updateLabel = updateStatus?.ok
+          ? (updateStatus.needs_update ? `Update available (${updateStatus.latest_version || 'new version'})` : 'Up to date')
+          : 'Update status unavailable';
         fillContainer(deviceDetailEl, detail);
         fillContainer(deviceDetailDialogEl, detail);
       } catch (err) {
