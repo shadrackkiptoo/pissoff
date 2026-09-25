@@ -1865,7 +1865,7 @@ async def upload_device_file_listing(
     device_id = payload.device_id.strip()
     if not device_id or device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    normalized_path = str(payload.path or "").strip() or os.path.expanduser("~")
+    normalized_path = str(payload.path or "").strip()
     entries = []
     for entry in payload.entries or []:
         if not isinstance(entry, dict):
@@ -1945,7 +1945,7 @@ async def fetch_device_file_listing(device_id: str, path: str = ""):
     normalized_device_id = device_id.strip()
     if not normalized_device_id or normalized_device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    requested_path = str(path or "").strip() or os.path.expanduser("~")
+    requested_path = str(path or "").strip()
     cached = device_file_cache.get(normalized_device_id)
     if cached and str(cached.get("path") or "") == requested_path:
         return JSONResponse({
@@ -1965,7 +1965,7 @@ async def fetch_device_file_listing(device_id: str, path: str = ""):
 @app.post("/api/devices/{device_id}/files")
 async def request_device_file_listing(device_id: str, request: Request):
     payload = await request.json()
-    requested_path = str(payload.get("path", "") or "").strip() or os.path.expanduser("~")
+    requested_path = str(payload.get("path", "") or "").strip()
     normalized_device_id = device_id.strip()
     if not normalized_device_id or normalized_device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)

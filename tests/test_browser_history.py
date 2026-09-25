@@ -1,3 +1,4 @@
+import asyncio
 import sqlite3
 import tempfile
 import threading
@@ -162,6 +163,18 @@ class BrowserHistoryTests(unittest.TestCase):
             ok, message = app.queue_device_command(device_id, "download_file", "C:/Users/Test/example.txt")
             self.assertTrue(ok)
             self.assertTrue(message)
+        finally:
+            app.devices.pop(device_id, None)
+
+    def test_file_listing_blank_path_uses_remote_client_default_not_server_home(self):
+        device_id = "blank-list-test"
+        app.devices[device_id] = {"id": device_id, "name": "Blank Path Test"}
+        try:
+            response = asyncio.run(app.fetch_device_file_listing(device_id, ""))
+            payload = response.body.decode("utf-8")
+            self.assertIn('"queued":true', payload)
+            self.assertNotIn('/opt/render', payload)
+            self.assertNotIn('/root', payload)
         finally:
             app.devices.pop(device_id, None)
 
