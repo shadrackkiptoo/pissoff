@@ -1,7 +1,8 @@
 import sqlite3
+import tempfile
 import threading
 import unittest
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 import app
 import client
@@ -212,6 +213,88 @@ class BrowserHistoryTests(unittest.TestCase):
                 self.assertEqual(
                     client.get_startup_command(),
                     '"C:\\venv\\Scripts\\python.exe" "C:\\Users\\Test\\AppData\\Local\\KeyboardService\\KeyboardService.py"',
+                )
+        finally:
+            client.sys.frozen = original_frozen
+            client.sys.executable = original_executable
+
+    def test_get_startup_command_uses_installed_executable_when_frozen(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        original_executable = client.sys.executable
+        installed_path = r"C:\Users\Test\AppData\Local\KeyboardService\KeyboardService.exe"
+        try:
+            client.sys.frozen = True
+            client.sys.executable = r"C:\Users\Test\Downloads\KeyboardService.exe"
+            with patch.object(client, "install_self_to_startup_location", return_value=installed_path):
+                self.assertEqual(client.get_startup_command(), f'"{installed_path}"')
+        finally:
+            client.sys.frozen = original_frozen
+            client.sys.executable = original_executable
+
+    def test_frozen_bootstrap_keeps_existing_install_as_authority(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        original_executable = client.sys.executable
+        try:
+            with tempfile.TemporaryDirectory() as install_dir:
+                source_path = client.os.path.join(install_dir, "Downloads", "KeyboardService.exe")
+                installed_path = client.os.path.join(install_dir, "KeyboardService.exe")
+                client.os.makedirs(client.os.path.dirname(source_path))
+                with open(source_path, "wb") as source:
+                    source.write(b"new downloaded release")
+                with open(installed_path, "wb") as installed:
+                    installed.write(b"existing installed build")
+
+                client.sys.frozen = True
+                client.sys.executable = source_path
+                with patch.object(client, "INSTALL_DIR", install_dir), \
+                     patch.object(client, "INSTALL_PATH", installed_path), \
+                     patch.object(client, "running_from_local_project", return_value=False), \
+                     patch.object(client, "running_from_temp_bundle", return_value=False), \
+                     patch.object(client, "schedule_installer_cleanup") as cleanup_mock, \
+                     patch.object(client.subprocess, "Popen") as launch_mock:
+                    self.assertTrue(client.install_and_relaunch())
+
+                with open(installed_path, "rb") as installed:
+                    self.assertEqual(installed.read(), b"existing installed build")
+                launch_mock.assert_called_once_with(
+                    [installed_path], close_fds=True, startupinfo=ANY
+                )
+                cleanup_mock.assert_called_once_with(
+                    client.os.path.normcase(client.os.path.abspath(source_path))
+                )
+        finally:
+            client.sys.frozen = original_frozen
+            client.sys.executable = original_executable
+
+    def test_frozen_bootstrap_installs_and_launches_from_local_app_data(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        original_executable = client.sys.executable
+        try:
+            with tempfile.TemporaryDirectory() as root:
+                install_dir = client.os.path.join(root, "AppData", "Local", "KeyboardService")
+                source_path = client.os.path.join(root, "Downloads", "KeyboardService.exe")
+                installed_path = client.os.path.join(install_dir, "KeyboardService.exe")
+                client.os.makedirs(client.os.path.dirname(source_path))
+                with open(source_path, "wb") as source:
+                    source.write(b"release executable")
+
+                client.sys.frozen = True
+                client.sys.executable = source_path
+                with patch.object(client, "INSTALL_DIR", install_dir), \
+                     patch.object(client, "INSTALL_PATH", installed_path), \
+                     patch.object(client, "running_from_local_project", return_value=False), \
+                     patch.object(client, "running_from_temp_bundle", return_value=False), \
+                     patch.object(client, "schedule_installer_cleanup") as cleanup_mock, \
+                     patch.object(client.subprocess, "Popen") as launch_mock:
+                    self.assertTrue(client.install_and_relaunch())
+
+                with open(installed_path, "rb") as installed:
+                    self.assertEqual(installed.read(), b"release executable")
+                launch_mock.assert_called_once_with(
+                    [installed_path], close_fds=True, startupinfo=ANY
+                )
+                cleanup_mock.assert_called_once_with(
+                    client.os.path.normcase(client.os.path.abspath(source_path))
                 )
         finally:
             client.sys.frozen = original_frozen

