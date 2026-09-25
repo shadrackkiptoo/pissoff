@@ -136,6 +136,9 @@ const feed = document.getElementById('feed');
     let screenshotRequestError = '';
     let displayedScreenshotUrl = '';
     const screenshotSavedCaptureByDevice = new Map();
+    const DEVICE_POLL_INTERVAL_MS = 15000;
+    const HEALTH_POLL_INTERVAL_MS = 60000;
+    const SCREENSHOT_POLL_INTERVAL_MS = 3000;
     const SCREENSHOT_POLL_TIMEOUT_MS = 95000;
     const UPDATE_CHECK_CACHE_MS = 300000;
     const UPDATE_CHECK_ERROR_CACHE_MS = 30000;
@@ -1397,7 +1400,7 @@ const feed = document.getElementById('feed');
           screenshotStatusTimer = null;
         }
         syncScreenshotPreviewState(currentDevice, status, currentDevice.screenshot_message || 'Ready to capture');
-      }, 1000);
+      }, SCREENSHOT_POLL_INTERVAL_MS);
     }
 
     function closeScreenshotDialog() {
@@ -1854,8 +1857,8 @@ const feed = document.getElementById('feed');
     startApp();
     setInterval(updateUptime, 1000);
     setInterval(updateDeviceUptimes, 1000);
-    setInterval(loadHealth, 30000);
-    setInterval(loadDevices, 3000);
+    setInterval(loadHealth, HEALTH_POLL_INTERVAL_MS);
+    setInterval(loadDevices, DEVICE_POLL_INTERVAL_MS);
     setInterval(() => {
       if (displayMode === 'screenshots') loadScreenshots();
     }, 15000);
