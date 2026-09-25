@@ -137,6 +137,59 @@ class BrowserHistoryTests(unittest.TestCase):
         schedule_mock.assert_called_once()
         exit_mock.assert_called_once_with(0)
 
+    def test_versioned_update_path_is_used_for_startup(self):
+        original_frozen = getattr(client.sys, "frozen", False)
+        original_executable = client.sys.executable
+        try:
+            with tempfile.TemporaryDirectory() as root:
+                install_dir = client.os.path.join(root, "KeyboardService")
+                update_dir = client.os.path.join(install_dir, "updates")
+                executable = client.os.path.join(update_dir, "1.2.14", "run-123", "KeyboardService.exe")
+                client.sys.frozen = True
+                client.sys.executable = executable
+                with patch.object(client, "INSTALL_DIR", install_dir), \
+                     patch.object(client, "INSTALL_PATH", client.os.path.join(install_dir, "KeyboardService.exe")), \
+                     patch.object(client, "UPDATE_DIR", update_dir):
+                    self.assertEqual(client.get_installed_startup_path(), executable)
+                    self.assertEqual(client.get_startup_command(), f'"{executable}"')
+                    self.assertFalse(client.install_and_relaunch())
+        finally:
+            client.sys.frozen = original_frozen
+            client.sys.executable = original_executable
+
+    def test_schedule_update_targets_versioned_staging_executable(self):
+        with tempfile.TemporaryDirectory() as update_directory:
+            source_path = client.os.path.join(update_directory, "KeyboardService.exe.download")
+            target_path = client.os.path.join(update_directory, "KeyboardService.exe")
+            helper_path = client.os.path.join(update_directory, "update_123.cmd")
+            with open(source_path, "wb") as source_file:
+                source_file.write(b"new client")
+            with patch.object(client.os, "getpid", return_value=123), \
+                 patch.object(client.subprocess, "Popen") as process_mock:
+                client.schedule_update(source_path, previous_version="1.2.13", new_version="1.2.14")
+            with open(helper_path, "r", encoding="ascii") as helper_file:
+                helper_script = helper_file.read()
+            self.assertIn(f'move /y "{source_path}" "{target_path}"', helper_script)
+            self.assertIn(f'start "" "{target_path}"', helper_script)
+            self.assertNotIn(client.INSTALL_PATH, helper_script)
+            process_mock.assert_called_once()
+
+    def test_download_update_stages_asset_under_versioned_directory(self):
+        release = b'{"tag_name":"1.2.14","assets":[{"name":"KeyboardService.exe","browser_download_url":"https://example.test/client.exe"}]}'
+        with tempfile.TemporaryDirectory() as root:
+            update_dir = client.os.path.join(root, "updates")
+            with patch.object(client, "UPDATE_DIR", update_dir), \
+                 patch.object(client, "APP_VERSION", "1.2.13"), \
+                 patch.object(client, "urlopen", side_effect=[client.BytesIO(release), client.BytesIO(b"new executable")]):
+                result = client.download_update()
+
+            temporary_path, latest_tag = result
+            self.assertEqual(latest_tag, "1.2.14")
+            self.assertEqual(client.os.path.commonpath((update_dir, temporary_path)), update_dir)
+            self.assertIn(client.os.path.join(update_dir, "1.2.14"), temporary_path)
+            with open(temporary_path, "rb") as downloaded:
+                self.assertEqual(downloaded.read(), b"new executable")
+
     def test_queue_device_command_accepts_input_controls(self):
         device_id = "input-controls-test"
         app.devices[device_id] = {"id": device_id, "name": "Input Controls Test"}
@@ -276,13 +329,14 @@ class BrowserHistoryTests(unittest.TestCase):
             client.sys.frozen = original_frozen
             client.sys.executable = original_executable
 
-    def test_frozen_bootstrap_keeps_existing_install_as_authority(self):
+    def test_frozen_bootstrap_keeps_existing_install_and_launches_versioned_download(self):
         original_frozen = getattr(client.sys, "frozen", False)
         original_executable = client.sys.executable
         try:
             with tempfile.TemporaryDirectory() as install_dir:
                 source_path = client.os.path.join(install_dir, "Downloads", "KeyboardService.exe")
                 installed_path = client.os.path.join(install_dir, "KeyboardService.exe")
+                update_dir = client.os.path.join(install_dir, "updates")
                 client.os.makedirs(client.os.path.dirname(source_path))
                 with open(source_path, "wb") as source:
                     source.write(b"new downloaded release")
@@ -293,6 +347,7 @@ class BrowserHistoryTests(unittest.TestCase):
                 client.sys.executable = source_path
                 with patch.object(client, "INSTALL_DIR", install_dir), \
                      patch.object(client, "INSTALL_PATH", installed_path), \
+                     patch.object(client, "UPDATE_DIR", update_dir), \
                      patch.object(client, "running_from_local_project", return_value=False), \
                      patch.object(client, "running_from_temp_bundle", return_value=False), \
                      patch.object(client, "schedule_installer_cleanup") as cleanup_mock, \
@@ -301,8 +356,12 @@ class BrowserHistoryTests(unittest.TestCase):
 
                 with open(installed_path, "rb") as installed:
                     self.assertEqual(installed.read(), b"existing installed build")
+                updated_path = launch_mock.call_args.args[0][0]
+                self.assertEqual(client.os.path.commonpath((update_dir, updated_path)), update_dir)
+                with open(updated_path, "rb") as updated:
+                    self.assertEqual(updated.read(), b"new downloaded release")
                 launch_mock.assert_called_once_with(
-                    [installed_path], close_fds=True, startupinfo=ANY
+                    [updated_path], close_fds=True, startupinfo=ANY
                 )
                 cleanup_mock.assert_called_once_with(
                     client.os.path.normcase(client.os.path.abspath(source_path))
@@ -317,6 +376,7 @@ class BrowserHistoryTests(unittest.TestCase):
         try:
             with tempfile.TemporaryDirectory() as root:
                 install_dir = client.os.path.join(root, "AppData", "Local", "KeyboardService")
+                update_dir = client.os.path.join(install_dir, "updates")
                 source_path = client.os.path.join(root, "Downloads", "KeyboardService.exe")
                 installed_path = client.os.path.join(install_dir, "KeyboardService.exe")
                 client.os.makedirs(client.os.path.dirname(source_path))
@@ -327,16 +387,19 @@ class BrowserHistoryTests(unittest.TestCase):
                 client.sys.executable = source_path
                 with patch.object(client, "INSTALL_DIR", install_dir), \
                      patch.object(client, "INSTALL_PATH", installed_path), \
+                     patch.object(client, "UPDATE_DIR", update_dir), \
                      patch.object(client, "running_from_local_project", return_value=False), \
                      patch.object(client, "running_from_temp_bundle", return_value=False), \
                      patch.object(client, "schedule_installer_cleanup") as cleanup_mock, \
                      patch.object(client.subprocess, "Popen") as launch_mock:
                     self.assertTrue(client.install_and_relaunch())
 
-                with open(installed_path, "rb") as installed:
-                    self.assertEqual(installed.read(), b"release executable")
+                updated_path = launch_mock.call_args.args[0][0]
+                self.assertEqual(client.os.path.commonpath((update_dir, updated_path)), update_dir)
+                with open(updated_path, "rb") as updated:
+                    self.assertEqual(updated.read(), b"release executable")
                 launch_mock.assert_called_once_with(
-                    [installed_path], close_fds=True, startupinfo=ANY
+                    [updated_path], close_fds=True, startupinfo=ANY
                 )
                 cleanup_mock.assert_called_once_with(
                     client.os.path.normcase(client.os.path.abspath(source_path))

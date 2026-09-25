@@ -216,15 +216,17 @@ Windows browsers do not allow a website to silently launch a downloaded
 executable. Open `KeyboardService.exe` once after downloading it; the client registers
 itself to launch automatically when you sign in to Windows from then on. On its
 first run, the packaged client copies itself to
-`%LOCALAPPDATA%\KeyboardService\KeyboardService.exe`, starts that installed copy, and uses
-the installed path for future logins. The downloaded file only needs to be
-opened once; it is removed after the installed copy starts. Later downloaded
-copies do not replace an existing installation.
+`%LOCALAPPDATA%\KeyboardService\updates\<version>\<id>\KeyboardService.exe`,
+starts that versioned copy, and registers it for future logins. The downloaded
+file only needs to be opened once; it is removed after the installed copy
+starts. Opening a newer download registers its versioned copy without replacing
+an executable that may still be running.
 
 The installed client checks the latest GitHub release in the background after
 startup. When a newer release is available, it downloads the
-`KeyboardService.exe` asset into the install folder, verifies GitHub's SHA-256
-digest, replaces the installed copy, and starts the new version. Network
+`KeyboardService.exe` asset into a unique versioned folder, verifies GitHub's
+SHA-256 digest, and starts it from there. Windows startup is switched to the
+new version without replacing the currently running executable. Network
 failures leave the current version running. Before publishing a new release, update `APP_VERSION` in
 `client.py`, rebuild the executable, and upload it to GitHub with the exact
 asset name `KeyboardService.exe`.

