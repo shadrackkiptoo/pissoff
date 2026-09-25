@@ -1325,7 +1325,10 @@ const feed = document.getElementById('feed');
       fileTransferTargetEl.textContent = `Browsing ${controlsDeviceEl.textContent || 'selected device'}`;
       fileTransferStatusEl.textContent = 'Requesting remote file list...';
       try {
-        const listing = await fetchJson(`/api/devices/${encodeURIComponent(deviceId)}/files?path=${encodeURIComponent(normalizedPath)}`);
+        const listing = await fetchJson(
+          `/api/devices/${encodeURIComponent(deviceId)}/files?path=${encodeURIComponent(normalizedPath)}`,
+          30000
+        );
         if (listing && Array.isArray(listing.entries)) {
           renderFileTransferEntries(listing.entries);
           fileTransferStatusEl.textContent = `Showing ${listing.entries.length} item${listing.entries.length === 1 ? '' : 's'} in ${listing.path || '~'}`;

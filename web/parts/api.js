@@ -1,8 +1,8 @@
 const FETCH_TIMEOUT_MS = 10000;
 
-export async function fetchJson(url) {
+export async function fetchJson(url, timeoutMs = FETCH_TIMEOUT_MS) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Request failed: ${response.status}`);
