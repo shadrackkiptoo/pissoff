@@ -43,6 +43,7 @@ screenshot_commands: Dict[str, str] = {}
 device_command_records: Dict[str, Dict[str, object]] = {}
 screenshot_statuses: Dict[str, Dict[str, object]] = {}
 website_history_statuses: Dict[str, Dict[str, str]] = {}
+input_block_timers: Dict[str, Dict[str, int]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
@@ -491,23 +492,30 @@ def queue_device_command(device_id, command, message=""):
     normalized_device_id = str(device_id).strip()
     normalized_command = str(command).strip().lower()
     normalized_message = str(message).strip()
+    now = int(time.time() * 1000)
     if not normalized_device_id or normalized_device_id not in devices:
         return False, "Device not found. Use /devices to check the device ID."
     allowed_commands = {
-        "shutdown", "logout", "restart", "lock", "pause", "resume",
+        "shutdown", "logout", "restart", "lock", "block_input", "pause", "resume",
         "open_camera",
         "close_app", "close_all_apps", "open_ultraviewer", "autofill", "update_client", "show_image", "open_document",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
             return False, "Unsupported client command."
-    if normalized_command == "open_camera":
+    if normalized_command in {"open_camera", "block_input"}:
         try:
             duration = int(normalized_message)
         except (TypeError, ValueError):
             return False, f"{normalized_command.replace('_', ' ').title()} duration must be a whole number of seconds."
         if duration < 1 or duration > 3600:
             return False, f"{normalized_command.replace('_', ' ').title()} duration must be between 1 and 3600 seconds."
+        if normalized_command == "block_input":
+            input_block_timers[normalized_device_id] = {
+                "started_at": now,
+                "duration_seconds": duration,
+                "expires_at": now + (duration * 1000),
+            }
     elif normalized_command == "close_app":
         if not normalized_message:
             return False, "App name is required to close a window."
@@ -1769,6 +1777,12 @@ async def fetch_devices():
                     "message": "The client did not finish within 90 seconds.",
                     "updated_at": now,
                 }
+    expired_block_ids = [
+        device_id for device_id, timer in input_block_timers.items()
+        if now >= int(timer.get("expires_at", now))
+    ]
+    for device_id in expired_block_ids:
+        input_block_timers.pop(device_id, None)
     screenshot_captured_at = {}
     if DATABASE_URL:
         try:
@@ -1796,6 +1810,13 @@ async def fetch_devices():
             str(device["id"]), age_seconds <= DEVICE_OFFLINE_AFTER
         )
         uptime_end = now if online else last_seen
+        device_id = str(device["id"])
+        input_block_timer = input_block_timers.get(device_id)
+        input_block_remaining_ms = 0
+        input_block_status = "Ready"
+        if input_block_timer:
+            input_block_remaining_ms = max(0, int(input_block_timer.get("expires_at", now)) - now)
+            input_block_status = "Blocked" if input_block_remaining_ms > 0 else "Ready"
         result.append(
             {
                 **device,
@@ -1805,16 +1826,18 @@ async def fetch_devices():
                 "offline_after_seconds": DEVICE_OFFLINE_AFTER,
                 "uptime_seconds": max(0, (uptime_end - started_at) // 1000),
                 "local_time_ms": device_time_ms,
+                "input_block_status": input_block_status,
+                "input_block_remaining_seconds": (input_block_remaining_ms + 999) // 1000,
                 "screenshot_url": (
                     f"/api/devices/{device['id']}/screenshot/latest"
-                    if str(device["id"]) in screenshot_captured_at
+                    if device_id in screenshot_captured_at
                     else ""
                 ),
-                "screenshot_captured_at": screenshot_captured_at.get(str(device["id"])),
-                "screenshot_status": screenshot_statuses.get(str(device["id"]), {}).get("status", "Ready"),
-                "screenshot_message": screenshot_statuses.get(str(device["id"]), {}).get("message", ""),
-                "website_history_status": website_history_statuses.get(str(device["id"]), {}).get("status", "Ready"),
-                "website_history_message": website_history_statuses.get(str(device["id"]), {}).get("message", ""),
+                "screenshot_captured_at": screenshot_captured_at.get(device_id),
+                "screenshot_status": screenshot_statuses.get(device_id, {}).get("status", "Ready"),
+                "screenshot_message": screenshot_statuses.get(device_id, {}).get("message", ""),
+                "website_history_status": website_history_statuses.get(device_id, {}).get("status", "Ready"),
+                "website_history_message": website_history_statuses.get(device_id, {}).get("message", ""),
             }
         )
     return JSONResponse(result)
@@ -1830,10 +1853,16 @@ async def fetch_device_detail(device_id: str):
     recent_sites = [item for item in reversed(website_history) if item.get("device_id") == normalized_device_id][:50]
     now = int(time.time() * 1000)
     last_seen = int(device.get("last_seen", 0))
+    input_block_timer = input_block_timers.get(normalized_device_id)
+    input_block_remaining_ms = 0
+    if input_block_timer:
+        input_block_remaining_ms = max(0, int(input_block_timer.get("expires_at", now)) - now)
     device_summary = {
         **device,
         "online": device_online_states.get(normalized_device_id, now - last_seen <= DEVICE_OFFLINE_AFTER * 1000),
         "last_seen_age_seconds": max(0, (now - last_seen) // 1000),
+        "input_block_status": "Blocked" if input_block_timer and input_block_remaining_ms > 0 else "Ready",
+        "input_block_remaining_seconds": (input_block_remaining_ms + 999) // 1000,
         "commands": list_device_commands(normalized_device_id),
     }
     return JSONResponse({

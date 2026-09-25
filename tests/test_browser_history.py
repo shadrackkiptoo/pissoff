@@ -3,6 +3,7 @@ import json
 import sqlite3
 import tempfile
 import threading
+import time
 import unittest
 from unittest.mock import ANY, patch
 
@@ -327,6 +328,20 @@ class BrowserHistoryTests(unittest.TestCase):
             self.assertTrue(message)
         finally:
             app.devices.pop(device_id, None)
+
+    def test_queue_device_command_accepts_block_input(self):
+        device_id = "block-input-test"
+        app.devices[device_id] = {"id": device_id, "name": "Block Input Test"}
+        try:
+            ok, message = app.queue_device_command(device_id, "block_input", "20")
+            self.assertTrue(ok)
+            self.assertTrue(message)
+            self.assertIn(device_id, app.input_block_timers)
+            self.assertEqual(app.input_block_timers[device_id]["duration_seconds"], 20)
+            self.assertGreater(app.input_block_timers[device_id]["expires_at"], int(time.time() * 1000))
+        finally:
+            app.devices.pop(device_id, None)
+            app.input_block_timers.pop(device_id, None)
 
     def test_queue_device_command_accepts_update_client(self):
         device_id = "update-client-test"

@@ -74,6 +74,7 @@ const feed = document.getElementById('feed');
     const logoutClientButtonEl = document.getElementById('logoutClientButton');
     const restartClientButtonEl = document.getElementById('restartClientButton');
     const lockClientButtonEl = document.getElementById('lockClientButton');
+    const blockInputButtonEl = document.getElementById('blockInputButton');
     const pauseClientButtonEl = document.getElementById('pauseClientButton');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
@@ -1278,6 +1279,33 @@ const feed = document.getElementById('feed');
     lockClientButtonEl.addEventListener('click', () => requestClientCommand(
       'lock', lockClientButtonEl, 'Lock the selected client computer?'
     ));
+    blockInputButtonEl.addEventListener('click', async () => {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      const rawSeconds = window.prompt('Block input for how many seconds?', '20');
+      if (rawSeconds === null) return;
+      const seconds = Number.parseInt(rawSeconds, 10);
+      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
+        controlsStatusEl.textContent = 'Enter a duration from 1 to 3600 seconds.';
+        return;
+      }
+      blockInputButtonEl.disabled = true;
+      controlsStatusEl.textContent = `Blocking input for ${seconds} seconds...`;
+      try {
+        const response = await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+          command: 'block_input',
+          message: String(seconds),
+        });
+        if (!response.ok) throw new Error('The server rejected the block-input command.');
+        controlsStatusEl.textContent = `Input blocked on the client for ${seconds} seconds.`;
+      } catch (err) {
+        controlsStatusEl.textContent = 'Could not block client input.';
+      } finally {
+        blockInputButtonEl.disabled = false;
+      }
+    });
     pauseClientButtonEl.addEventListener('click', () => requestClientCommand(
       'pause', pauseClientButtonEl, 'Pause collection on the selected client?'
     ));
@@ -1800,8 +1828,11 @@ const feed = document.getElementById('feed');
         heading.textContent = `${device.name || 'Unknown device'} (${device.id})`;
         const summary = document.createElement('p');
         summary.textContent = `${device.online ? 'Online' : 'Offline'} | Client v${device.client_version || 'unknown'} | ${device.logged_in_user || 'Unknown user'} | ${device.battery_status || 'Battery unknown'}${device.battery_percent == null ? '' : ` ${device.battery_percent}%`}`;
+        const blockStatus = device.input_block_status === 'Blocked'
+          ? ` | Input blocked: ${Math.max(0, Number(device.input_block_remaining_seconds) || 0)}s remaining`
+          : ' | Input unlocked';
         const health = document.createElement('p');
-        health.textContent = `Update: ${updateLabel} | History sync: ${device.website_history_status || 'No report'}${device.website_history_message ? ` (${device.website_history_message})` : ''} | Screenshot: ${device.screenshot_status || 'Ready'}${device.screenshot_message ? ` (${device.screenshot_message})` : ''}`;
+        health.textContent = `Update: ${updateLabel} | History sync: ${device.website_history_status || 'No report'}${device.website_history_message ? ` (${device.website_history_message})` : ''} | Screenshot: ${device.screenshot_status || 'Ready'}${device.screenshot_message ? ` (${device.screenshot_message})` : ''}${blockStatus}`;
         const network = document.createElement('p');
         network.textContent = `Public IP: ${device.client_ip || 'Unknown'} | Local IP: ${device.local_ip || 'Unknown'}`;
         const apps = document.createElement('p');

