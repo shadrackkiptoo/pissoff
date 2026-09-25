@@ -132,6 +132,8 @@ const feed = document.getElementById('feed');
     let notificationTimer = null;
     let screenshotStatusTimer = null;
     let screenshotPreviewErrorUrl = '';
+    let screenshotCaptureBaseline = null;
+    let screenshotRequestError = '';
     const SCREENSHOT_POLL_TIMEOUT_MS = 95000;
     const UPDATE_CHECK_CACHE_MS = 300000;
     const UPDATE_CHECK_ERROR_CACHE_MS = 30000;
@@ -457,9 +459,32 @@ const feed = document.getElementById('feed');
       const previewMessage = message || 'Ready to capture';
       const statusClass = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
       const isCapturing = ['Requested', 'Taking screenshot', 'Capturing', 'Uploading'].includes(status);
+      const captureTimestamp = Number(selectedDevice.screenshot_captured_at) || 0;
+      const waitingForNewScreenshot = screenshotCaptureBaseline
+        && screenshotCaptureBaseline.deviceId === String(selectedDevice.id)
+        && captureTimestamp <= screenshotCaptureBaseline.capturedAt;
       screenshotDialogStatusEl.textContent = previewMessage;
       screenshotDialogStatusEl.className = statusClass;
       updateScreenshotProgress(screenshotDialogProgressEl, status);
+      if (isCapturing || waitingForNewScreenshot) {
+        screenshotDialogPreviewEl.hidden = true;
+        screenshotDialogPreviewEl.dataset.previewUrl = '';
+        screenshotDialogPreviewEl.removeAttribute('src');
+        screenshotPreviewErrorUrl = '';
+        screenshotDialogPlaceholderEl.textContent = screenshotRequestError
+          || (status === 'Failed' ? previewMessage : 'Waiting for a new screenshot...');
+        screenshotDialogPlaceholderEl.hidden = false;
+        if (screenshotRequestError) screenshotDialogStatusEl.textContent = screenshotRequestError;
+        return;
+      }
+      if (
+        screenshotCaptureBaseline
+        && screenshotCaptureBaseline.deviceId === String(selectedDevice.id)
+        && captureTimestamp > screenshotCaptureBaseline.capturedAt
+      ) {
+        screenshotCaptureBaseline = null;
+        screenshotRequestError = '';
+      }
       if (previewUrl) {
         const captureVersion = selectedDevice.screenshot_captured_at || 'latest';
         const versionedPreviewUrl = `${previewUrl}?t=${encodeURIComponent(captureVersion)}`;
@@ -1287,6 +1312,11 @@ const feed = document.getElementById('feed');
       screenshotDialogTargetEl.textContent = `Previewing ${controlsDeviceEl.textContent}`;
       const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
       if (selectedDevice) {
+        screenshotCaptureBaseline = {
+          deviceId: String(selectedDevice.id),
+          capturedAt: Number(selectedDevice.screenshot_captured_at) || 0,
+        };
+        screenshotRequestError = '';
         syncScreenshotPreviewState(selectedDevice, 'Requested', 'Requesting a fresh screenshot...');
       }
       if (typeof screenshotDialogEl.showModal === 'function') {
@@ -1356,6 +1386,7 @@ const feed = document.getElementById('feed');
         controlsStatusEl.textContent = 'Select a device first.';
         return;
       }
+      const requestDeviceId = String(selectedDeviceId);
       openScreenshotDialog();
       captureScreenshotButtonEl.disabled = true;
       screenshotDialogStatusEl.textContent = 'Requesting screenshot...';
@@ -1369,9 +1400,9 @@ const feed = document.getElementById('feed');
         await loadDevices();
       } catch (err) {
         controlsStatusEl.textContent = 'Screenshot request failed.';
-        screenshotDialogStatusEl.textContent = 'Screenshot request failed';
-        screenshotDialogStatusEl.className = 'controls-screenshot-status failed';
-        updateSelectedDeviceScreenshot();
+        screenshotRequestError = `Screenshot request failed: ${err.message || 'check the server and retry.'}`;
+        const currentDevice = latestDevices.find((device) => String(device.id) === requestDeviceId);
+        if (currentDevice) syncScreenshotPreviewState(currentDevice, 'Failed', screenshotRequestError);
       }
     });
 
