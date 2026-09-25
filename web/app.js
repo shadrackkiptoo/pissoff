@@ -133,6 +133,11 @@ const feed = document.getElementById('feed');
     let screenshotStatusTimer = null;
     let screenshotPreviewErrorUrl = '';
     const SCREENSHOT_POLL_TIMEOUT_MS = 95000;
+    const UPDATE_CHECK_CACHE_MS = 30000;
+    const UPDATE_COMMAND_TIMEOUT_MS = 240000;
+    const pendingUpdateStates = new Map();
+    const updateCheckCache = new Map();
+    let updateButtonSyncRequestId = 0;
 
     screenshotDialogPreviewEl.addEventListener('load', () => {
       const expectedUrl = screenshotDialogPreviewEl.dataset.previewUrl;
@@ -988,21 +993,50 @@ const feed = document.getElementById('feed');
       return 0;
     }
 
+    async function getUpdateStatus(deviceId, force = false) {
+      const cached = updateCheckCache.get(deviceId);
+      if (!force && cached && Date.now() - cached.checkedAt < UPDATE_CHECK_CACHE_MS) return cached.status;
+      const status = await fetchJson(`/api/devices/${encodeURIComponent(deviceId)}/update-check`);
+      updateCheckCache.set(deviceId, { checkedAt: Date.now(), status });
+      return status;
+    }
+
     function syncUpdateButtonState() {
+      const requestId = ++updateButtonSyncRequestId;
       const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
       if (!selectedDeviceId || !selectedDevice) {
         updateClientButtonEl.disabled = true;
         updateClientButtonEl.textContent = 'Update client';
         return;
       }
+      const deviceId = String(selectedDevice.id);
       const currentVersion = String(selectedDevice.client_version || '').trim();
       if (!currentVersion || currentVersion === 'unknown') {
         updateClientButtonEl.disabled = true;
         updateClientButtonEl.textContent = 'Version unknown';
         return;
       }
-      fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/update-check`)
+      const pendingUpdate = pendingUpdateStates.get(deviceId);
+      if (pendingUpdate) {
+        if (pendingUpdate.latestVersion && compareVersions(currentVersion, pendingUpdate.latestVersion) >= 0) {
+          pendingUpdateStates.delete(deviceId);
+          updateCheckCache.delete(deviceId);
+        } else {
+          updateClientButtonEl.disabled = true;
+          updateClientButtonEl.textContent = pendingUpdate.label;
+          return;
+        }
+      }
+      if (!selectedDevice.online) {
+        updateClientButtonEl.disabled = true;
+        updateClientButtonEl.textContent = 'Client offline';
+        return;
+      }
+      updateClientButtonEl.disabled = true;
+      updateClientButtonEl.textContent = 'Checking updates...';
+      getUpdateStatus(deviceId)
         .then((updateStatus) => {
+          if (requestId !== updateButtonSyncRequestId || deviceId !== String(selectedDeviceId)) return;
           if (!updateStatus.ok) {
             updateClientButtonEl.disabled = true;
             updateClientButtonEl.textContent = 'Update unavailable';
@@ -1013,9 +1047,56 @@ const feed = document.getElementById('feed');
           updateClientButtonEl.textContent = needsUpdate ? 'Update client' : 'Latest version';
         })
         .catch(() => {
+          if (requestId !== updateButtonSyncRequestId || deviceId !== String(selectedDeviceId)) return;
           updateClientButtonEl.disabled = true;
           updateClientButtonEl.textContent = 'Update unavailable';
         });
+    }
+
+    function waitForDelay(milliseconds) {
+      return new Promise((resolve) => setTimeout(resolve, milliseconds));
+    }
+
+    async function waitForUpdateCommand(deviceId, commandId, latestVersion) {
+      const deadline = Date.now() + UPDATE_COMMAND_TIMEOUT_MS;
+      while (Date.now() < deadline) {
+        let commands;
+        try {
+          commands = await fetchJson(`/api/devices/${encodeURIComponent(deviceId)}/commands?limit=100`);
+        } catch (error) {
+          const label = 'Checking update status...';
+          pendingUpdateStates.set(deviceId, { commandId, latestVersion, label });
+          if (deviceId === String(selectedDeviceId)) updateClientButtonEl.textContent = label;
+          await waitForDelay(1500);
+          continue;
+        }
+        const command = commands.find((item) => String(item.command_id) === String(commandId));
+        if (command?.status === 'completed') return true;
+        if (command?.status === 'failed') {
+          pendingUpdateStates.delete(deviceId);
+          throw new Error(command.error || 'The client update failed.');
+        }
+        const label = command?.status === 'claimed' ? 'Downloading update...' : 'Waiting for client...';
+        pendingUpdateStates.set(deviceId, { commandId, latestVersion, label });
+        if (deviceId === String(selectedDeviceId)) updateClientButtonEl.textContent = label;
+        await waitForDelay(1500);
+      }
+      return false;
+    }
+
+    async function waitForUpdatedVersion(deviceId, latestVersion) {
+      const deadline = Date.now() + 60000;
+      while (Date.now() < deadline) {
+        try {
+          const devices = await fetchJson('/api/devices');
+          const device = devices.find((item) => String(item.id) === deviceId);
+          if (device && compareVersions(device.client_version, latestVersion) >= 0) return true;
+        } catch (err) {
+          // Keep checking while the updated client restarts and reconnects.
+        }
+        await waitForDelay(1500);
+      }
+      return false;
     }
 
     async function requestClientUpdate(button) {
@@ -1023,9 +1104,14 @@ const feed = document.getElementById('feed');
         controlsStatusEl.textContent = 'Select a device first.';
         return;
       }
-      const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
+      const deviceId = String(selectedDeviceId);
+      const selectedDevice = latestDevices.find((device) => String(device.id) === deviceId);
       if (!selectedDevice) {
         controlsStatusEl.textContent = 'Selected device is no longer available.';
+        return;
+      }
+      if (!selectedDevice.online) {
+        controlsStatusEl.textContent = 'The selected client is offline.';
         return;
       }
       const currentVersion = String(selectedDevice.client_version || '').trim();
@@ -1036,7 +1122,7 @@ const feed = document.getElementById('feed');
       button.disabled = true;
       controlsStatusEl.textContent = `Checking latest release against client v${currentVersion}...`;
       try {
-        const updateStatus = await fetchJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/update-check`);
+        const updateStatus = await getUpdateStatus(deviceId, true);
         if (!updateStatus.ok) {
           throw new Error(updateStatus.error || 'The update check failed.');
         }
@@ -1054,14 +1140,41 @@ const feed = document.getElementById('feed');
           controlsStatusEl.textContent = 'Update cancelled.';
           return;
         }
-        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, { command: 'update_client' });
-        controlsStatusEl.textContent = `Update requested for ${deviceLabel}: v${normalizedCurrent} -> v${normalizedLatest}.`;
-        updateClientButtonEl.disabled = true;
-        updateClientButtonEl.textContent = 'Update queued';
+        const queuedCommand = await postJson(`/api/devices/${encodeURIComponent(deviceId)}/command`, { command: 'update_client' });
+        if (!queuedCommand.command_id) throw new Error('The server did not return an update command ID.');
+        pendingUpdateStates.set(deviceId, {
+          commandId: queuedCommand.command_id,
+          latestVersion,
+          label: 'Update queued',
+        });
+        controlsStatusEl.textContent = `Update queued for ${deviceLabel}: v${normalizedCurrent} -> v${normalizedLatest}. Waiting for the client...`;
+        const commandCompleted = await waitForUpdateCommand(deviceId, queuedCommand.command_id, latestVersion);
+        if (!commandCompleted) {
+          pendingUpdateStates.set(deviceId, {
+            commandId: queuedCommand.command_id,
+            latestVersion,
+            label: 'Update status unknown',
+          });
+          controlsStatusEl.textContent = 'No completion was received after four minutes. Check the client before retrying.';
+          return;
+        }
+        pendingUpdateStates.set(deviceId, {
+          commandId: queuedCommand.command_id,
+          latestVersion,
+          label: 'Waiting for version check-in...',
+        });
+        const versionConfirmed = await waitForUpdatedVersion(deviceId, latestVersion);
+        if (versionConfirmed) {
+          pendingUpdateStates.delete(deviceId);
+          updateCheckCache.delete(deviceId);
+          controlsStatusEl.textContent = `Client ${deviceLabel} is running v${normalizedLatest}.`;
+        } else {
+          controlsStatusEl.textContent = `The update started, but ${deviceLabel} has not reported v${normalizedLatest} yet.`;
+        }
       } catch (err) {
         controlsStatusEl.textContent = `Could not check for client updates: ${err.message || String(err)}`;
       } finally {
-        button.disabled = false;
+        if (selectedDeviceId === deviceId) syncUpdateButtonState();
       }
     }
 

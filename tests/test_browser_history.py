@@ -1,3 +1,5 @@
+import asyncio
+import json
 import sqlite3
 import tempfile
 import threading
@@ -117,6 +119,46 @@ class BrowserHistoryTests(unittest.TestCase):
         app.save_device("dev-ip-test", "IP device", 111, 222, 333, {"client_ip": "203.0.113.42"})
         self.assertEqual(app.devices["dev-ip-test"]["client_ip"], "203.0.113.42")
         app.devices.pop("dev-ip-test", None)
+
+    def test_fetch_devices_marks_stale_screenshot_capture_failed(self):
+        device_id = "stale-screenshot-test"
+        now = int(client.time.time() * 1000)
+        app.devices[device_id] = {
+            "id": device_id,
+            "name": "Screenshot Test",
+            "last_seen": now,
+            "started_at": now,
+        }
+        app.screenshot_statuses[device_id] = {
+            "status": "Capturing",
+            "message": "Capturing",
+            "updated_at": now - (app.SCREENSHOT_STATUS_TIMEOUT + 1) * 1000,
+        }
+        try:
+            with patch.object(app, "DATABASE_URL", ""):
+                response = asyncio.run(app.fetch_devices())
+            device = next(item for item in json.loads(response.body) if item["id"] == device_id)
+            self.assertEqual(device["screenshot_status"], "Failed")
+            self.assertEqual(device["screenshot_url"], "")
+            self.assertIsNone(device["screenshot_captured_at"])
+        finally:
+            app.devices.pop(device_id, None)
+            app.screenshot_statuses.pop(device_id, None)
+
+    def test_trigger_screenshot_capture_starts_without_blocking(self):
+        with patch.object(client, "report_screenshot_status") as report_mock, \
+             patch.object(client, "Thread") as thread_mock:
+            client.trigger_screenshot_capture()
+        report_mock.assert_called_once_with("Capturing", "Reading the desktop image.")
+        thread_mock.assert_called_once_with(target=client.capture_and_upload_screenshot, daemon=True)
+        thread_mock.return_value.start.assert_called_once()
+        thread_mock.return_value.join.assert_not_called()
+
+    def test_screenshot_worker_reports_unexpected_capture_errors(self):
+        with patch.object(client, "capture_desktop_screenshot", side_effect=RuntimeError("capture failed")), \
+             patch.object(client, "report_screenshot_status") as report_mock:
+            client.capture_and_upload_screenshot()
+        report_mock.assert_called_once_with("Failed", "Screenshot worker failed: RuntimeError")
 
     def test_check_for_updates_defers_acknowledgement_until_new_process_starts(self):
         original_frozen = getattr(client.sys, "frozen", False)
