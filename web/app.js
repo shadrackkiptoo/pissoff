@@ -466,6 +466,7 @@ const feed = document.getElementById('feed');
           name: device.name,
           client_version: device.client_version,
           client_ip: device.client_ip,
+          local_ip: device.local_ip,
           online: device.online,
           status: device.status,
           open_apps: device.open_apps,
@@ -501,7 +502,11 @@ const feed = document.getElementById('feed');
 
           const ip = document.createElement('span');
           ip.className = 'device-ip';
-          ip.textContent = `IP: ${device.client_ip || device.clientIp || 'Unknown IP'}`;
+          ip.textContent = `Public IP: ${device.client_ip || device.clientIp || 'Unknown'}`;
+
+          const localIp = document.createElement('span');
+          localIp.className = 'device-ip';
+          localIp.textContent = `Local IP: ${device.local_ip || 'Unknown'}`;
 
           const version = document.createElement('span');
           version.className = 'device-version';
@@ -555,7 +560,7 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
-          row.append(name, id, ip, version, historyStatus, screenshotStatus, state, uptime, seen, joined, localTime, user, battery);
+          row.append(name, id, ip, localIp, version, historyStatus, screenshotStatus, state, uptime, seen, joined, localTime, user, battery);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -1544,7 +1549,7 @@ const feed = document.getElementById('feed');
         const health = document.createElement('p');
         health.textContent = `Update: ${updateLabel} | History sync: ${device.website_history_status || 'No report'}${device.website_history_message ? ` (${device.website_history_message})` : ''} | Screenshot: ${device.screenshot_status || 'Ready'}${device.screenshot_message ? ` (${device.screenshot_message})` : ''}`;
         const network = document.createElement('p');
-        network.textContent = `Device IP: ${device.client_ip || 'Unknown IP'}`;
+        network.textContent = `Public IP: ${device.client_ip || 'Unknown'} | Local IP: ${device.local_ip || 'Unknown'}`;
         const apps = document.createElement('p');
         apps.textContent = `Open applications: ${(device.open_apps || []).join(', ') || 'None reported'}`;
         const commands = document.createElement('p');

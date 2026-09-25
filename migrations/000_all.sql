@@ -13,6 +13,7 @@ alter table public.devices
     add column if not exists device_name text not null default 'Unknown device',
     add column if not exists client_version text not null default '',
     add column if not exists client_ip text not null default '',
+    add column if not exists local_ip text not null default '',
     add column if not exists last_seen bigint,
     add column if not exists started_at bigint,
     add column if not exists joined_at bigint,

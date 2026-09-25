@@ -1201,18 +1201,19 @@ def load_devices():
             with connection.cursor() as cursor:
                 cursor.execute(
                     """
-                    SELECT device_id, device_name, client_version, client_ip, last_seen, started_at, joined_at
+                    SELECT device_id, device_name, client_version, client_ip, local_ip, last_seen, started_at, joined_at
                     FROM devices
                     ORDER BY last_seen DESC
                     """
                 )
                 rows = cursor.fetchall()
-        for device_id, device_name, client_version, client_ip, last_seen, started_at, joined_at in rows:
+        for device_id, device_name, client_version, client_ip, local_ip, last_seen, started_at, joined_at in rows:
             devices[str(device_id)] = {
                 "id": device_id,
                 "name": device_name,
                 "client_version": client_version or "",
                 "client_ip": client_ip or "",
+                "local_ip": local_ip or "",
                 "last_seen": last_seen,
                 "started_at": started_at,
                 "joined_at": joined_at,
@@ -1265,11 +1266,13 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
         local_time_ms = previous.get("local_time_ms")
     client_version = telemetry.get("client_version") or previous.get("client_version") or ""
     client_ip = (telemetry.get("client_ip") or previous.get("client_ip") or "").strip()
+    local_ip = (telemetry.get("local_ip") or previous.get("local_ip") or "").strip()
     devices[device_id] = {
         "id": device_id,
         "name": device_name,
         "client_version": client_version,
         "client_ip": client_ip,
+        "local_ip": local_ip,
         "last_seen": last_seen,
         "started_at": started_at,
         "joined_at": joined_at,
@@ -1287,12 +1290,13 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
         with connection.cursor() as cursor:
             cursor.execute(
                 """
-                INSERT INTO devices (device_id, device_name, client_version, client_ip, last_seen, started_at, joined_at)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO devices (device_id, device_name, client_version, client_ip, local_ip, last_seen, started_at, joined_at)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (device_id) DO UPDATE SET
                     device_name = EXCLUDED.device_name,
                     client_version = EXCLUDED.client_version,
                     client_ip = EXCLUDED.client_ip,
+                    local_ip = EXCLUDED.local_ip,
                     last_seen = EXCLUDED.last_seen,
                     started_at = EXCLUDED.started_at,
                     joined_at = EXCLUDED.joined_at
@@ -1302,6 +1306,7 @@ def save_device(device_id, device_name, last_seen, started_at, joined_at, teleme
                     device_name,
                     client_version,
                     client_ip,
+                    local_ip,
                     last_seen,
                     started_at,
                     joined_at,
@@ -1369,6 +1374,7 @@ class DeviceHeartbeat(BaseModel):
     started_at: int
     local_time: str = ""
     local_time_ms: int | None = None
+    local_ip: str = ""
     logged_in_user: str = ""
     battery_percent: int | None = None
     battery_status: str = "Unknown"
@@ -1952,6 +1958,7 @@ async def device_heartbeat(
             {
                 "client_version": payload.client_version,
                 "client_ip": client_ip,
+                "local_ip": payload.local_ip,
                 "local_time": payload.local_time,
                 "local_time_ms": payload.local_time_ms,
                 "logged_in_user": payload.logged_in_user,

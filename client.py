@@ -571,11 +571,24 @@ def capture_desktop_screenshot():
         return ""
 
 
+def get_local_ip():
+    try:
+        probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            probe.connect(("8.8.8.8", 80))
+            return probe.getsockname()[0]
+        finally:
+            probe.close()
+    except OSError:
+        return ""
+
+
 def get_device_telemetry():
     local_now = datetime.now().astimezone()
     telemetry = {
         "local_time": local_now.isoformat(timespec="seconds"),
         "local_time_ms": int(local_now.timestamp() * 1000),
+        "local_ip": get_local_ip(),
         "logged_in_user": getpass.getuser() or "Unknown user",
         "battery_percent": None,
         "battery_status": "Unknown",
