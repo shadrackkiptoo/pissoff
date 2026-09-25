@@ -60,8 +60,10 @@ Type a message and press Enter. It should appear in the browser.
    - Start: `gunicorn -k uvicorn.workers.UvicornWorker app:app --bind 0.0.0.0:$PORT`
 4. Open the Render service URL in a browser.
 
-After deploying the control and activity features, run `migrations/000_all.sql`
-again so the `device_commands` and `audit_events` tables exist. Rebuild and
+After deploying the control and activity features, apply the database schema
+from your private migration copy so the `device_commands` and `audit_events`
+tables exist. SQL migration files are intentionally excluded from this public
+repository. Rebuild and
 reinstall the desktop client from the updated `client.py`; older clients keep
 the original controls but cannot acknowledge commands or use pause, resume,
 restart, and lock.
@@ -105,8 +107,8 @@ from the configured Telegram chat:
 ```
 
 Clients receive the new URL on their next heartbeat and save it locally. The
-URL setting is stored in Supabase by `migrations/000_all.sql`, so run that
-migration before using `/setsite`.
+URL setting is stored in Supabase by the private database schema, so apply
+that schema before using `/setsite`.
 
 ```text
 BUY_ME_A_COFFEE_URL=M-Pesa=0712345678;OKX USDT=your-okx-wallet;Binance USDT=your-binance-wallet
