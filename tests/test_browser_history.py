@@ -290,13 +290,19 @@ class BrowserHistoryTests(unittest.TestCase):
             update_dir = client.os.path.join(root, "updates")
             with patch.object(client, "UPDATE_DIR", update_dir), \
                  patch.object(client, "APP_VERSION", "1.2.13"), \
-                 patch.object(client, "urlopen", side_effect=[client.BytesIO(release), client.BytesIO(b"new executable")]):
+                  patch.object(client, "urlopen", side_effect=[client.BytesIO(release), client.BytesIO(b"new executable")]) as urlopen_mock:
                 result = client.download_update()
 
             temporary_path, latest_tag = result
             self.assertEqual(latest_tag, "1.2.14")
             self.assertEqual(client.os.path.commonpath((update_dir, temporary_path)), update_dir)
             self.assertIn(client.os.path.join(update_dir, "1.2.14"), temporary_path)
+            self.assertEqual(urlopen_mock.call_count, 2)
+            for call in urlopen_mock.call_args_list:
+                ssl_context = call.kwargs["context"]
+                self.assertEqual(ssl_context.verify_mode, client.ssl.CERT_REQUIRED)
+                self.assertTrue(ssl_context.check_hostname)
+                self.assertTrue(ssl_context.get_ca_certs())
             with open(temporary_path, "rb") as downloaded:
                 self.assertEqual(downloaded.read(), b"new executable")
 
