@@ -837,6 +837,7 @@
       max-width: min(92vw, 720px);
     }
     .activity-dialog .message-compose {
+    #messageDialog { max-height: calc(100dvh - 24px); overflow-y: auto; }
       max-height: min(82vh, 760px);
       overflow-y: auto;
     }
@@ -978,6 +979,17 @@
       line-height: 1.5;
     }
     .message-compose textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(217, 240, 109, 0.1); }
+    .message-image-input {
+      width: 100%;
+      padding: 9px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(7, 10, 8, 0.8);
+      font: inherit;
+      font-size: 0.75rem;
+    }
+    .message-image-name { color: var(--muted); font-size: 0.68rem; overflow-wrap: anywhere; }
     .message-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 2px; }
     .message-count { color: var(--muted); font-size: 0.65rem; }
     .message-dialog-actions { display: flex; justify-content: flex-end; gap: 8px; }

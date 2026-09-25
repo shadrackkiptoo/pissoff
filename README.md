@@ -15,7 +15,10 @@ Each message contains filtered `text`, the original `raw_text`, `device_id`, `de
 The dashboard includes per-device controls and an Activity view with device
 telemetry, command history, application and website summaries, and CSV/JSON
 message exports. Client controls include shutdown, logout, restart, lock,
-pause, resume, and screenshot requests. Telegram supports `/device`,
+pause, resume, and screenshot requests. Dashboard messages can include a JPEG,
+PNG, GIF, or WebP image up to 10 MB, with an optional caption. Image delivery
+uses the configured Supabase storage bucket and opens in the client's default
+image viewer. Telegram supports `/device`,
 `/controls`, `/screenshot`, `/shutdown`, `/logout`, `/restart`, `/lock`,
 `/pause`, and `/resume`.
 
@@ -66,9 +69,9 @@ tables exist. SQL migration files are intentionally excluded from this public
 repository. Rebuild and
 reinstall the desktop client from the updated `client.py`; older clients keep
 the original controls but cannot acknowledge commands or use pause, resume,
-restart, and lock.
+restart, lock, or open dashboard image attachments.
 
-Make sure the deployed service contains the latest `app.py` and `index.html`.
+Make sure the deployed service contains the latest `app.py` and `web/` files.
 
 ## Configure Telegram Uptime Notifications
 

@@ -131,8 +131,11 @@
               <button class="dialog-close" id="closeMessageButton" type="button" aria-label="Close message window">&times;</button>
             </div>
             <p class="message-dialog-target" id="messageDialogTarget">Choose a device before sending.</p>
-            <label for="clientMessage">Message</label>
+            <label for="clientMessage">Message or caption</label>
             <textarea id="clientMessage" maxlength="2000" rows="6" placeholder="Write something for the selected client..."></textarea>
+            <label for="clientImage">Image</label>
+            <input class="message-image-input" id="clientImage" type="file" accept="image/jpeg,image/png,image/gif,image/webp" />
+            <span class="message-image-name" id="clientImageName">No image selected</span>
             <div class="message-dialog-footer">
               <span class="message-count" id="messageLength">0 / 2000</span>
               <div class="message-dialog-actions">

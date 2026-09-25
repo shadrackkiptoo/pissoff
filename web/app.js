@@ -99,6 +99,8 @@ const feed = document.getElementById('feed');
     const messageLengthEl = document.getElementById('messageLength');
     const messageComposeEl = document.getElementById('messageCompose');
     const clientMessageEl = document.getElementById('clientMessage');
+    const clientImageEl = document.getElementById('clientImage');
+    const clientImageNameEl = document.getElementById('clientImageName');
     const sendMessageButtonEl = document.getElementById('sendMessageButton');
     const historyDialogEl = document.getElementById('historyDialog');
     const closeHistoryButtonEl = document.getElementById('closeHistoryButton');
@@ -1326,29 +1328,53 @@ const feed = document.getElementById('feed');
     clientMessageEl.addEventListener('input', () => {
       messageLengthEl.textContent = `${clientMessageEl.value.length} / 2000`;
     });
+    clientImageEl.addEventListener('change', () => {
+      clientImageNameEl.textContent = clientImageEl.files[0]?.name || 'No image selected';
+    });
 
     messageComposeEl.addEventListener('submit', async (event) => {
       event.preventDefault();
       const message = clientMessageEl.value.trim();
+      const imageFile = clientImageEl.files[0];
+      const targetDeviceId = selectedDeviceId;
       if (!selectedDeviceId) {
         controlsStatusEl.textContent = 'Select a device first.';
         return;
       }
-      if (!message) {
-        controlsStatusEl.textContent = 'Type a message first.';
-        clientMessageEl.focus();
+      if (!message && !imageFile) {
+        controlsStatusEl.textContent = 'Write a message or choose an image first.';
+        if (!message) clientMessageEl.focus();
+        return;
+      }
+      if (imageFile && imageFile.size > 10 * 1024 * 1024) {
+        controlsStatusEl.textContent = 'Choose an image smaller than 10 MB.';
         return;
       }
       sendMessageButtonEl.disabled = true;
-      controlsStatusEl.textContent = 'Sending message...';
+      controlsStatusEl.textContent = imageFile ? 'Uploading image...' : 'Sending message...';
       try {
-        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, { command: 'message', message });
+        if (imageFile) {
+          const formData = new FormData();
+          formData.append('file', imageFile);
+          const uploadResponse = await fetch('/api/devices/media-upload', { method: 'POST', body: formData });
+          if (!uploadResponse.ok) throw new Error(`Image upload failed: ${uploadResponse.status}`);
+          const uploadedImage = await uploadResponse.json();
+          controlsStatusEl.textContent = 'Queueing image for the client...';
+          await postJson(`/api/devices/${encodeURIComponent(targetDeviceId)}/command`, {
+            command: 'show_image',
+            message: JSON.stringify({ attachment_id: uploadedImage.attachment_id, caption: message })
+          });
+        } else {
+          await postJson(`/api/devices/${encodeURIComponent(targetDeviceId)}/command`, { command: 'message', message });
+        }
         clientMessageEl.value = '';
+        clientImageEl.value = '';
+        clientImageNameEl.textContent = 'No image selected';
         messageLengthEl.textContent = '0 / 2000';
         closeMessageDialog();
-        controlsStatusEl.textContent = 'Message queued for the selected client.';
+        controlsStatusEl.textContent = imageFile ? 'Image queued for the selected client.' : 'Message queued for the selected client.';
       } catch (err) {
-        controlsStatusEl.textContent = 'Message could not be sent.';
+        controlsStatusEl.textContent = imageFile ? 'Image could not be sent.' : 'Message could not be sent.';
       } finally {
         sendMessageButtonEl.disabled = false;
       }

@@ -169,6 +169,21 @@ class BrowserHistoryTests(unittest.TestCase):
         finally:
             app.devices.pop(device_id, None)
 
+    def test_queue_device_command_accepts_image_delivery(self):
+        device_id = "image-command-test"
+        app.devices[device_id] = {"id": device_id, "name": "Image Test"}
+        message = '{"attachment_id":"0123456789abcdef0123456789abcdef.png","caption":"hello"}'
+        try:
+            ok, command_id = app.queue_device_command(device_id, "show_image", message)
+            self.assertTrue(ok)
+            self.assertTrue(command_id)
+        finally:
+            app.devices.pop(device_id, None)
+            app.screenshot_commands.pop(device_id, None)
+            for command_id, record in list(app.device_command_records.items()):
+                if record["device_id"] == device_id:
+                    app.device_command_records.pop(command_id, None)
+
     def test_queue_device_command_rejects_removed_controls_and_transfer(self):
         device_id = "removed-command-test"
         app.devices[device_id] = {"id": device_id, "name": "Removed Command Test"}
