@@ -187,6 +187,15 @@ class BrowserHistoryTests(unittest.TestCase):
             names = {item["name"] for item in entries}
             self.assertTrue({"Desktop", "Documents", "Downloads"}.issubset(names))
 
+    def test_list_files_keeps_blank_root_in_uploaded_listing(self):
+        with patch.object(client, "list_remote_files", return_value=[]) as list_files:
+            with patch.object(client, "post_file_listing") as upload_listing:
+                with patch.object(client, "acknowledge_device_command"):
+                    client.handle_device_command("list_files", "test-command", "")
+
+        list_files.assert_called_once_with("")
+        upload_listing.assert_called_once_with(client.device_id, "", [])
+
     def test_windows_hooks_keep_callback_references_alive(self):
         def run_worker(worker_func, lock_attr):
             class DummyUser32:
