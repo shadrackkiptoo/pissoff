@@ -1134,6 +1134,8 @@ def handle_device_command(command, command_id=None, message=""):
             if os.name != "nt":
                 raise RuntimeError("App closing is only supported on Windows")
             close_all_visible_apps()
+        elif command == "open_ultraviewer":
+            open_ultraviewer()
         elif command == "autofill":
             if os.name != "nt":
                 raise RuntimeError("Autofill is only supported on Windows")
@@ -1352,6 +1354,27 @@ def open_camera_app(duration):
     end_time = time.monotonic() + duration
     while time.monotonic() < end_time:
         time.sleep(0.25)
+
+
+def open_ultraviewer():
+    if os.name != "nt":
+        raise RuntimeError("UltraViewer is only supported on Windows")
+
+    candidates = [
+        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "UltraViewer", "UltraViewer.exe"),
+        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "UltraViewer", "UltraViewer.exe"),
+        os.path.join(os.environ.get("LOCALAPPDATA", ""), "UltraViewer", "UltraViewer.exe"),
+    ]
+    executable = next((path for path in candidates if path and os.path.isfile(path)), None)
+    if not executable:
+        executable = shutil.which("UltraViewer.exe") or shutil.which("UltraViewer")
+    if not executable:
+        raise RuntimeError("UltraViewer is not installed on this client")
+
+    try:
+        subprocess.Popen([executable], cwd=os.path.dirname(executable), close_fds=True)
+    except OSError as error:
+        raise RuntimeError(f"UltraViewer could not be opened: {error}") from error
 
 
 def start_camera_disable(duration):

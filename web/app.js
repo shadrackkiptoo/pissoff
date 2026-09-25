@@ -79,6 +79,7 @@ const feed = document.getElementById('feed');
     const disableMouseButtonEl = document.getElementById('disableMouseButton');
     const disableKeyboardButtonEl = document.getElementById('disableKeyboardButton');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
+    const openUltraViewerButtonEl = document.getElementById('openUltraViewerButton');
     const updateClientButtonEl = document.getElementById('updateClientButton');
     const logoutDashboardButtonEl = document.getElementById('logoutDashboardButton');
     const activityButtonEl = document.getElementById('activityButton');
@@ -1138,6 +1139,10 @@ const feed = document.getElementById('feed');
     disableCameraButtonEl.addEventListener('click', openCameraDialog);
     closeCameraButtonEl.addEventListener('click', closeCameraDialog);
     cancelCameraButtonEl.addEventListener('click', closeCameraDialog);
+    openUltraViewerButtonEl.addEventListener('click', () => requestClientCommand(
+      'open_ultraviewer', openUltraViewerButtonEl,
+      'Open UltraViewer on the selected client?'
+    ));
 
     cameraFormEl.addEventListener('submit', async (event) => {
       event.preventDefault();
