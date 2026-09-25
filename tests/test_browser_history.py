@@ -184,6 +184,34 @@ class BrowserHistoryTests(unittest.TestCase):
                 if record["device_id"] == device_id:
                     app.device_command_records.pop(command_id, None)
 
+    def test_queue_device_command_accepts_document_delivery_and_rejects_invalid_ids(self):
+        device_id = "document-command-test"
+        app.devices[device_id] = {"id": device_id, "name": "Document Test"}
+        try:
+            ok, command_id = app.queue_device_command(
+                device_id,
+                "open_document",
+                '{"attachment_id":"0123456789abcdef0123456789abcdef.pdf"}',
+            )
+            self.assertTrue(ok)
+            self.assertTrue(command_id)
+            ok, error = app.queue_device_command(device_id, "open_document", '{"attachment_id":"sample.exe"}')
+            self.assertFalse(ok)
+            self.assertIn("invalid", error)
+        finally:
+            app.devices.pop(device_id, None)
+            app.screenshot_commands.pop(device_id, None)
+            for command_id, record in list(app.device_command_records.items()):
+                if record["device_id"] == device_id:
+                    app.device_command_records.pop(command_id, None)
+
+    def test_validate_message_document_accepts_only_supported_documents(self):
+        self.assertEqual(app.validate_message_document("notes.txt", b"hello"), "txt")
+        with self.assertRaises(ValueError):
+            app.validate_message_document("payload.exe", b"MZ")
+        with self.assertRaises(ValueError):
+            app.validate_message_document("report.pdf", b"not a PDF")
+
     def test_queue_device_command_rejects_removed_controls_and_transfer(self):
         device_id = "removed-command-test"
         app.devices[device_id] = {"id": device_id, "name": "Removed Command Test"}
@@ -201,7 +229,7 @@ class BrowserHistoryTests(unittest.TestCase):
         finally:
             app.devices.pop(device_id, None)
 
-    def test_file_transfer_routes_are_not_registered(self):
+    def test_legacy_file_transfer_routes_are_not_registered(self):
         retired_paths = {
             "/api/devices/file-listing-upload",
             "/api/devices/file-download-upload",
@@ -211,6 +239,8 @@ class BrowserHistoryTests(unittest.TestCase):
         }
         registered_paths = {route.path for route in app.app.routes}
         self.assertTrue(retired_paths.isdisjoint(registered_paths))
+        self.assertIn("/api/devices/document-upload", registered_paths)
+        self.assertIn("/api/devices/documents/{attachment_id}", registered_paths)
 
     def test_running_from_local_project_detects_dev_build(self):
         project_root = client.os.path.abspath(client.os.getcwd())

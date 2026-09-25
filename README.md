@@ -18,7 +18,9 @@ message exports. Client controls include shutdown, logout, restart, lock,
 pause, resume, and screenshot requests. Dashboard messages can include a JPEG,
 PNG, GIF, or WebP image up to 10 MB, with an optional caption. Image delivery
 uses the configured Supabase storage bucket and opens in the client's default
-image viewer. Telegram supports `/device`,
+image viewer. The Send document control transfers PDF, DOCX, RTF, or UTF-8 TXT
+files up to 20 MB to the selected client, where they open in the default app.
+Telegram supports `/device`,
 `/controls`, `/screenshot`, `/shutdown`, `/logout`, `/restart`, `/lock`,
 `/pause`, and `/resume`.
 
@@ -69,7 +71,7 @@ tables exist. SQL migration files are intentionally excluded from this public
 repository. Rebuild and
 reinstall the desktop client from the updated `client.py`; older clients keep
 the original controls but cannot acknowledge commands or use pause, resume,
-restart, lock, or open dashboard image attachments.
+restart, lock, or open dashboard image and document attachments.
 
 Make sure the deployed service contains the latest `app.py` and `web/` files.
 

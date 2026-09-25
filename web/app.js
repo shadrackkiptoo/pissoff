@@ -90,6 +90,8 @@ const feed = document.getElementById('feed');
     const confirmCameraButtonEl = document.getElementById('confirmCameraButton');
     const refreshButtonEl = document.getElementById('refreshButton');
     const openMessageButtonEl = document.getElementById('openMessageButton');
+    const sendDocumentButtonEl = document.getElementById('sendDocumentButton');
+    const clientDocumentEl = document.getElementById('clientDocument');
     const todayHistoryButtonEl = document.getElementById('todayHistoryButton');
     const visitedLinksButtonEl = document.getElementById('visitedLinksButton');
     const messageDialogEl = document.getElementById('messageDialog');
@@ -1317,6 +1319,54 @@ const feed = document.getElementById('feed');
     }
 
     openMessageButtonEl.addEventListener('click', openMessageDialog);
+    sendDocumentButtonEl.addEventListener('click', () => {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      clientDocumentEl.value = '';
+      clientDocumentEl.click();
+    });
+    clientDocumentEl.addEventListener('change', async () => {
+      const documentFile = clientDocumentEl.files[0];
+      const targetDeviceId = selectedDeviceId;
+      if (!documentFile) return;
+      if (!targetDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      const extension = documentFile.name.toLowerCase().match(/\.[^.]+$/)?.[0];
+      if (!['.pdf', '.docx', '.rtf', '.txt'].includes(extension)) {
+        controlsStatusEl.textContent = 'Choose a PDF, DOCX, RTF, or TXT file.';
+        clientDocumentEl.value = '';
+        return;
+      }
+      if (documentFile.size > 20 * 1024 * 1024) {
+        controlsStatusEl.textContent = 'Choose a document smaller than 20 MB.';
+        clientDocumentEl.value = '';
+        return;
+      }
+      sendDocumentButtonEl.disabled = true;
+      controlsStatusEl.textContent = 'Uploading document...';
+      try {
+        const formData = new FormData();
+        formData.append('file', documentFile);
+        const uploadResponse = await fetch('/api/devices/document-upload', { method: 'POST', body: formData });
+        if (!uploadResponse.ok) throw new Error(`Document upload failed: ${uploadResponse.status}`);
+        const uploadedDocument = await uploadResponse.json();
+        controlsStatusEl.textContent = 'Queueing document for the client...';
+        await postJson(`/api/devices/${encodeURIComponent(targetDeviceId)}/command`, {
+          command: 'open_document',
+          message: JSON.stringify({ attachment_id: uploadedDocument.attachment_id })
+        });
+        controlsStatusEl.textContent = `Document queued for ${controlsDeviceEl.textContent}.`;
+      } catch (err) {
+        controlsStatusEl.textContent = 'Document could not be sent.';
+      } finally {
+        clientDocumentEl.value = '';
+        sendDocumentButtonEl.disabled = false;
+      }
+    });
     closeMessageButtonEl.addEventListener('click', closeMessageDialog);
     cancelMessageButtonEl.addEventListener('click', closeMessageDialog);
     todayHistoryButtonEl.addEventListener('click', openTodayHistoryDialog);

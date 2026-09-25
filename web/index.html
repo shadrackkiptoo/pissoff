@@ -91,6 +91,7 @@
             <button class="control-button control-button-primary" id="openUltraViewerButton" type="button">Open UltraViewer</button>
             <button class="control-button control-button-primary" id="updateClientButton" type="button">Update client</button>
             <button class="control-button control-button-primary" id="openMessageButton" type="button">Send message</button>
+            <button class="control-button control-button-primary" id="sendDocumentButton" type="button">Send document</button>
             <button class="control-button" id="todayHistoryButton" type="button">Web history</button>
             <button class="control-button" id="visitedLinksButton" type="button">Visited links</button>
             <button class="control-button" id="openMonitoredSitesButton" type="button">Sites</button>
@@ -99,6 +100,7 @@
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
             <button class="control-button control-button-primary" id="captureScreenshotButton" type="button">Screenshot</button>
           </div>
+          <input id="clientDocument" type="file" accept=".pdf,.docx,.rtf,.txt" hidden aria-label="Choose a document to send" />
           <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
           <div class="command-history" id="commandHistory"></div>
         </section>

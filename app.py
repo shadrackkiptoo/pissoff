@@ -13,6 +13,7 @@ import time
 import urllib.parse
 import urllib.request
 import uuid
+import zipfile
 from urllib.error import HTTPError
 from contextlib import asynccontextmanager
 from collections import deque
@@ -47,6 +48,13 @@ SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SCREENSHOT_BUCKET = "screenshots"
 MAX_MESSAGE_IMAGE_BYTES = 10 * 1024 * 1024
 MESSAGE_IMAGE_EXTENSIONS = {"JPEG": "jpg", "PNG": "png", "GIF": "gif", "WEBP": "webp"}
+MAX_MESSAGE_DOCUMENT_BYTES = 20 * 1024 * 1024
+MESSAGE_DOCUMENT_MIME_TYPES = {
+    "pdf": "application/pdf",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "rtf": "application/rtf",
+    "txt": "text/plain; charset=utf-8",
+}
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 45
@@ -455,7 +463,7 @@ def queue_device_command(device_id, command, message=""):
     allowed_commands = {
         "shutdown", "logout", "restart", "lock", "pause", "resume",
         "open_camera",
-        "close_app", "close_all_apps", "open_ultraviewer", "autofill", "update_client", "show_image",
+        "close_app", "close_all_apps", "open_ultraviewer", "autofill", "update_client", "show_image", "open_document",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
@@ -474,6 +482,14 @@ def queue_device_command(device_id, command, message=""):
         normalized_message = ""
     elif normalized_command == "autofill" and not normalized_message:
         return False, "Autofill text is required."
+    elif normalized_command == "open_document":
+        try:
+            attachment = json.loads(normalized_message)
+        except (TypeError, ValueError):
+            return False, "Document attachment is invalid."
+        attachment_id = attachment.get("attachment_id", "") if isinstance(attachment, dict) else ""
+        if not re.fullmatch(r"[0-9a-f]{32}\.(pdf|docx|rtf|txt)", str(attachment_id)):
+            return False, "Document attachment is invalid."
     if len(normalized_message) > (2200 if normalized_command == "show_image" else 2000):
         return False, "Message is limited to 2000 characters."
     if normalized_command == "message" and not normalized_message:
@@ -1475,7 +1491,7 @@ async def enforce_login_for_dashboard(request: Request, call_next):
     if path.startswith("/health"):
         return await call_next(request)
     if path.startswith("/api/devices/") and not path.startswith("/api/devices/website-history-status"):
-        if path in {"/api/devices/heartbeat", "/api/devices/screenshot-upload", "/api/devices/screenshot-status", "/api/devices/offline"} or path.startswith("/api/devices/media/") or "/commands/" in path and path.endswith("/ack"):
+        if path in {"/api/devices/heartbeat", "/api/devices/screenshot-upload", "/api/devices/screenshot-status", "/api/devices/offline"} or path.startswith(("/api/devices/media/", "/api/devices/documents/")) or "/commands/" in path and path.endswith("/ack"):
             return await call_next(request)
         if path.startswith("/api/devices/") and "/screenshot" in path:
             return await call_next(request)
@@ -2156,6 +2172,112 @@ async def fetch_message_image(media_id: str, x_api_key: str | None = Header(defa
         print(f"Could not load message image: {error}")
         return JSONResponse({"ok": False, "error": "image unavailable"}, status_code=503)
     return Response(image_bytes, media_type=media_types[match.group(1)], headers={"Cache-Control": "no-store"})
+
+
+def validate_message_document(filename, document_bytes):
+    extension = Path(str(filename or "")).suffix.lower().lstrip(".")
+    if extension not in MESSAGE_DOCUMENT_MIME_TYPES:
+        raise ValueError("Use a PDF, DOCX, RTF, or TXT document.")
+    if not document_bytes or len(document_bytes) > MAX_MESSAGE_DOCUMENT_BYTES:
+        raise ValueError("Document must be non-empty and 20 MB or smaller.")
+    if extension == "pdf" and not document_bytes.startswith(b"%PDF-"):
+        raise ValueError("The file does not appear to be a valid PDF.")
+    if extension == "rtf" and not document_bytes.lstrip().startswith(b"{\\rtf"):
+        raise ValueError("The file does not appear to be a valid RTF document.")
+    if extension == "txt":
+        try:
+            decoded_text = document_bytes.decode("utf-8-sig")
+        except UnicodeDecodeError as error:
+            raise ValueError("Text documents must use UTF-8 encoding.") from error
+        if "\x00" in decoded_text:
+            raise ValueError("The file does not appear to be a text document.")
+    if extension == "docx":
+        try:
+            with zipfile.ZipFile(io.BytesIO(document_bytes)) as archive:
+                entries = archive.infolist()
+                names = {entry.filename.lower() for entry in entries}
+        except (OSError, zipfile.BadZipFile) as error:
+            raise ValueError("The file does not appear to be a valid DOCX document.") from error
+        if (
+            "word/document.xml" not in names
+            or "[content_types].xml" not in names
+            or "word/vbaproject.bin" in names
+            or sum(entry.file_size for entry in entries) > 100 * 1024 * 1024
+        ):
+            raise ValueError("The file does not appear to be a supported DOCX document.")
+    return extension
+
+
+@app.post("/api/devices/document-upload")
+async def upload_message_document(request: Request):
+    form = await request.form()
+    uploaded_file = form.get("file")
+    if not isinstance(uploaded_file, UploadFile):
+        return JSONResponse({"ok": False, "error": "document file required"}, status_code=400)
+    document_bytes = await uploaded_file.read(MAX_MESSAGE_DOCUMENT_BYTES + 1)
+    try:
+        extension = validate_message_document(uploaded_file.filename, document_bytes)
+    except ValueError as error:
+        return JSONResponse({"ok": False, "error": str(error)}, status_code=400)
+    if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return JSONResponse({"ok": False, "error": "document storage unavailable"}, status_code=503)
+    attachment_id = f"{uuid.uuid4().hex}.{extension}"
+    try:
+        await asyncio.to_thread(save_message_document, attachment_id, document_bytes, extension)
+    except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not save message document: {error}")
+        return JSONResponse({"ok": False, "error": "document storage unavailable"}, status_code=503)
+    return JSONResponse({"ok": True, "attachment_id": attachment_id})
+
+
+def save_message_document(attachment_id, document_bytes, extension):
+    storage_path = f"documents/{attachment_id}"
+    encoded_storage_path = urllib.parse.quote(storage_path, safe="/")
+    storage_request = urllib.request.Request(
+        f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
+        data=document_bytes,
+        headers={
+            "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
+            "apikey": SUPABASE_SERVICE_ROLE_KEY,
+            "Content-Type": MESSAGE_DOCUMENT_MIME_TYPES[extension],
+            "x-upsert": "false",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(storage_request, timeout=30) as response:
+            if response.status >= 400:
+                raise RuntimeError(f"Storage HTTP {response.status}")
+    except HTTPError as error:
+        detail = error.read().decode("utf-8", errors="replace")[:240]
+        raise RuntimeError(f"Storage HTTP {error.code}: {detail}") from error
+
+
+@app.get("/api/devices/documents/{attachment_id}")
+async def fetch_message_document(attachment_id: str, x_api_key: str | None = Header(default=None)):
+    expected_key = os.getenv("INGEST_API_KEY")
+    if expected_key and x_api_key != expected_key:
+        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
+    match = re.fullmatch(r"[0-9a-f]{32}\.(pdf|docx|rtf|txt)", attachment_id)
+    if not match:
+        return JSONResponse({"ok": False, "error": "document not found"}, status_code=404)
+    if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+        return JSONResponse({"ok": False, "error": "document storage unavailable"}, status_code=503)
+    extension = match.group(1)
+    try:
+        document_bytes = await asyncio.to_thread(read_storage_image, f"documents/{attachment_id}")
+    except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError) as error:
+        print(f"Could not load message document: {error}")
+        return JSONResponse({"ok": False, "error": "document unavailable"}, status_code=503)
+    return Response(
+        document_bytes,
+        media_type=MESSAGE_DOCUMENT_MIME_TYPES[extension],
+        headers={
+            "Cache-Control": "no-store",
+            "Content-Disposition": f'attachment; filename="{attachment_id}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @app.get("/api/devices/{device_id}/commands")
