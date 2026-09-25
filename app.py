@@ -18,6 +18,7 @@ from urllib.error import HTTPError
 from contextlib import asynccontextmanager
 from collections import deque
 from pathlib import Path
+from threading import Lock
 from typing import Deque, Dict
 
 from fastapi import FastAPI, Header, Request
@@ -61,6 +62,13 @@ DEVICE_OFFLINE_AFTER = 45
 WEBSITE_HISTORY_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 SCREENSHOT_STATUS_TIMEOUT = 90
 SCREENSHOT_LIST_LIMIT = 30
+LATEST_RELEASE_CACHE_SECONDS = 300
+LATEST_RELEASE_RETRY_SECONDS = 30
+latest_release_version_cache = ""
+latest_release_cache_expires_at = 0.0
+latest_release_cache_error = ""
+latest_release_error_expires_at = 0.0
+latest_release_cache_lock = Lock()
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "").strip()
 APP_USERNAME = os.getenv("APP_USERNAME", "").strip()
@@ -438,20 +446,45 @@ def compare_versions(current_version, latest_version):
     return 0
 
 
-def get_latest_release_version():
-    request = urllib.request.Request(
-        "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest",
-        headers={
-            "Accept": "application/vnd.github+json",
-            "User-Agent": "KeyboardService-server",
-        },
-    )
-    with urllib.request.urlopen(request, timeout=15) as response:
-        release = json.loads(response.read().decode("utf-8"))
-    latest_tag = str(release.get("tag_name", "")).strip()
-    if not latest_tag:
-        raise RuntimeError("GitHub release tag is empty")
-    return latest_tag
+def get_latest_release_version(force=False):
+    global latest_release_version_cache, latest_release_cache_expires_at
+    global latest_release_cache_error, latest_release_error_expires_at
+    with latest_release_cache_lock:
+        now = time.monotonic()
+        if not force and latest_release_version_cache and now < latest_release_cache_expires_at:
+            return latest_release_version_cache
+        if (
+            not force
+            and not latest_release_version_cache
+            and latest_release_cache_error
+            and now < latest_release_error_expires_at
+        ):
+            raise RuntimeError(latest_release_cache_error)
+        request = urllib.request.Request(
+            "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest",
+            headers={
+                "Accept": "application/vnd.github+json",
+                "User-Agent": "KeyboardService-server",
+            },
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                release = json.loads(response.read().decode("utf-8"))
+            latest_tag = str(release.get("tag_name", "")).strip()
+            if not latest_tag:
+                raise RuntimeError("GitHub release tag is empty")
+        except Exception as error:
+            latest_release_cache_error = f"Could not check GitHub releases: {error}"
+            latest_release_error_expires_at = now + LATEST_RELEASE_RETRY_SECONDS
+            if latest_release_version_cache:
+                latest_release_cache_expires_at = now + LATEST_RELEASE_RETRY_SECONDS
+                return latest_release_version_cache
+            raise RuntimeError(latest_release_cache_error) from error
+        latest_release_version_cache = latest_tag
+        latest_release_cache_expires_at = now + LATEST_RELEASE_CACHE_SECONDS
+        latest_release_cache_error = ""
+        latest_release_error_expires_at = 0.0
+        return latest_tag
 
 
 def queue_device_command(device_id, command, message=""):
@@ -2055,14 +2088,14 @@ async def request_device_screenshot(
 
 
 @app.get("/api/devices/{device_id}/update-check")
-async def check_device_update(device_id: str):
+async def check_device_update(device_id: str, force: bool = False):
     normalized_device_id = device_id.strip()
     if not normalized_device_id or normalized_device_id not in devices:
         return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
 
     current_version = str(devices[normalized_device_id].get("client_version", "")).strip()
     try:
-        latest_version = get_latest_release_version()
+        latest_version = await asyncio.to_thread(get_latest_release_version, force)
     except Exception as error:
         return JSONResponse(
             {

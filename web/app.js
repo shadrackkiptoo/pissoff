@@ -133,10 +133,12 @@ const feed = document.getElementById('feed');
     let screenshotStatusTimer = null;
     let screenshotPreviewErrorUrl = '';
     const SCREENSHOT_POLL_TIMEOUT_MS = 95000;
-    const UPDATE_CHECK_CACHE_MS = 30000;
+    const UPDATE_CHECK_CACHE_MS = 300000;
+    const UPDATE_CHECK_ERROR_CACHE_MS = 30000;
     const UPDATE_COMMAND_TIMEOUT_MS = 240000;
     const pendingUpdateStates = new Map();
     const updateCheckCache = new Map();
+    const updateCheckInFlight = new Map();
     let updateButtonSyncRequestId = 0;
 
     screenshotDialogPreviewEl.addEventListener('load', () => {
@@ -995,10 +997,34 @@ const feed = document.getElementById('feed');
 
     async function getUpdateStatus(deviceId, force = false) {
       const cached = updateCheckCache.get(deviceId);
-      if (!force && cached && Date.now() - cached.checkedAt < UPDATE_CHECK_CACHE_MS) return cached.status;
-      const status = await fetchJson(`/api/devices/${encodeURIComponent(deviceId)}/update-check`);
-      updateCheckCache.set(deviceId, { checkedAt: Date.now(), status });
-      return status;
+      const cacheAge = cached ? Date.now() - cached.checkedAt : Infinity;
+      const cacheDuration = cached?.error ? UPDATE_CHECK_ERROR_CACHE_MS : UPDATE_CHECK_CACHE_MS;
+      if (!force && cached && cacheAge < cacheDuration) {
+        if (cached.error) throw new Error(cached.error);
+        return cached.status;
+      }
+      if (!force && updateCheckInFlight.has(deviceId)) return updateCheckInFlight.get(deviceId);
+      const checkPromise = (async () => {
+        try {
+          const response = await fetch(`/api/devices/${encodeURIComponent(deviceId)}/update-check${force ? '?force=true' : ''}`);
+          const status = await response.json().catch(() => ({}));
+          if (!response.ok || !status.ok) {
+            throw new Error(status.error || `Update check failed with HTTP ${response.status}.`);
+          }
+          updateCheckCache.set(deviceId, { checkedAt: Date.now(), status });
+          return status;
+        } catch (error) {
+          updateCheckCache.set(deviceId, {
+            checkedAt: Date.now(),
+            error: error.message || 'Update check failed. Check the server connection and retry.'
+          });
+          throw error;
+        } finally {
+          updateCheckInFlight.delete(deviceId);
+        }
+      })();
+      updateCheckInFlight.set(deviceId, checkPromise);
+      return checkPromise;
     }
 
     function syncUpdateButtonState() {
@@ -1032,24 +1058,27 @@ const feed = document.getElementById('feed');
         updateClientButtonEl.textContent = 'Client offline';
         return;
       }
-      updateClientButtonEl.disabled = true;
-      updateClientButtonEl.textContent = 'Checking updates...';
+      const cached = updateCheckCache.get(deviceId);
+      const cachedAge = cached ? Date.now() - cached.checkedAt : Infinity;
+      const cachedDuration = cached?.error ? UPDATE_CHECK_ERROR_CACHE_MS : UPDATE_CHECK_CACHE_MS;
+      if (!cached || cachedAge >= cachedDuration) {
+        updateClientButtonEl.disabled = true;
+        updateClientButtonEl.textContent = 'Checking updates...';
+      }
       getUpdateStatus(deviceId)
         .then((updateStatus) => {
           if (requestId !== updateButtonSyncRequestId || deviceId !== String(selectedDeviceId)) return;
-          if (!updateStatus.ok) {
-            updateClientButtonEl.disabled = true;
-            updateClientButtonEl.textContent = 'Update unavailable';
-            return;
-          }
+          updateClientButtonEl.title = '';
           const needsUpdate = Boolean(updateStatus.needs_update);
           updateClientButtonEl.disabled = !needsUpdate;
           updateClientButtonEl.textContent = needsUpdate ? 'Update client' : 'Latest version';
         })
-        .catch(() => {
+        .catch((error) => {
           if (requestId !== updateButtonSyncRequestId || deviceId !== String(selectedDeviceId)) return;
-          updateClientButtonEl.disabled = true;
-          updateClientButtonEl.textContent = 'Update unavailable';
+          updateClientButtonEl.disabled = false;
+          updateClientButtonEl.textContent = 'Retry update check';
+          updateClientButtonEl.title = error.message || 'Update check failed. Select to retry.';
+          controlsStatusEl.textContent = `Update check failed: ${error.message || 'check server connection and retry.'}`;
         });
     }
 

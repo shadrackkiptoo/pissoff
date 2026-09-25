@@ -120,6 +120,39 @@ class BrowserHistoryTests(unittest.TestCase):
         self.assertEqual(app.devices["dev-ip-test"]["client_ip"], "203.0.113.42")
         app.devices.pop("dev-ip-test", None)
 
+    def test_latest_release_version_caches_success(self):
+        release = client.BytesIO(b'{"tag_name":"1.2.16"}')
+        with patch.object(app, "latest_release_version_cache", ""), \
+             patch.object(app, "latest_release_cache_expires_at", 0.0), \
+             patch.object(app, "latest_release_cache_error", ""), \
+             patch.object(app, "latest_release_error_expires_at", 0.0), \
+             patch.object(app.urllib.request, "urlopen", return_value=release) as urlopen_mock:
+            self.assertEqual(app.get_latest_release_version(), "1.2.16")
+            self.assertEqual(app.get_latest_release_version(), "1.2.16")
+        urlopen_mock.assert_called_once()
+
+    def test_latest_release_version_uses_stale_success_after_github_failure(self):
+        with patch.object(app, "latest_release_version_cache", "1.2.15"), \
+             patch.object(app, "latest_release_cache_expires_at", 0.0), \
+             patch.object(app, "latest_release_cache_error", ""), \
+             patch.object(app, "latest_release_error_expires_at", 0.0), \
+             patch.object(app.urllib.request, "urlopen", side_effect=OSError("GitHub unavailable")) as urlopen_mock:
+            self.assertEqual(app.get_latest_release_version(), "1.2.15")
+            self.assertEqual(app.get_latest_release_version(), "1.2.15")
+        urlopen_mock.assert_called_once()
+
+    def test_latest_release_version_backs_off_after_initial_failure(self):
+        with patch.object(app, "latest_release_version_cache", ""), \
+             patch.object(app, "latest_release_cache_expires_at", 0.0), \
+             patch.object(app, "latest_release_cache_error", ""), \
+             patch.object(app, "latest_release_error_expires_at", 0.0), \
+             patch.object(app.urllib.request, "urlopen", side_effect=OSError("GitHub unavailable")) as urlopen_mock:
+            with self.assertRaisesRegex(RuntimeError, "GitHub unavailable"):
+                app.get_latest_release_version()
+            with self.assertRaisesRegex(RuntimeError, "GitHub unavailable"):
+                app.get_latest_release_version()
+        urlopen_mock.assert_called_once()
+
     def test_fetch_devices_marks_stale_screenshot_capture_failed(self):
         device_id = "stale-screenshot-test"
         now = int(client.time.time() * 1000)
