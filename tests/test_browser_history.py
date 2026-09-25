@@ -1,6 +1,4 @@
-import asyncio
 import sqlite3
-import tempfile
 import threading
 import types
 import unittest
@@ -174,107 +172,87 @@ class BrowserHistoryTests(unittest.TestCase):
         finally:
             app.devices.pop(device_id, None)
 
-    def test_queue_device_command_accepts_file_transfer_commands(self):
-        device_id = "file-transfer-test"
-        app.devices[device_id] = {"id": device_id, "name": "File Transfer Test"}
+    def test_queue_device_command_rejects_removed_controls_and_transfer(self):
+        device_id = "removed-command-test"
+        app.devices[device_id] = {"id": device_id, "name": "Removed Command Test"}
         try:
-            ok, message = app.queue_device_command(device_id, "list_files", "C:/Users/Test")
-            self.assertTrue(ok)
-            self.assertTrue(message)
-            ok, message = app.queue_device_command(device_id, "download_file", "C:/Users/Test/example.txt")
-            self.assertTrue(ok)
-            self.assertTrue(message)
+            for command, message in (
+                ("disable_mouse", "30"),
+                ("list_files", "C:/Users/Test"),
+                ("download_file", "C:/Users/Test/example.txt"),
+            ):
+                with self.subTest(command=command):
+                    ok, _ = app.queue_device_command(device_id, command, message)
+                    self.assertFalse(ok)
         finally:
             app.devices.pop(device_id, None)
 
-    def test_file_listing_blank_path_uses_remote_client_default_not_server_home(self):
-        device_id = "blank-list-test"
-        app.devices[device_id] = {"id": device_id, "name": "Blank Path Test"}
+    def test_file_transfer_routes_are_not_registered(self):
+        retired_paths = {
+            "/api/devices/file-listing-upload",
+            "/api/devices/file-download-upload",
+            "/api/devices/{device_id}/download",
+            "/api/devices/{device_id}/files",
+            "/api/devices/{device_id}/files/download/{token}",
+        }
+        registered_paths = {route.path for route in app.app.routes}
+        self.assertTrue(retired_paths.isdisjoint(registered_paths))
+
+    def test_keyboard_hook_keeps_callback_reference_alive(self):
+        class DummyUser32:
+            def __init__(self):
+                self._hooked = threading.Event()
+                self._allow_exit = threading.Event()
+
+            def SetWindowsHookExW(self, *args):
+                self._hooked.set()
+                return 123
+
+            def GetMessageW(self, *args):
+                self._allow_exit.wait(2)
+                return 0
+
+            def TranslateMessage(self, *args):
+                return None
+
+            def DispatchMessageW(self, *args):
+                return None
+
+            def UnhookWindowsHookEx(self, *args):
+                return True
+
+        class DummyKernel32:
+            def GetModuleHandleW(self, *args):
+                return 1
+
+        original_windll = client.ctypes.windll
+        original_lock = client.keyboard_disable_lock
+        original_callback = client.keyboard_hook_callback
+        user32 = DummyUser32()
         try:
-            response = asyncio.run(app.fetch_device_file_listing(device_id, ""))
-            payload = response.body.decode("utf-8")
-            self.assertIn('"queued":true', payload)
-            self.assertNotIn('/opt/render', payload)
-            self.assertNotIn('/root', payload)
+            client.ctypes.windll = types.SimpleNamespace(user32=user32, kernel32=DummyKernel32())
+            client.keyboard_disable_lock = threading.Lock()
+            client.keyboard_disable_lock.acquire()
+            client.keyboard_hook_callback = None
+
+            ready = threading.Event()
+            result = {}
+            worker = threading.Thread(
+                target=client.keyboard_disable_worker,
+                args=(1, ready, result),
+                daemon=True,
+            )
+            worker.start()
+            self.assertTrue(user32._hooked.wait(2))
+            self.assertIsNotNone(client.keyboard_hook_callback)
+            user32._allow_exit.set()
+            worker.join(2)
+            self.assertFalse(worker.is_alive())
+            self.assertNotIn("error", result)
         finally:
-            app.devices.pop(device_id, None)
-
-    def test_list_remote_files_exposes_common_windows_root_folders(self):
-        with tempfile.TemporaryDirectory() as home_dir:
-            for folder in ("Desktop", "Documents", "Downloads"):
-                client.os.makedirs(client.os.path.join(home_dir, folder), exist_ok=True)
-            with patch.object(client.os.path, "expanduser", return_value=home_dir):
-                entries = client.list_remote_files(home_dir)
-            names = {item["name"] for item in entries}
-            self.assertTrue({"Desktop", "Documents", "Downloads"}.issubset(names))
-
-    def test_list_files_keeps_blank_root_in_uploaded_listing(self):
-        with patch.object(client, "list_remote_files", return_value=[]) as list_files:
-            with patch.object(client, "post_file_listing") as upload_listing:
-                with patch.object(client, "acknowledge_device_command"):
-                    client.handle_device_command("list_files", "test-command", "")
-
-        list_files.assert_called_once_with("")
-        upload_listing.assert_called_once_with(client.device_id, "", [])
-
-    def test_windows_hooks_keep_callback_references_alive(self):
-        def run_worker(worker_func, lock_attr):
-            class DummyUser32:
-                def __init__(self):
-                    self._hooked = threading.Event()
-                    self._allow_exit = threading.Event()
-
-                def SetWindowsHookExW(self, *args):
-                    self._hooked.set()
-                    return 123
-
-                def GetMessageW(self, *args):
-                    self._allow_exit.wait(2)
-                    return 0
-
-                def TranslateMessage(self, *args):
-                    return None
-
-                def DispatchMessageW(self, *args):
-                    return None
-
-                def UnhookWindowsHookEx(self, *args):
-                    return True
-
-            class DummyKernel32:
-                def GetModuleHandleW(self, *args):
-                    return 1
-
-            original_windll = client.ctypes.windll
-            original_lock = getattr(client, lock_attr)
-            original_callback = getattr(client, "keyboard_hook_callback" if lock_attr == "keyboard_disable_lock" else "mouse_hook_callback", None)
-            user32 = DummyUser32()
-            try:
-                client.ctypes.windll = types.SimpleNamespace(user32=user32, kernel32=DummyKernel32())
-                client.__dict__[lock_attr] = threading.Lock()
-                client.__dict__[lock_attr].acquire()
-                setattr(client, "keyboard_hook_callback" if lock_attr == "keyboard_disable_lock" else "mouse_hook_callback", None)
-
-                ready = threading.Event()
-                result = {}
-                worker = threading.Thread(target=worker_func, args=(1, ready, result), daemon=True)
-                worker.start()
-                self.assertTrue(user32._hooked.wait(2))
-                if lock_attr == "keyboard_disable_lock":
-                    self.assertIsNotNone(client.keyboard_hook_callback)
-                else:
-                    self.assertIsNotNone(client.mouse_hook_callback)
-                user32._allow_exit.set()
-                worker.join(2)
-                self.assertFalse(worker.is_alive())
-                self.assertNotIn("error", result)
-            finally:
-                client.ctypes.windll = original_windll
-                client.__dict__[lock_attr] = original_lock
-                setattr(client, "keyboard_hook_callback" if lock_attr == "keyboard_disable_lock" else "mouse_hook_callback", original_callback)
-
-        run_worker(client.keyboard_disable_worker, "keyboard_disable_lock")
-        run_worker(client.mouse_disable_worker, "mouse_disable_lock")
+            client.ctypes.windll = original_windll
+            client.keyboard_disable_lock = original_lock
+            client.keyboard_hook_callback = original_callback
 
     def test_running_from_local_project_detects_dev_build(self):
         project_root = client.os.path.abspath(client.os.getcwd())

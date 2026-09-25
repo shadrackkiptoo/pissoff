@@ -42,16 +42,6 @@ const feed = document.getElementById('feed');
     const controlsPanelEl = document.getElementById('controlsPanel');
     const controlsDeviceEl = document.getElementById('controlsDevice');
     const captureScreenshotButtonEl = document.getElementById('captureScreenshotButton');
-    const fileTransferButtonEl = document.getElementById('fileTransferButton');
-    const fileTransferDialogEl = document.getElementById('fileTransferDialog');
-    const fileTransferTargetEl = document.getElementById('fileTransferTarget');
-    const fileTransferStatusEl = document.getElementById('fileTransferStatus');
-    const fileTransferPathEl = document.getElementById('fileTransferPath');
-    const fileTransferListEl = document.getElementById('fileTransferList');
-    const fileTransferUpButtonEl = document.getElementById('fileTransferUpButton');
-    const downloadFileButtonEl = document.getElementById('downloadFileButton');
-    const closeFileTransferButtonEl = document.getElementById('closeFileTransferButton');
-    const cancelFileTransferButtonEl = document.getElementById('cancelFileTransferButton');
     const screenshotOverlayEl = document.getElementById('screenshotOverlay');
     const screenshotDialogEl = document.getElementById('screenshotOverlay');
     const screenshotDialogTargetEl = document.getElementById('screenshotDialogTarget');
@@ -86,32 +76,24 @@ const feed = document.getElementById('feed');
     const lockClientButtonEl = document.getElementById('lockClientButton');
     const pauseClientButtonEl = document.getElementById('pauseClientButton');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
-    const disableMouseButtonEl = document.getElementById('disableMouseButton');
     const disableKeyboardButtonEl = document.getElementById('disableKeyboardButton');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
     const openUltraViewerButtonEl = document.getElementById('openUltraViewerButton');
     const updateClientButtonEl = document.getElementById('updateClientButton');
     const logoutDashboardButtonEl = document.getElementById('logoutDashboardButton');
     const activityButtonEl = document.getElementById('activityButton');
-    const mouseDialogEl = document.getElementById('mouseDialog');
     const keyboardDialogEl = document.getElementById('keyboardDialog');
     const cameraDialogEl = document.getElementById('cameraDialog');
-    const mouseFormEl = document.getElementById('mouseForm');
     const keyboardFormEl = document.getElementById('keyboardForm');
     const cameraFormEl = document.getElementById('cameraForm');
-    const mouseDialogTargetEl = document.getElementById('mouseDialogTarget');
     const keyboardDialogTargetEl = document.getElementById('keyboardDialogTarget');
     const cameraDialogTargetEl = document.getElementById('cameraDialogTarget');
-    const mouseDurationEl = document.getElementById('mouseDuration');
     const keyboardDurationEl = document.getElementById('keyboardDuration');
     const cameraDurationEl = document.getElementById('cameraDuration');
-    const closeMouseButtonEl = document.getElementById('closeMouseButton');
     const closeKeyboardButtonEl = document.getElementById('closeKeyboardButton');
     const closeCameraButtonEl = document.getElementById('closeCameraButton');
-    const cancelMouseButtonEl = document.getElementById('cancelMouseButton');
     const cancelKeyboardButtonEl = document.getElementById('cancelKeyboardButton');
     const cancelCameraButtonEl = document.getElementById('cancelCameraButton');
-    const confirmMouseButtonEl = document.getElementById('confirmMouseButton');
     const confirmKeyboardButtonEl = document.getElementById('confirmKeyboardButton');
     const confirmCameraButtonEl = document.getElementById('confirmCameraButton');
     const refreshButtonEl = document.getElementById('refreshButton');
@@ -153,9 +135,6 @@ const feed = document.getElementById('feed');
     let screenshotSignature = null;
     let notificationTimer = null;
     let screenshotStatusTimer = null;
-    let fileTransferPath = '';
-    let fileTransferSelection = '';
-    let fileTransferPollTimer = null;
 
     function showLiveNotification(msg) {
       const preview = String(msg.text || msg.raw_text || '').trim();
@@ -1067,25 +1046,6 @@ const feed = document.getElementById('feed');
     ));
     updateClientButtonEl.addEventListener('click', () => requestClientUpdate(updateClientButtonEl));
 
-    function openMouseDialog() {
-      if (!selectedDeviceId) {
-        controlsStatusEl.textContent = 'Select a device first.';
-        return;
-      }
-      mouseDialogTargetEl.textContent = `Applying to ${controlsDeviceEl.textContent}`;
-      mouseDialogEl.showModal();
-      mouseDurationEl.focus();
-      mouseDurationEl.select();
-    }
-
-    function closeMouseDialog() {
-      if (mouseDialogEl.open) mouseDialogEl.close();
-    }
-
-    disableMouseButtonEl.addEventListener('click', openMouseDialog);
-    closeMouseButtonEl.addEventListener('click', closeMouseDialog);
-    cancelMouseButtonEl.addEventListener('click', closeMouseDialog);
-
     function openKeyboardDialog() {
       if (!selectedDeviceId) {
         controlsStatusEl.textContent = 'Select a device first.';
@@ -1186,35 +1146,6 @@ const feed = document.getElementById('feed');
       }
     });
 
-    mouseFormEl.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const seconds = Number.parseInt(mouseDurationEl.value, 10);
-      if (!selectedDeviceId) {
-        closeMouseDialog();
-        controlsStatusEl.textContent = 'Select a device first.';
-        return;
-      }
-      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
-        controlsStatusEl.textContent = 'Enter a duration from 1 to 3600 seconds.';
-        mouseDurationEl.focus();
-        return;
-      }
-      confirmMouseButtonEl.disabled = true;
-      controlsStatusEl.textContent = `Disabling mouse for ${seconds} seconds...`;
-      try {
-        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
-          command: 'disable_mouse',
-          message: String(seconds),
-        });
-        closeMouseDialog();
-        controlsStatusEl.textContent = `Mouse disabled for ${seconds} seconds.`;
-      } catch (err) {
-        controlsStatusEl.textContent = 'Mouse could not be disabled.';
-      } finally {
-        confirmMouseButtonEl.disabled = false;
-      }
-    });
-
     function openScreenshotDialog() {
       if (!selectedDeviceId) {
         controlsStatusEl.textContent = 'Select a device first.';
@@ -1275,151 +1206,6 @@ const feed = document.getElementById('feed');
         screenshotOverlayEl.hidden = true;
       }
     }
-
-    function renderFileTransferEntries(entries) {
-      fileTransferListEl.innerHTML = '';
-      if (!Array.isArray(entries) || !entries.length) {
-        const empty = document.createElement('div');
-        empty.className = 'history-empty';
-        empty.textContent = 'No files found in this folder.';
-        fileTransferListEl.appendChild(empty);
-        return;
-      }
-
-      entries.forEach((entry) => {
-        const row = document.createElement('button');
-        row.type = 'button';
-        row.className = `control-button${entry.is_dir ? '' : ' control-button-primary'}`;
-        row.style.width = '100%';
-        row.style.justifyContent = 'space-between';
-        row.textContent = `${entry.is_dir ? '📁' : '📄'} ${entry.name}`;
-        row.title = entry.path;
-        row.addEventListener('click', () => {
-          if (entry.is_dir) {
-            fileTransferSelection = '';
-            fileTransferPath = entry.path;
-            refreshFileTransferListing(fileTransferPath);
-            return;
-          }
-          fileTransferSelection = entry.path;
-          fileTransferStatusEl.textContent = `Selected: ${entry.name}`;
-          fileTransferStatusEl.className = 'controls-screenshot-status ready';
-          row.style.borderColor = '#d9f06d';
-        });
-        fileTransferListEl.appendChild(row);
-      });
-    }
-
-    async function refreshFileTransferListing(path = fileTransferPath) {
-      const deviceId = selectedDeviceId;
-      if (!deviceId) {
-        fileTransferTargetEl.textContent = 'Choose a device before browsing its files.';
-        fileTransferStatusEl.textContent = 'Ready to browse.';
-        fileTransferListEl.innerHTML = '<div class="history-empty">Select a device first.</div>';
-        return;
-      }
-      const normalizedPath = path || '';
-      fileTransferPath = normalizedPath;
-      fileTransferSelection = '';
-      fileTransferPathEl.textContent = normalizedPath || '~';
-      fileTransferTargetEl.textContent = `Browsing ${controlsDeviceEl.textContent || 'selected device'}`;
-      fileTransferStatusEl.textContent = 'Requesting remote file list...';
-      try {
-        const listing = await fetchJson(
-          `/api/devices/${encodeURIComponent(deviceId)}/files?path=${encodeURIComponent(normalizedPath)}`,
-          30000
-        );
-        if (listing && Array.isArray(listing.entries)) {
-          renderFileTransferEntries(listing.entries);
-          fileTransferStatusEl.textContent = `Showing ${listing.entries.length} item${listing.entries.length === 1 ? '' : 's'} in ${listing.path || '~'}`;
-          fileTransferStatusEl.className = 'controls-screenshot-status ready';
-          if (listing.queued) {
-            if (fileTransferPollTimer) clearTimeout(fileTransferPollTimer);
-            fileTransferPollTimer = setTimeout(() => refreshFileTransferListing(path), 1500);
-          }
-          return;
-        }
-        renderFileTransferEntries([]);
-        fileTransferStatusEl.textContent = 'No remote files available yet.';
-      } catch (err) {
-        renderFileTransferEntries([]);
-        fileTransferStatusEl.textContent = `Could not load file list: ${err.message || String(err)}`;
-      }
-    }
-
-    async function openFileTransferDialog() {
-      if (!selectedDeviceId) {
-        controlsStatusEl.textContent = 'Select a device first.';
-        return;
-      }
-      fileTransferPath = '';
-      fileTransferSelection = '';
-      if (typeof fileTransferDialogEl.showModal === 'function') {
-        fileTransferDialogEl.showModal();
-      }
-      fileTransferTargetEl.textContent = `Browsing ${controlsDeviceEl.textContent || 'selected device'}`;
-      await refreshFileTransferListing('');
-    }
-
-    closeFileTransferButtonEl.addEventListener('click', () => {
-      if (typeof fileTransferDialogEl.close === 'function') {
-        fileTransferDialogEl.close();
-      }
-      if (fileTransferPollTimer) {
-        clearTimeout(fileTransferPollTimer);
-        fileTransferPollTimer = null;
-      }
-    });
-
-    cancelFileTransferButtonEl.addEventListener('click', () => {
-      closeFileTransferButtonEl.click();
-    });
-
-    fileTransferUpButtonEl.addEventListener('click', () => {
-      if (!fileTransferPath || fileTransferPath === '~') {
-        return;
-      }
-      const pathParts = fileTransferPath.split(/[\\/]+/).filter(Boolean);
-      pathParts.pop();
-      const parentPath = pathParts.length ? pathParts.join('/') : '';
-      refreshFileTransferListing(parentPath);
-    });
-
-    async function pollFileDownloadReady(deviceId, maxTries = 30) {
-      for (let attempt = 0; attempt < maxTries; attempt += 1) {
-        const status = await fetchJson(`/api/devices/${encodeURIComponent(deviceId)}/download`);
-        if (status && status.ok && status.status === 'ready' && status.download_url) {
-          return `${window.location.origin}${status.download_url}`;
-        }
-        await new Promise((resolve) => setTimeout(resolve, 1000));
-      }
-      throw new Error('The client did not finish the file upload in time.');
-    }
-
-    downloadFileButtonEl.addEventListener('click', async () => {
-      if (!selectedDeviceId) {
-        controlsStatusEl.textContent = 'Select a device first.';
-        return;
-      }
-      if (!fileTransferSelection) {
-        fileTransferStatusEl.textContent = 'Select a file to download first.';
-        return;
-      }
-      try {
-        const response = await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/download`, {
-          path: fileTransferSelection,
-        });
-        if (!response || response.ok !== true) {
-          throw new Error('The file transfer request was rejected.');
-        }
-        fileTransferStatusEl.textContent = 'Waiting for the client to finish uploading the file...';
-        const downloadUrl = await pollFileDownloadReady(selectedDeviceId);
-        window.location.href = downloadUrl;
-        fileTransferStatusEl.textContent = 'File download started.';
-      } catch (err) {
-        fileTransferStatusEl.textContent = `Download failed: ${err.message || String(err)}`;
-      }
-    });
 
     captureScreenshotButtonEl.addEventListener('click', async () => {
       if (!selectedDeviceId) {
@@ -1583,7 +1369,6 @@ const feed = document.getElementById('feed');
       if (visitedLinksDialogEl.open) visitedLinksDialogEl.close();
     }
 
-    fileTransferButtonEl.addEventListener('click', openFileTransferDialog);
     openMessageButtonEl.addEventListener('click', openMessageDialog);
     closeMessageButtonEl.addEventListener('click', closeMessageDialog);
     cancelMessageButtonEl.addEventListener('click', closeMessageDialog);

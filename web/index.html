@@ -87,7 +87,6 @@
             <button class="control-button" id="lockClientButton" type="button">Lock client</button>
             <button class="control-button" id="pauseClientButton" type="button">Pause collection</button>
             <button class="control-button" id="resumeClientButton" type="button">Resume collection</button>
-            <button class="control-button control-button-warning" id="disableMouseButton" type="button">Disable mouse</button>
             <button class="control-button control-button-warning" id="disableKeyboardButton" type="button">Disable keyboard</button>
             <button class="control-button control-button-warning" id="disableCameraButton" type="button">Open camera</button>
             <button class="control-button control-button-primary" id="openUltraViewerButton" type="button">Open UltraViewer</button>
@@ -100,31 +99,11 @@
             <button class="control-button" id="logoutDashboardButton" type="button">Log out dashboard</button>
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
             <button class="control-button control-button-primary" id="captureScreenshotButton" type="button">Screenshot</button>
-            <button class="control-button control-button-primary" id="fileTransferButton" type="button">File transfer</button>
           </div>
           <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
           <div class="command-history" id="commandHistory"></div>
         </section>
-        <dialog class="message-dialog mouse-dialog" id="mouseDialog" aria-labelledby="mouseDialogTitle">
-          <form class="message-compose" id="mouseForm" method="dialog">
-            <div class="message-dialog-heading">
-              <div>
-                <span class="controls-kicker">Input control</span>
-                <h2 id="mouseDialogTitle">Disable mouse</h2>
-              </div>
-              <button class="dialog-close" id="closeMouseButton" type="button" aria-label="Close mouse control window">&times;</button>
-            </div>
-            <p class="message-dialog-target" id="mouseDialogTarget">Choose a device before continuing.</p>
-            <label for="mouseDuration">Duration in seconds</label>
-            <input class="duration-input" id="mouseDuration" type="number" min="1" max="3600" value="30" inputmode="numeric" />
-            <p class="dialog-help">Mouse input will be restored automatically when the timer ends. Keyboard input remains available.</p>
-            <div class="message-dialog-actions">
-              <button class="control-button" id="cancelMouseButton" type="button">Cancel</button>
-              <button class="control-button control-button-warning" id="confirmMouseButton" type="submit">Disable mouse</button>
-            </div>
-          </form>
-        </dialog>
-        <dialog class="message-dialog mouse-dialog" id="keyboardDialog" aria-labelledby="keyboardDialogTitle">
+        <dialog class="message-dialog" id="keyboardDialog" aria-labelledby="keyboardDialogTitle">
           <form class="message-compose" id="keyboardForm" method="dialog">
             <div class="message-dialog-heading">
               <div>
@@ -143,7 +122,7 @@
             </div>
           </form>
         </dialog>
-        <dialog class="message-dialog mouse-dialog" id="cameraDialog" aria-labelledby="cameraDialogTitle">
+        <dialog class="message-dialog" id="cameraDialog" aria-labelledby="cameraDialogTitle">
           <form class="message-compose" id="cameraForm" method="dialog">
             <div class="message-dialog-heading">
               <div>
@@ -212,28 +191,6 @@
             </div>
           </div>
         </div>
-        <dialog class="message-dialog compact-config-dialog" id="fileTransferDialog" aria-labelledby="fileTransferTitle">
-          <div class="message-compose">
-            <div class="message-dialog-heading">
-              <div>
-                <span class="controls-kicker">Remote files</span>
-                <h2 id="fileTransferTitle">File transfer</h2>
-              </div>
-              <button class="dialog-close" id="closeFileTransferButton" type="button" aria-label="Close file transfer window">&times;</button>
-            </div>
-            <p class="message-dialog-target" id="fileTransferTarget">Choose a device before browsing its files.</p>
-            <div class="controls-screenshot-status" id="fileTransferStatus">Ready to browse.</div>
-            <div class="file-transfer-toolbar">
-              <button class="control-button" id="fileTransferUpButton" type="button">Up</button>
-              <span class="file-transfer-path" id="fileTransferPath">~</span>
-            </div>
-            <div class="history-list file-transfer-list" id="fileTransferList" aria-live="polite"></div>
-            <div class="message-dialog-actions">
-              <button class="control-button" id="cancelFileTransferButton" type="button">Close</button>
-              <button class="control-button control-button-primary" id="downloadFileButton" type="button">Download selected</button>
-            </div>
-          </div>
-        </dialog>
         <dialog class="message-dialog history-dialog" id="historyDialog" aria-labelledby="historyDialogTitle">
           <div class="message-compose">
             <div class="message-dialog-heading">

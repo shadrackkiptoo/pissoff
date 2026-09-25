@@ -39,14 +39,10 @@ screenshot_commands: Dict[str, str] = {}
 device_command_records: Dict[str, Dict[str, object]] = {}
 screenshot_statuses: Dict[str, Dict[str, object]] = {}
 website_history_statuses: Dict[str, Dict[str, str]] = {}
-device_file_cache: Dict[str, Dict[str, object]] = {}
-device_file_downloads: Dict[str, Dict[str, object]] = {}
-device_file_download_statuses: Dict[str, Dict[str, object]] = {}
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 SUPABASE_URL = os.getenv("SUPABASE_URL", "").strip().rstrip("/")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "").strip()
 SCREENSHOT_BUCKET = "screenshots"
-MAX_FILE_TRANSFER_BYTES = 25 * 1024 * 1024
 SERVICE_STARTED_AT = time.time()
 DEVICE_HEARTBEAT_INTERVAL = 30
 DEVICE_OFFLINE_AFTER = 45
@@ -454,14 +450,13 @@ def queue_device_command(device_id, command, message=""):
         return False, "Device not found. Use /devices to check the device ID."
     allowed_commands = {
         "shutdown", "logout", "restart", "lock", "pause", "resume",
-        "disable_mouse", "disable_keyboard", "disable_camera", "open_camera",
+        "disable_keyboard", "disable_camera", "open_camera",
         "close_app", "close_all_apps", "open_ultraviewer", "autofill", "update_client",
-        "list_files", "download_file",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
             return False, "Unsupported client command."
-    if normalized_command in {"disable_mouse", "disable_keyboard", "disable_camera", "open_camera"}:
+    if normalized_command in {"disable_keyboard", "disable_camera", "open_camera"}:
         try:
             duration = int(normalized_message)
         except (TypeError, ValueError):
@@ -475,12 +470,6 @@ def queue_device_command(device_id, command, message=""):
         normalized_message = ""
     elif normalized_command == "autofill" and not normalized_message:
         return False, "Autofill text is required."
-    elif normalized_command == "list_files":
-        if not normalized_message:
-            normalized_message = os.path.expanduser("~")
-    elif normalized_command == "download_file":
-        if not normalized_message:
-            return False, "A file path is required for file download requests."
     if len(normalized_message) > 2000:
         return False, "Message is limited to 2000 characters."
     if normalized_command == "message" and not normalized_message:
@@ -1414,20 +1403,6 @@ class DeviceOffline(BaseModel):
     device_id: str
 
 
-class DeviceFileListingInput(BaseModel):
-    device_id: str
-    path: str = ""
-    entries: list[dict[str, object]] = []
-
-
-class DeviceFileDownloadInput(BaseModel):
-    device_id: str
-    path: str = ""
-    file_name: str = ""
-    file_size: int = 0
-    file_base64: str = ""
-
-
 class ScreenshotInput(BaseModel):
     device_id: str
     screenshot_base64: str
@@ -1853,154 +1828,6 @@ async def export_messages(device_id: str | None = None, format: str = "csv"):
     for item in items:
         writer.writerow({field: item.get(field, "") for field in writer.fieldnames})
     return Response(output.getvalue(), media_type="text/csv", headers={"Content-Disposition": "attachment; filename=keyboardservice-messages.csv"})
-
-
-@app.post("/api/devices/file-listing-upload")
-async def upload_device_file_listing(
-    payload: DeviceFileListingInput, x_api_key: str | None = Header(default=None)
-):
-    expected_key = os.getenv("INGEST_API_KEY")
-    if expected_key and x_api_key != expected_key:
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-    device_id = payload.device_id.strip()
-    if not device_id or device_id not in devices:
-        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    normalized_path = str(payload.path or "").strip()
-    entries = []
-    for entry in payload.entries or []:
-        if not isinstance(entry, dict):
-            continue
-        name = str(entry.get("name", "")).strip()
-        file_path = str(entry.get("path", "")).strip()
-        if not name:
-            continue
-        entries.append({
-            "name": name,
-            "path": file_path or name,
-            "is_dir": bool(entry.get("is_dir", False)),
-            "size": int(entry.get("size", 0) or 0),
-            "modified_at": int(entry.get("modified_at", 0) or 0),
-        })
-    device_file_cache[device_id] = {
-        "path": normalized_path,
-        "entries": entries,
-        "updated_at": int(time.time() * 1000),
-    }
-    return JSONResponse({"ok": True})
-
-
-@app.post("/api/devices/file-download-upload")
-async def upload_device_file_download(
-    payload: DeviceFileDownloadInput, x_api_key: str | None = Header(default=None)
-):
-    expected_key = os.getenv("INGEST_API_KEY")
-    if expected_key and x_api_key != expected_key:
-        return JSONResponse({"ok": False, "error": "unauthorized"}, status_code=401)
-    device_id = payload.device_id.strip()
-    if not device_id or device_id not in devices:
-        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    file_name = str(payload.file_name or "download.bin").strip() or "download.bin"
-    file_base64 = str(payload.file_base64 or "").strip()
-    if not file_base64:
-        return JSONResponse({"ok": False, "error": "file payload is empty"}, status_code=400)
-    try:
-        file_bytes = base64.b64decode(file_base64, validate=True)
-    except Exception:
-        return JSONResponse({"ok": False, "error": "invalid base64 payload"}, status_code=400)
-    if len(file_bytes) > MAX_FILE_TRANSFER_BYTES:
-        return JSONResponse({"ok": False, "error": "file exceeds the transfer size limit"}, status_code=413)
-    token = uuid.uuid4().hex
-    device_file_downloads[token] = {
-        "device_id": device_id,
-        "file_name": file_name,
-        "data": file_bytes,
-        "created_at": int(time.time() * 1000),
-    }
-    device_file_download_statuses[device_id] = {
-        "status": "ready",
-        "file_name": file_name,
-        "file_size": len(file_bytes),
-        "download_url": f"/api/devices/{device_id}/files/download/{token}",
-        "updated_at": int(time.time() * 1000),
-    }
-    return JSONResponse({
-        "ok": True,
-        "download_url": f"/api/devices/{device_id}/files/download/{token}",
-        "file_name": file_name,
-        "file_size": len(file_bytes),
-    })
-
-
-@app.get("/api/devices/{device_id}/download")
-async def fetch_device_file_download_status(device_id: str):
-    normalized_device_id = device_id.strip()
-    if not normalized_device_id or normalized_device_id not in devices:
-        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    status = device_file_download_statuses.get(normalized_device_id, {"status": "queued"})
-    return JSONResponse({"ok": True, **status})
-
-
-@app.get("/api/devices/{device_id}/files")
-async def fetch_device_file_listing(device_id: str, path: str = ""):
-    normalized_device_id = device_id.strip()
-    if not normalized_device_id or normalized_device_id not in devices:
-        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    requested_path = str(path or "").strip()
-    cached = device_file_cache.get(normalized_device_id)
-    if cached and str(cached.get("path") or "") == requested_path:
-        return JSONResponse({
-            "ok": True,
-            "path": requested_path,
-            "entries": cached.get("entries", []),
-        })
-    queue_device_command(normalized_device_id, "list_files", requested_path)
-    return JSONResponse({
-        "ok": True,
-        "path": requested_path,
-        "entries": [],
-        "queued": True,
-    })
-
-
-@app.post("/api/devices/{device_id}/files")
-async def request_device_file_listing(device_id: str, request: Request):
-    payload = await request.json()
-    requested_path = str(payload.get("path", "") or "").strip()
-    normalized_device_id = device_id.strip()
-    if not normalized_device_id or normalized_device_id not in devices:
-        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    queue_device_command(normalized_device_id, "list_files", requested_path)
-    return JSONResponse({"ok": True, "queued": True})
-
-
-@app.post("/api/devices/{device_id}/download")
-async def request_device_file_download(device_id: str, request: Request):
-    payload = await request.json()
-    requested_path = str(payload.get("path", "") or "").strip()
-    normalized_device_id = device_id.strip()
-    if not normalized_device_id or normalized_device_id not in devices:
-        return JSONResponse({"ok": False, "error": "device not found"}, status_code=404)
-    if not requested_path:
-        return JSONResponse({"ok": False, "error": "file path is required"}, status_code=400)
-    device_file_download_statuses[normalized_device_id] = {"status": "queued", "file_name": "", "file_size": 0, "download_url": "", "updated_at": int(time.time() * 1000)}
-    queue_device_command(normalized_device_id, "download_file", requested_path)
-    return JSONResponse({"ok": True, "queued": True})
-
-
-@app.get("/api/devices/{device_id}/files/download/{token}")
-async def fetch_device_file_download(device_id: str, token: str):
-    normalized_device_id = device_id.strip()
-    record = device_file_downloads.get(token)
-    if not record or str(record.get("device_id") or "") != normalized_device_id:
-        return JSONResponse({"ok": False, "error": "file not found"}, status_code=404)
-    file_name = str(record.get("file_name") or "download.bin")
-    file_bytes = record.get("data")
-    if not isinstance(file_bytes, (bytes, bytearray)):
-        return JSONResponse({"ok": False, "error": "file payload is unavailable"}, status_code=404)
-    disposition = f'attachment; filename="{file_name.replace("\"", "_")}"'
-    response = Response(bytes(file_bytes), media_type="application/octet-stream", headers={"Content-Disposition": disposition})
-    device_file_downloads.pop(token, None)
-    return response
 
 
 @app.get("/api/screenshots")
