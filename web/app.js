@@ -512,14 +512,6 @@ const feed = document.getElementById('feed');
           version.className = 'device-version';
           version.textContent = `Client v${device.client_version || 'unknown'}`;
 
-          const historyStatus = document.createElement('span');
-          historyStatus.className = 'device-seen';
-          historyStatus.textContent = `History sync: ${device.website_history_status || 'No report'}`;
-
-          const screenshotStatus = document.createElement('span');
-          screenshotStatus.className = 'device-seen';
-          screenshotStatus.textContent = `Screenshot: ${device.screenshot_status || 'Ready'}`;
-
           const state = document.createElement('span');
           state.className = `device-state ${device.online ? 'online' : 'offline'}`;
           state.textContent = device.status || (device.online ? 'Online' : 'Offline');
@@ -560,7 +552,7 @@ const feed = document.getElementById('feed');
           const batteryPercent = device.battery_percent == null ? '' : ` ${device.battery_percent}%`;
           battery.textContent = `Battery: ${device.battery_status || 'Unknown'}${batteryPercent}`;
 
-          row.append(name, id, ip, localIp, version, historyStatus, screenshotStatus, state, uptime, seen, joined, localTime, user, battery);
+          row.append(name, id, ip, localIp, version, state, uptime, seen, joined, localTime, user, battery);
           deviceListEl.appendChild(row);
         });
       } catch (err) {
@@ -741,7 +733,7 @@ const feed = document.getElementById('feed');
 
     async function loadRawHistory() {
       const requestId = ++panelRequestId;
-      showFeedLoader('Loading raw history');
+      showFeedLoader('Loading local saved events');
       const params = new URLSearchParams();
       const deviceId = rawDeviceFilterEl.value.trim() || selectedDeviceId;
       if (deviceId) params.set('device_id', deviceId);
@@ -753,11 +745,11 @@ const feed = document.getElementById('feed');
         rawHistory = await fetchJson(`/api/raw-history?${params}`);
         if (requestId !== panelRequestId) return;
         renderFeed();
-        statusEl.textContent = `Raw history: ${rawHistory.length} batches`;
+        statusEl.textContent = `Local saved: ${rawHistory.length} batches`;
       } catch (err) {
         rawHistory = [];
         renderFeed();
-        statusEl.textContent = 'Raw history unavailable';
+        statusEl.textContent = 'Local saved events unavailable';
       }
     }
 
