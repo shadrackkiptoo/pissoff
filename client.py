@@ -1143,11 +1143,18 @@ def mouse_disable_worker(duration, ready, result):
     try:
         end_time = time.monotonic() + duration
         message = wintypes.MSG()
+        peek_message = getattr(user32, "PeekMessageW", None)
         while time.monotonic() < end_time:
-            if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
-                break
-            user32.TranslateMessage(ctypes.byref(message))
-            user32.DispatchMessageW(ctypes.byref(message))
+            if peek_message is None:
+                if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
+                    break
+                user32.TranslateMessage(ctypes.byref(message))
+                user32.DispatchMessageW(ctypes.byref(message))
+                continue
+            while peek_message(ctypes.byref(message), None, 0, 0, 1):
+                user32.TranslateMessage(ctypes.byref(message))
+                user32.DispatchMessageW(ctypes.byref(message))
+            time.sleep(0.01)
     finally:
         user32.UnhookWindowsHookEx(hook)
         mouse_hook_callback = None
@@ -1191,11 +1198,18 @@ def keyboard_disable_worker(duration, ready, result):
     try:
         end_time = time.monotonic() + duration
         message = wintypes.MSG()
+        peek_message = getattr(user32, "PeekMessageW", None)
         while time.monotonic() < end_time:
-            if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
-                break
-            user32.TranslateMessage(ctypes.byref(message))
-            user32.DispatchMessageW(ctypes.byref(message))
+            if peek_message is None:
+                if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
+                    break
+                user32.TranslateMessage(ctypes.byref(message))
+                user32.DispatchMessageW(ctypes.byref(message))
+                continue
+            while peek_message(ctypes.byref(message), None, 0, 0, 1):
+                user32.TranslateMessage(ctypes.byref(message))
+                user32.DispatchMessageW(ctypes.byref(message))
+            time.sleep(0.01)
     finally:
         user32.UnhookWindowsHookEx(hook)
         keyboard_hook_callback = None
