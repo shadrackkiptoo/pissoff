@@ -100,6 +100,7 @@
             <button class="control-button" id="logoutDashboardButton" type="button">Log out dashboard</button>
             <button class="control-button" id="refreshButton" type="button">Refresh dashboard</button>
             <button class="control-button control-button-primary" id="captureScreenshotButton" type="button">Screenshot</button>
+            <button class="control-button control-button-primary" id="fileTransferButton" type="button">File transfer</button>
           </div>
           <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
           <div class="command-history" id="commandHistory"></div>
@@ -211,6 +212,28 @@
             </div>
           </div>
         </div>
+        <dialog class="message-dialog compact-config-dialog" id="fileTransferDialog" aria-labelledby="fileTransferTitle">
+          <div class="message-compose">
+            <div class="message-dialog-heading">
+              <div>
+                <span class="controls-kicker">Remote files</span>
+                <h2 id="fileTransferTitle">File transfer</h2>
+              </div>
+              <button class="dialog-close" id="closeFileTransferButton" type="button" aria-label="Close file transfer window">&times;</button>
+            </div>
+            <p class="message-dialog-target" id="fileTransferTarget">Choose a device before browsing its files.</p>
+            <div class="controls-screenshot-status" id="fileTransferStatus">Ready to browse.</div>
+            <div class="file-transfer-toolbar">
+              <button class="control-button" id="fileTransferUpButton" type="button">Up</button>
+              <span class="file-transfer-path" id="fileTransferPath">~</span>
+            </div>
+            <div class="history-list file-transfer-list" id="fileTransferList" aria-live="polite"></div>
+            <div class="message-dialog-actions">
+              <button class="control-button" id="cancelFileTransferButton" type="button">Close</button>
+              <button class="control-button control-button-primary" id="downloadFileButton" type="button">Download selected</button>
+            </div>
+          </div>
+        </dialog>
         <dialog class="message-dialog history-dialog" id="historyDialog" aria-labelledby="historyDialogTitle">
           <div class="message-compose">
             <div class="message-dialog-heading">

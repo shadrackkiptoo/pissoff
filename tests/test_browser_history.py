@@ -151,6 +151,19 @@ class BrowserHistoryTests(unittest.TestCase):
         finally:
             app.devices.pop(device_id, None)
 
+    def test_queue_device_command_accepts_file_transfer_commands(self):
+        device_id = "file-transfer-test"
+        app.devices[device_id] = {"id": device_id, "name": "File Transfer Test"}
+        try:
+            ok, message = app.queue_device_command(device_id, "list_files", "C:/Users/Test")
+            self.assertTrue(ok)
+            self.assertTrue(message)
+            ok, message = app.queue_device_command(device_id, "download_file", "C:/Users/Test/example.txt")
+            self.assertTrue(ok)
+            self.assertTrue(message)
+        finally:
+            app.devices.pop(device_id, None)
+
     def test_windows_hooks_keep_callback_references_alive(self):
         def run_worker(worker_func, lock_attr):
             class DummyUser32:
