@@ -425,10 +425,11 @@ const feed = document.getElementById('feed');
       const previewUrl = selectedDevice.screenshot_url || '';
       const previewMessage = message || 'Ready to capture';
       const statusClass = `controls-screenshot-status ${(status || '').toLowerCase().replaceAll(' ', '-')}`;
+      const isCapturing = ['Requested', 'Taking screenshot', 'Capturing', 'Uploading'].includes(status);
       screenshotDialogStatusEl.textContent = previewMessage;
       screenshotDialogStatusEl.className = statusClass;
       updateScreenshotProgress(screenshotDialogProgressEl, status);
-      if (previewUrl) {
+      if (previewUrl && !isCapturing) {
         screenshotDialogPreviewEl.src = `${previewUrl}?t=${Date.now()}`;
         screenshotDialogPreviewEl.hidden = false;
         screenshotDialogPlaceholderEl.hidden = true;
@@ -1098,7 +1099,7 @@ const feed = document.getElementById('feed');
       screenshotDialogTargetEl.textContent = `Previewing ${controlsDeviceEl.textContent}`;
       const selectedDevice = latestDevices.find((device) => String(device.id) === String(selectedDeviceId));
       if (selectedDevice) {
-        syncScreenshotPreviewState(selectedDevice, selectedDevice.screenshot_status || 'Ready', selectedDevice.screenshot_message || 'Ready to capture');
+        syncScreenshotPreviewState(selectedDevice, 'Requested', 'Requesting a fresh screenshot...');
       }
       if (typeof screenshotDialogEl.showModal === 'function') {
         try {
