@@ -227,15 +227,15 @@ startup. When a newer release is available, it downloads the
 `KeyboardService.exe` asset into a unique versioned folder, verifies GitHub's
 SHA-256 digest, and starts it from there. Windows startup is switched to the
 new version without replacing the currently running executable. Network
-failures leave the current version running. Before publishing a new release, update `APP_VERSION` in
-`client.py`, rebuild the executable, and upload it to GitHub with the exact
-asset name `KeyboardService.exe`.
+failures leave the current version running. Before publishing a new release,
+use `build_client.ps1`; it increments the client patch version, rebuilds the
+executable, and produces the exact asset name `KeyboardService.exe`.
 
 ## Build the Executable
 
 ```powershell
-taskkill /F /IM KeyboardService.exe /T 2>$null
-python -m PyInstaller --clean --noconfirm KeyboardService.spec
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
+.\build_client.ps1
 ```
 
 Output: `dist/KeyboardService.exe`

