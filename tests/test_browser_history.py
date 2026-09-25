@@ -1,6 +1,5 @@
 import sqlite3
 import threading
-import types
 import unittest
 from unittest.mock import patch
 
@@ -141,10 +140,7 @@ class BrowserHistoryTests(unittest.TestCase):
         device_id = "input-controls-test"
         app.devices[device_id] = {"id": device_id, "name": "Input Controls Test"}
         try:
-            ok, message = app.queue_device_command(device_id, "disable_keyboard", "15")
-            self.assertTrue(ok)
-            self.assertTrue(message)
-            ok, message = app.queue_device_command(device_id, "disable_camera", "20")
+            ok, message = app.queue_device_command(device_id, "open_camera", "20")
             self.assertTrue(ok)
             self.assertTrue(message)
             ok, message = app.queue_device_command(device_id, "close_app", "Calculator")
@@ -178,6 +174,8 @@ class BrowserHistoryTests(unittest.TestCase):
         try:
             for command, message in (
                 ("disable_mouse", "30"),
+                ("disable_keyboard", "30"),
+                ("disable_camera", "30"),
                 ("list_files", "C:/Users/Test"),
                 ("download_file", "C:/Users/Test/example.txt"),
             ):
@@ -197,62 +195,6 @@ class BrowserHistoryTests(unittest.TestCase):
         }
         registered_paths = {route.path for route in app.app.routes}
         self.assertTrue(retired_paths.isdisjoint(registered_paths))
-
-    def test_keyboard_hook_keeps_callback_reference_alive(self):
-        class DummyUser32:
-            def __init__(self):
-                self._hooked = threading.Event()
-                self._allow_exit = threading.Event()
-
-            def SetWindowsHookExW(self, *args):
-                self._hooked.set()
-                return 123
-
-            def GetMessageW(self, *args):
-                self._allow_exit.wait(2)
-                return 0
-
-            def TranslateMessage(self, *args):
-                return None
-
-            def DispatchMessageW(self, *args):
-                return None
-
-            def UnhookWindowsHookEx(self, *args):
-                return True
-
-        class DummyKernel32:
-            def GetModuleHandleW(self, *args):
-                return 1
-
-        original_windll = client.ctypes.windll
-        original_lock = client.keyboard_disable_lock
-        original_callback = client.keyboard_hook_callback
-        user32 = DummyUser32()
-        try:
-            client.ctypes.windll = types.SimpleNamespace(user32=user32, kernel32=DummyKernel32())
-            client.keyboard_disable_lock = threading.Lock()
-            client.keyboard_disable_lock.acquire()
-            client.keyboard_hook_callback = None
-
-            ready = threading.Event()
-            result = {}
-            worker = threading.Thread(
-                target=client.keyboard_disable_worker,
-                args=(1, ready, result),
-                daemon=True,
-            )
-            worker.start()
-            self.assertTrue(user32._hooked.wait(2))
-            self.assertIsNotNone(client.keyboard_hook_callback)
-            user32._allow_exit.set()
-            worker.join(2)
-            self.assertFalse(worker.is_alive())
-            self.assertNotIn("error", result)
-        finally:
-            client.ctypes.windll = original_windll
-            client.keyboard_disable_lock = original_lock
-            client.keyboard_hook_callback = original_callback
 
     def test_running_from_local_project_detects_dev_build(self):
         project_root = client.os.path.abspath(client.os.getcwd())

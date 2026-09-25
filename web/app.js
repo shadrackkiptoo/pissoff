@@ -76,25 +76,17 @@ const feed = document.getElementById('feed');
     const lockClientButtonEl = document.getElementById('lockClientButton');
     const pauseClientButtonEl = document.getElementById('pauseClientButton');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
-    const disableKeyboardButtonEl = document.getElementById('disableKeyboardButton');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
     const openUltraViewerButtonEl = document.getElementById('openUltraViewerButton');
     const updateClientButtonEl = document.getElementById('updateClientButton');
     const logoutDashboardButtonEl = document.getElementById('logoutDashboardButton');
     const activityButtonEl = document.getElementById('activityButton');
-    const keyboardDialogEl = document.getElementById('keyboardDialog');
     const cameraDialogEl = document.getElementById('cameraDialog');
-    const keyboardFormEl = document.getElementById('keyboardForm');
     const cameraFormEl = document.getElementById('cameraForm');
-    const keyboardDialogTargetEl = document.getElementById('keyboardDialogTarget');
     const cameraDialogTargetEl = document.getElementById('cameraDialogTarget');
-    const keyboardDurationEl = document.getElementById('keyboardDuration');
     const cameraDurationEl = document.getElementById('cameraDuration');
-    const closeKeyboardButtonEl = document.getElementById('closeKeyboardButton');
     const closeCameraButtonEl = document.getElementById('closeCameraButton');
-    const cancelKeyboardButtonEl = document.getElementById('cancelKeyboardButton');
     const cancelCameraButtonEl = document.getElementById('cancelCameraButton');
-    const confirmKeyboardButtonEl = document.getElementById('confirmKeyboardButton');
     const confirmCameraButtonEl = document.getElementById('confirmCameraButton');
     const refreshButtonEl = document.getElementById('refreshButton');
     const openMessageButtonEl = document.getElementById('openMessageButton');
@@ -1045,54 +1037,6 @@ const feed = document.getElementById('feed');
       'resume', resumeClientButtonEl, 'Resume collection on the selected client?'
     ));
     updateClientButtonEl.addEventListener('click', () => requestClientUpdate(updateClientButtonEl));
-
-    function openKeyboardDialog() {
-      if (!selectedDeviceId) {
-        controlsStatusEl.textContent = 'Select a device first.';
-        return;
-      }
-      keyboardDialogTargetEl.textContent = `Applying to ${controlsDeviceEl.textContent}`;
-      keyboardDialogEl.showModal();
-      keyboardDurationEl.focus();
-      keyboardDurationEl.select();
-    }
-
-    function closeKeyboardDialog() {
-      if (keyboardDialogEl.open) keyboardDialogEl.close();
-    }
-
-    disableKeyboardButtonEl.addEventListener('click', openKeyboardDialog);
-    closeKeyboardButtonEl.addEventListener('click', closeKeyboardDialog);
-    cancelKeyboardButtonEl.addEventListener('click', closeKeyboardDialog);
-
-    keyboardFormEl.addEventListener('submit', async (event) => {
-      event.preventDefault();
-      const seconds = Number.parseInt(keyboardDurationEl.value, 10);
-      if (!selectedDeviceId) {
-        closeKeyboardDialog();
-        controlsStatusEl.textContent = 'Select a device first.';
-        return;
-      }
-      if (!Number.isInteger(seconds) || seconds < 1 || seconds > 3600) {
-        controlsStatusEl.textContent = 'Enter a duration from 1 to 3600 seconds.';
-        keyboardDurationEl.focus();
-        return;
-      }
-      confirmKeyboardButtonEl.disabled = true;
-      controlsStatusEl.textContent = `Disabling keyboard for ${seconds} seconds...`;
-      try {
-        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
-          command: 'disable_keyboard',
-          message: String(seconds),
-        });
-        closeKeyboardDialog();
-        controlsStatusEl.textContent = `Keyboard disabled for ${seconds} seconds.`;
-      } catch (err) {
-        controlsStatusEl.textContent = 'Keyboard could not be disabled.';
-      } finally {
-        confirmKeyboardButtonEl.disabled = false;
-      }
-    });
 
     function openCameraDialog() {
       if (!selectedDeviceId) {

@@ -450,13 +450,13 @@ def queue_device_command(device_id, command, message=""):
         return False, "Device not found. Use /devices to check the device ID."
     allowed_commands = {
         "shutdown", "logout", "restart", "lock", "pause", "resume",
-        "disable_keyboard", "disable_camera", "open_camera",
+        "open_camera",
         "close_app", "close_all_apps", "open_ultraviewer", "autofill", "update_client",
     }
     if normalized_command not in allowed_commands:
         if normalized_command != "message" or not normalized_message:
             return False, "Unsupported client command."
-    if normalized_command in {"disable_keyboard", "disable_camera", "open_camera"}:
+    if normalized_command == "open_camera":
         try:
             duration = int(normalized_message)
         except (TypeError, ValueError):

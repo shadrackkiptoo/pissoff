@@ -110,9 +110,6 @@ last_message_id = 0
 SERVICE_KEYBOARD_LISTENER = None
 collection_paused = False
 update_lock = Lock()
-keyboard_disable_lock = Lock()
-camera_disable_lock = Lock()
-keyboard_hook_callback = None
 browser_history_seen = set()
 
 SHIFTED_SYMBOLS = {
@@ -1091,17 +1088,7 @@ def handle_device_command(command, command_id=None, message=""):
             collection_paused = True
         elif command == "resume":
             collection_paused = False
-        elif command == "disable_keyboard":
-            if os.name != "nt":
-                raise RuntimeError("Keyboard disabling is only supported on Windows")
-            try:
-                duration = int(str(message).strip())
-            except ValueError as error:
-                raise RuntimeError("Keyboard duration must be a whole number of seconds") from error
-            if duration < 1 or duration > 3600:
-                raise RuntimeError("Keyboard duration must be between 1 and 3600 seconds")
-            start_keyboard_disable(duration)
-        elif command in {"disable_camera", "open_camera"}:
+        elif command == "open_camera":
             if os.name != "nt":
                 raise RuntimeError("Camera control is only supported on Windows")
             try:
@@ -1110,10 +1097,7 @@ def handle_device_command(command, command_id=None, message=""):
                 raise RuntimeError("Camera duration must be a whole number of seconds") from error
             if duration < 1 or duration > 3600:
                 raise RuntimeError("Camera duration must be between 1 and 3600 seconds")
-            if command == "open_camera":
-                open_camera_app(duration)
-            else:
-                start_camera_disable(duration)
+            open_camera_app(duration)
         elif command == "close_app":
             if os.name != "nt":
                 raise RuntimeError("App closing is only supported on Windows")
@@ -1145,61 +1129,6 @@ def handle_device_command(command, command_id=None, message=""):
         acknowledge_device_command(command_id, "completed")
     except (OSError, RuntimeError, AttributeError) as error:
         acknowledge_device_command(command_id, "failed", str(error))
-
-
-def start_keyboard_disable(duration):
-    if not keyboard_disable_lock.acquire(blocking=False):
-        raise RuntimeError("Keyboard is already disabled")
-
-    ready = Event()
-    result = {}
-    Thread(target=keyboard_disable_worker, args=(duration, ready, result), daemon=True).start()
-    if not ready.wait(1):
-        keyboard_disable_lock.release()
-        raise RuntimeError("Keyboard hook did not start")
-    if result.get("error"):
-        keyboard_disable_lock.release()
-        raise RuntimeError(result["error"])
-
-
-def keyboard_disable_worker(duration, ready, result):
-    global keyboard_hook_callback
-    user32 = ctypes.windll.user32
-    kernel32 = ctypes.windll.kernel32
-    hook_type = 13
-    callback_type = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_int, wintypes.WPARAM, wintypes.LPARAM)
-
-    def low_level_keyboard_proc(_code, _wparam, _lparam):
-        return 1
-
-    keyboard_hook_callback = callback_type(low_level_keyboard_proc)
-    hook = user32.SetWindowsHookExW(hook_type, keyboard_hook_callback, kernel32.GetModuleHandleW(None), 0)
-    if not hook:
-        result["error"] = f"Could not install keyboard hook: {ctypes.get_last_error()}"
-        ready.set()
-        keyboard_disable_lock.release()
-        return
-
-    ready.set()
-    try:
-        end_time = time.monotonic() + duration
-        message = wintypes.MSG()
-        peek_message = getattr(user32, "PeekMessageW", None)
-        while time.monotonic() < end_time:
-            if peek_message is None:
-                if user32.GetMessageW(ctypes.byref(message), None, 0, 0) == 0:
-                    break
-                user32.TranslateMessage(ctypes.byref(message))
-                user32.DispatchMessageW(ctypes.byref(message))
-                continue
-            while peek_message(ctypes.byref(message), None, 0, 0, 1):
-                user32.TranslateMessage(ctypes.byref(message))
-                user32.DispatchMessageW(ctypes.byref(message))
-            time.sleep(0.01)
-    finally:
-        user32.UnhookWindowsHookEx(hook)
-        keyboard_hook_callback = None
-        keyboard_disable_lock.release()
 
 
 def close_all_visible_apps():
@@ -1308,43 +1237,6 @@ def open_ultraviewer():
         subprocess.Popen([executable], cwd=os.path.dirname(executable), close_fds=True)
     except OSError as error:
         raise RuntimeError(f"UltraViewer could not be opened: {error}") from error
-
-
-def start_camera_disable(duration):
-    if not camera_disable_lock.acquire(blocking=False):
-        raise RuntimeError("Camera is already disabled")
-
-    ready = Event()
-    result = {}
-    Thread(target=camera_disable_worker, args=(duration, ready, result), daemon=True).start()
-    if not ready.wait(1):
-        camera_disable_lock.release()
-        raise RuntimeError("Camera blocker did not start")
-    if result.get("error"):
-        camera_disable_lock.release()
-        raise RuntimeError(result["error"])
-
-
-def camera_disable_worker(duration, ready, result):
-    try:
-        camera_processes = [
-            "MicrosoftTeams", "Teams", "Zoom", "zoom", "Skype", "SkypeApp",
-            "Discord", "Camera", "WindowsCamera", "msteams", "zoom.exe",
-            "teams.exe", "skype.exe", "discord.exe",
-        ]
-        ready.set()
-        end_time = time.monotonic() + duration
-        while time.monotonic() < end_time:
-            for process_name in camera_processes:
-                try:
-                    subprocess.run(["taskkill", "/F", "/IM", process_name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-                except OSError:
-                    pass
-            time.sleep(0.25)
-    except Exception as error:  # pragma: no cover - runtime safety guard
-        result["error"] = str(error)
-    finally:
-        camera_disable_lock.release()
 
 
 def get_battery_telemetry():
