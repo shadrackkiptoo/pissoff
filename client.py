@@ -415,9 +415,28 @@ def collect_browser_history_entries(browser_name, db_path):
     if not db_path or not os.path.exists(db_path):
         return []
 
+    snapshot_path = None
+
+    def remove_snapshot_files():
+        if not snapshot_path:
+            return
+        for path in (snapshot_path, f"{snapshot_path}-wal", f"{snapshot_path}-shm"):
+            try:
+                os.remove(path)
+            except OSError:
+                pass
+
     try:
-        connection = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
-    except sqlite3.DatabaseError:
+        with tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False) as snapshot_file:
+            snapshot_path = snapshot_file.name
+        shutil.copy2(db_path, snapshot_path)
+        for suffix in ("-wal", "-shm"):
+            sidecar_path = f"{db_path}{suffix}"
+            if os.path.exists(sidecar_path):
+                shutil.copy2(sidecar_path, f"{snapshot_path}{suffix}")
+        connection = sqlite3.connect(f"file:{snapshot_path}?mode=ro", uri=True)
+    except (OSError, sqlite3.DatabaseError):
+        remove_snapshot_files()
         return []
 
     try:
@@ -471,6 +490,7 @@ def collect_browser_history_entries(browser_name, db_path):
         return []
     finally:
         connection.close()
+        remove_snapshot_files()
 
 
 def sync_browser_history():
