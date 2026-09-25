@@ -134,6 +134,7 @@ const feed = document.getElementById('feed');
     let screenshotPreviewErrorUrl = '';
     let screenshotCaptureBaseline = null;
     let screenshotRequestError = '';
+    let displayedScreenshotUrl = '';
     const SCREENSHOT_POLL_TIMEOUT_MS = 95000;
     const UPDATE_CHECK_CACHE_MS = 300000;
     const UPDATE_CHECK_ERROR_CACHE_MS = 30000;
@@ -147,13 +148,18 @@ const feed = document.getElementById('feed');
       const expectedUrl = screenshotDialogPreviewEl.dataset.previewUrl;
       if (!expectedUrl || new URL(expectedUrl, window.location.href).href !== screenshotDialogPreviewEl.currentSrc) return;
       screenshotPreviewErrorUrl = '';
+      displayedScreenshotUrl = expectedUrl;
       screenshotDialogPreviewEl.hidden = false;
       screenshotDialogPlaceholderEl.hidden = true;
+      screenshotDialogStatusEl.textContent = 'Screenshot displayed successfully.';
+      screenshotDialogStatusEl.className = 'controls-screenshot-status displaying';
+      updateScreenshotProgress(screenshotDialogProgressEl, 'Displaying');
     });
     screenshotDialogPreviewEl.addEventListener('error', () => {
       const expectedUrl = screenshotDialogPreviewEl.dataset.previewUrl;
       if (!expectedUrl || new URL(expectedUrl, window.location.href).href !== screenshotDialogPreviewEl.currentSrc) return;
       screenshotPreviewErrorUrl = expectedUrl;
+      displayedScreenshotUrl = '';
       screenshotDialogPreviewEl.hidden = true;
       screenshotDialogPlaceholderEl.textContent = 'Screenshot could not be loaded. Check storage and retry capture.';
       screenshotDialogPlaceholderEl.hidden = false;
@@ -422,20 +428,22 @@ const feed = document.getElementById('feed');
     function updateScreenshotProgress(progressEl, status) {
       const normalized = String(status || '').trim();
       const stageOrder = {
-        Requested: 0,
-        Queued: 0,
-        Capturing: 1,
-        'Taking screenshot': 1,
-        Uploading: 2,
+        Ready: 0,
+        Requested: 1,
+        Queued: 1,
+        Capturing: 2,
+        'Taking screenshot': 2,
+        Uploading: 3,
+        Saving: 3,
+        Saved: 4,
+        Displaying: 5,
         Failed: -1,
-        Ready: 3,
-        Saved: 3,
       };
       const activeIndex = stageOrder[normalized] ?? (normalized.includes('capture') ? 1 : normalized.includes('upload') ? 2 : 0);
       progressEl.querySelectorAll('.progress-step').forEach((step, index) => {
         const stageName = step.dataset.stage;
         const isActive = index === activeIndex;
-        const isComplete = stageOrder[stageName] !== undefined && (stageOrder[stageName] < activeIndex || (['Ready', 'Saved'].includes(normalized) && stageName === 'Ready'));
+        const isComplete = stageOrder[stageName] !== undefined && stageOrder[stageName] < activeIndex;
         step.classList.toggle('active', isActive);
         step.classList.toggle('done', isComplete);
       });
@@ -471,6 +479,7 @@ const feed = document.getElementById('feed');
         screenshotDialogPreviewEl.dataset.previewUrl = '';
         screenshotDialogPreviewEl.removeAttribute('src');
         screenshotPreviewErrorUrl = '';
+        displayedScreenshotUrl = '';
         screenshotDialogPlaceholderEl.textContent = screenshotRequestError
           || (status === 'Failed' ? previewMessage : 'Waiting for a new screenshot...');
         screenshotDialogPlaceholderEl.hidden = false;
@@ -488,9 +497,18 @@ const feed = document.getElementById('feed');
       if (previewUrl) {
         const captureVersion = selectedDevice.screenshot_captured_at || 'latest';
         const versionedPreviewUrl = `${previewUrl}?t=${encodeURIComponent(captureVersion)}`;
+        if (displayedScreenshotUrl === versionedPreviewUrl) {
+          screenshotDialogPreviewEl.hidden = false;
+          screenshotDialogPlaceholderEl.hidden = true;
+          screenshotDialogStatusEl.textContent = 'Screenshot displayed successfully.';
+          screenshotDialogStatusEl.className = 'controls-screenshot-status displaying';
+          updateScreenshotProgress(screenshotDialogProgressEl, 'Displaying');
+          return;
+        }
         if (screenshotDialogPreviewEl.dataset.previewUrl !== versionedPreviewUrl) {
           screenshotDialogPreviewEl.dataset.previewUrl = versionedPreviewUrl;
           screenshotPreviewErrorUrl = '';
+          displayedScreenshotUrl = '';
           screenshotDialogPreviewEl.hidden = true;
           screenshotDialogPreviewEl.src = versionedPreviewUrl;
           screenshotDialogPlaceholderEl.textContent = 'Loading screenshot...';
@@ -512,6 +530,7 @@ const feed = document.getElementById('feed');
         screenshotDialogPreviewEl.dataset.previewUrl = '';
         screenshotDialogPreviewEl.removeAttribute('src');
         screenshotPreviewErrorUrl = '';
+        displayedScreenshotUrl = '';
         screenshotDialogPlaceholderEl.textContent = isCapturing ? previewMessage : status === 'Failed' ? previewMessage : 'No screenshot captured yet.';
         screenshotDialogPlaceholderEl.hidden = false;
       }
@@ -1317,6 +1336,7 @@ const feed = document.getElementById('feed');
           capturedAt: Number(selectedDevice.screenshot_captured_at) || 0,
         };
         screenshotRequestError = '';
+        displayedScreenshotUrl = '';
         syncScreenshotPreviewState(selectedDevice, 'Requested', 'Requesting a fresh screenshot...');
       }
       if (typeof screenshotDialogEl.showModal === 'function') {
@@ -1395,7 +1415,7 @@ const feed = document.getElementById('feed');
         const response = await fetch(`/api/devices/${encodeURIComponent(selectedDeviceId)}/screenshot`, { method: 'POST' });
         if (!response.ok) throw new Error('request failed');
         controlsStatusEl.textContent = 'Screenshot queued for the selected client.';
-        screenshotDialogStatusEl.textContent = 'Screenshot requested';
+        screenshotDialogStatusEl.textContent = 'Screenshot queued. Waiting for the client...';
         screenshotDialogStatusEl.className = 'controls-screenshot-status requested';
         await loadDevices();
       } catch (err) {

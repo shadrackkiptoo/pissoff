@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Live Key Feed</title>
-  <link rel="stylesheet" href="/web/styles.css?v=20260924-1" />
+  <link rel="stylesheet" href="/web/styles.css?v=20260926-1" />
 </head>
 <body>
   <div class="app">
@@ -159,10 +159,12 @@
               </div>
               <p class="message-dialog-target" id="screenshotDialogTarget">Choose a device before continuing.</p>
               <div class="controls-screenshot-progress screenshot-progress" id="screenshotDialogProgress" aria-label="Screenshot progress">
+                <span class="progress-step" data-stage="Ready">Ready</span>
                 <span class="progress-step" data-stage="Queued">Queued</span>
                 <span class="progress-step" data-stage="Capturing">Capturing</span>
-                <span class="progress-step" data-stage="Uploading">Uploading</span>
-                <span class="progress-step" data-stage="Ready">Ready</span>
+                <span class="progress-step" data-stage="Saving">Saving</span>
+                <span class="progress-step" data-stage="Saved">Save success</span>
+                <span class="progress-step" data-stage="Displaying">Displaying</span>
               </div>
               <div class="controls-screenshot-status" id="screenshotDialogStatus">No screenshot available.</div>
               <div class="controls-screenshot-frame screenshot-dialog-frame">
@@ -301,7 +303,7 @@
       </dialog>
     </div>
   </div>
-  <script type="module" src="/web/app.js?v=20260926-2"></script>
+  <script type="module" src="/web/app.js?v=20260926-3"></script>
 </body>
 </html>
 

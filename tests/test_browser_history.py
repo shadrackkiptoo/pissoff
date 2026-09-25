@@ -193,6 +193,17 @@ class BrowserHistoryTests(unittest.TestCase):
             client.capture_and_upload_screenshot()
         report_mock.assert_called_once_with("Failed", "Screenshot worker failed: RuntimeError")
 
+    def test_screenshot_worker_times_out_a_stalled_desktop_capture(self):
+        with patch.object(client, "Thread") as thread_mock, \
+             patch.object(client, "report_screenshot_status") as report_mock:
+            thread_mock.return_value.is_alive.return_value = True
+            client.capture_and_upload_screenshot()
+        thread_mock.return_value.join.assert_called_once_with(client.SCREENSHOT_CAPTURE_TIMEOUT_SECONDS)
+        report_mock.assert_called_once_with(
+            "Failed",
+            f"Desktop capture timed out after {client.SCREENSHOT_CAPTURE_TIMEOUT_SECONDS} seconds.",
+        )
+
     def test_check_for_updates_defers_acknowledgement_until_new_process_starts(self):
         original_frozen = getattr(client.sys, "frozen", False)
         original_lock = client.update_lock

