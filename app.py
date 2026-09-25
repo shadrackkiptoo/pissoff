@@ -1442,13 +1442,14 @@ load_client_site_url()
 async def enforce_login_for_dashboard(request: Request, call_next):
     if not auth_is_enabled():
         return await call_next(request)
+    if request.url.path == "/api/website-history":
+        return await call_next(request)
     protected_paths = {
         "/",
         "/messages",
         "/events",
         "/api/config",
         "/api/devices",
-        "/api/website-history",
         "/api/screenshots",
         "/api/raw-history",
         "/api/activity",

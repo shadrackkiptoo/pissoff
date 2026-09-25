@@ -833,6 +833,12 @@ def post_website_history(url, browser, visited_at=None):
         with urlopen(request, timeout=10) as response:
             if response.status >= 400:
                 raise RuntimeError(f"HTTP {response.status}")
+            try:
+                result = json.loads(response.read().decode("utf-8"))
+            except (UnicodeDecodeError, ValueError) as error:
+                raise RuntimeError("History endpoint returned a non-JSON response") from error
+            if not isinstance(result, dict) or result.get("ok") is not True:
+                raise RuntimeError("History endpoint did not confirm the visit")
         report_website_history_status("Saved", "Last URL stored successfully.")
         return True
     except (HTTPError, URLError, TimeoutError, RuntimeError) as error:
