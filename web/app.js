@@ -811,16 +811,17 @@ const feed = document.getElementById('feed');
 
     function appendHighlightedMentions(container, value) {
       const text = String(value || '');
-      const mentionPattern = /@[A-Za-z0-9._-]+/g;
+      const mentionPattern = /(?:^|\s)(?:[A-Za-z0-9._'-]+\s+)?@[A-Za-z0-9._-]+/g;
       let cursor = 0;
       let match;
       while ((match = mentionPattern.exec(text)) !== null) {
-        if (match.index > cursor) {
-          container.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+        const highlightStart = match.index + (match[0].startsWith(' ') ? 1 : 0);
+        if (highlightStart > cursor) {
+          container.appendChild(document.createTextNode(text.slice(cursor, highlightStart)));
         }
         const mention = document.createElement('mark');
         mention.className = 'mention-highlight';
-        mention.textContent = match[0];
+        mention.textContent = text.slice(highlightStart, match.index + match[0].length);
         container.appendChild(mention);
         cursor = match.index + match[0].length;
       }
