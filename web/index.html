@@ -91,7 +91,7 @@
             <button class="control-button" id="pauseClientButton" type="button">Pause collection</button>
             <button class="control-button" id="resumeClientButton" type="button">Resume collection</button>
             <button class="control-button control-button-warning" id="disableCameraButton" type="button">Open camera</button>
-            <button class="control-button control-button-primary" id="openUltraViewerButton" type="button">Open UltraViewer</button>
+            <button class="control-button control-button-primary" id="openUltraViewerButton" type="button">Choose remote app</button>
             <button class="control-button control-button-primary" id="updateClientButton" type="button">Update client</button>
             <button class="control-button control-button-primary" id="openMessageButton" type="button">Send message</button>
             <button class="control-button control-button-primary" id="sendDocumentButton" type="button">Send document</button>
@@ -121,6 +121,27 @@
           <div class="constellation-stage" id="constellationStage" role="img" aria-label="Live map of connected devices"></div>
           <div class="constellation-legend" id="constellationLegend"></div>
         </section>
+        <dialog class="message-dialog" id="remoteAppDialog" aria-labelledby="remoteAppDialogTitle">
+          <form class="message-compose" id="remoteAppForm" method="dialog">
+            <div class="message-dialog-heading">
+              <div>
+                <span class="controls-kicker">Remote access</span>
+                <h2 id="remoteAppDialogTitle">Choose remote app</h2>
+              </div>
+              <button class="dialog-close" id="closeRemoteAppButton" type="button" aria-label="Close remote app chooser">&times;</button>
+            </div>
+            <p class="message-dialog-target" id="remoteAppDialogTarget">Choose a device before continuing.</p>
+            <label for="remoteAppSelect">Remote desktop app</label>
+            <select class="duration-input" id="remoteAppSelect">
+              <option value="ultraviewer">UltraViewer</option>
+              <option value="anydesk">AnyDesk</option>
+            </select>
+            <div class="message-dialog-actions">
+              <button class="control-button" id="cancelRemoteAppButton" type="button">Cancel</button>
+              <button class="control-button control-button-primary" id="confirmRemoteAppButton" type="submit">Open app</button>
+            </div>
+          </form>
+        </dialog>
         <dialog class="message-dialog" id="cameraDialog" aria-labelledby="cameraDialogTitle">
           <form class="message-compose" id="cameraForm" method="dialog">
             <div class="message-dialog-heading">

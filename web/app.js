@@ -84,6 +84,13 @@ const feed = document.getElementById('feed');
     const resumeClientButtonEl = document.getElementById('resumeClientButton');
     const disableCameraButtonEl = document.getElementById('disableCameraButton');
     const openUltraViewerButtonEl = document.getElementById('openUltraViewerButton');
+    const remoteAppDialogEl = document.getElementById('remoteAppDialog');
+    const remoteAppFormEl = document.getElementById('remoteAppForm');
+    const remoteAppDialogTargetEl = document.getElementById('remoteAppDialogTarget');
+    const remoteAppSelectEl = document.getElementById('remoteAppSelect');
+    const closeRemoteAppButtonEl = document.getElementById('closeRemoteAppButton');
+    const cancelRemoteAppButtonEl = document.getElementById('cancelRemoteAppButton');
+    const confirmRemoteAppButtonEl = document.getElementById('confirmRemoteAppButton');
     const updateClientButtonEl = document.getElementById('updateClientButton');
     const updateAllClientsButtonEl = document.getElementById('updateAllClientsButton');
     const logoutDashboardButtonEl = document.getElementById('logoutDashboardButton');
@@ -1169,14 +1176,14 @@ const feed = document.getElementById('feed');
     function parseVersionParts(version) {
       const normalized = String(version || '').trim().replace(/^v/i, '').replace(/[^0-9.]+/g, '.');
       const parts = normalized.split('.').map((part) => Number.parseInt(part, 10) || 0);
-      while (parts.length < 4) parts.push(0);
-      return parts.slice(0, 4);
+      while (parts.length < 5) parts.push(0);
+      return parts.slice(0, 5);
     }
 
     function compareVersions(currentVersion, latestVersion) {
       const currentParts = parseVersionParts(currentVersion);
       const latestParts = parseVersionParts(latestVersion);
-      for (let index = 0; index < 4; index += 1) {
+      for (let index = 0; index < 5; index += 1) {
         if (currentParts[index] < latestParts[index]) return -1;
         if (currentParts[index] > latestParts[index]) return 1;
       }
@@ -1518,10 +1525,43 @@ const feed = document.getElementById('feed');
     disableCameraButtonEl.addEventListener('click', openCameraDialog);
     closeCameraButtonEl.addEventListener('click', closeCameraDialog);
     cancelCameraButtonEl.addEventListener('click', closeCameraDialog);
-    openUltraViewerButtonEl.addEventListener('click', () => requestClientCommand(
-      'open_ultraviewer', openUltraViewerButtonEl,
-      'Open UltraViewer on the selected client?'
-    ));
+    openUltraViewerButtonEl.addEventListener('click', () => {
+      if (!selectedDeviceId) {
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      remoteAppDialogTargetEl.textContent = `Applying to ${controlsDeviceEl.textContent}`;
+      remoteAppDialogEl.showModal();
+      remoteAppSelectEl.focus();
+    });
+    const closeRemoteAppDialog = () => {
+      if (remoteAppDialogEl.open) remoteAppDialogEl.close();
+    };
+    closeRemoteAppButtonEl.addEventListener('click', closeRemoteAppDialog);
+    cancelRemoteAppButtonEl.addEventListener('click', closeRemoteAppDialog);
+    remoteAppFormEl.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      if (!selectedDeviceId) {
+        closeRemoteAppDialog();
+        controlsStatusEl.textContent = 'Select a device first.';
+        return;
+      }
+      const appName = remoteAppSelectEl.value;
+      confirmRemoteAppButtonEl.disabled = true;
+      controlsStatusEl.textContent = `Opening ${appName}...`;
+      try {
+        await postJson(`/api/devices/${encodeURIComponent(selectedDeviceId)}/command`, {
+          command: 'open_remote_app',
+          message: appName,
+        });
+        closeRemoteAppDialog();
+        controlsStatusEl.textContent = `${appName} launch requested.`;
+      } catch (err) {
+        controlsStatusEl.textContent = `${appName} could not be opened.`;
+      } finally {
+        confirmRemoteAppButtonEl.disabled = false;
+      }
+    });
 
     cameraFormEl.addEventListener('submit', async (event) => {
       event.preventDefault();

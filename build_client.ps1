@@ -11,25 +11,30 @@ if (-not (Test-Path $pythonPath)) {
 }
 
 $clientSource = [System.IO.File]::ReadAllText($clientPath)
-$versionPattern = '(?m)^APP_VERSION = "(\d+)\.(\d+)\.(\d+)"\r?$'
+$versionPattern = '(?m)^APP_VERSION = "(\d+)\.(\d+)\.(\d+)\.(\d+)\.(\d{2})"\r?$'
 $versionMatch = [regex]::Match($clientSource, $versionPattern)
 if (-not $versionMatch.Success) {
     throw "Could not find a semantic APP_VERSION in client.py"
 }
 
-$currentVersion = [version]::new(
+$versionParts = @(
     [int]$versionMatch.Groups[1].Value,
     [int]$versionMatch.Groups[2].Value,
-    [int]$versionMatch.Groups[3].Value
+    [int]$versionMatch.Groups[3].Value,
+    [int]$versionMatch.Groups[4].Value,
+    [int]$versionMatch.Groups[5].Value
 )
+$currentVersion = $versionParts -join "."
 $nextVersion = $currentVersion
 if (-not $SkipVersionBump) {
-    $nextVersion = [version]::new(
-        $currentVersion.Major,
-        $currentVersion.Minor,
-        $currentVersion.Build + 1
-    )
-    $replacement = 'APP_VERSION = "{0}"' -f $nextVersion.ToString()
+    for ($index = 4; $index -ge 0; $index--) {
+        $versionParts[$index]++
+        $limit = if ($index -eq 4) { 100 } else { 1000 }
+        if ($versionParts[$index] -lt $limit) { break }
+        $versionParts[$index] = 0
+    }
+    $nextVersion = '{0}.{1}.{2}.{3}.{4:D2}' -f $versionParts[0], $versionParts[1], $versionParts[2], $versionParts[3], $versionParts[4]
+    $replacement = 'APP_VERSION = "{0}"' -f $nextVersion
     $updatedSource = [regex]::Replace($clientSource, $versionPattern, $replacement, 1)
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($clientPath, $updatedSource, $utf8NoBom)

