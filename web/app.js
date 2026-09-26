@@ -1923,7 +1923,8 @@ const feed = document.getElementById('feed');
         commands.forEach((command) => {
           const item = document.createElement('div');
           item.className = 'command-history-item';
-          item.textContent = `${command.command} | ${command.status} | ${formatTime(command.created_at)}`;
+          const errorText = command.error ? ` | ${command.error}` : '';
+          item.textContent = `${command.command} | ${command.status} | ${formatTime(command.created_at)}${errorText}`;
           commandHistoryEl.appendChild(item);
         });
       } catch (err) {
