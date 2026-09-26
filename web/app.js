@@ -44,6 +44,7 @@ const feed = document.getElementById('feed');
     const constellationStageEl = document.getElementById('constellationStage');
     const constellationLegendEl = document.getElementById('constellationLegend');
     const constellationSummaryEl = document.getElementById('constellationSummary');
+    const closeConstellationButtonEl = document.getElementById('closeConstellationButton');
     const controlsDeviceEl = document.getElementById('controlsDevice');
     const captureScreenshotButtonEl = document.getElementById('captureScreenshotButton');
     const screenshotOverlayEl = document.getElementById('screenshotOverlay');
@@ -1136,6 +1137,11 @@ const feed = document.getElementById('feed');
         }
         button.removeAttribute('aria-busy');
       });
+    });
+
+    closeConstellationButtonEl.addEventListener('click', () => {
+      const filteredButton = document.querySelector('[data-mode="filtered"]');
+      if (filteredButton) filteredButton.click();
     });
 
     rawHistoryControlsEl.addEventListener('submit', (event) => {
