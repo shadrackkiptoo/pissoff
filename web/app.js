@@ -809,6 +809,26 @@ const feed = document.getElementById('feed');
       }
     }
 
+    function appendHighlightedMentions(container, value) {
+      const text = String(value || '');
+      const mentionPattern = /@[A-Za-z0-9._-]+/g;
+      let cursor = 0;
+      let match;
+      while ((match = mentionPattern.exec(text)) !== null) {
+        if (match.index > cursor) {
+          container.appendChild(document.createTextNode(text.slice(cursor, match.index)));
+        }
+        const mention = document.createElement('mark');
+        mention.className = 'mention-highlight';
+        mention.textContent = match[0];
+        container.appendChild(mention);
+        cursor = match.index + match[0].length;
+      }
+      if (cursor < text.length) {
+        container.appendChild(document.createTextNode(text.slice(cursor)));
+      }
+    }
+
     function addMessage(msg) {
       if (displayMode === 'filtered' && msg.raw_only) return;
       const wrap = document.createElement('div');
@@ -817,7 +837,7 @@ const feed = document.getElementById('feed');
       const bubble = document.createElement('div');
       const bubbleType = msg.is_pasted ? 'pasted' : (msg.is_copied ? 'copied' : '');
       bubble.className = `bubble${bubbleType ? ` ${bubbleType}` : ''}`;
-      bubble.textContent = displayMode === 'raw' ? (msg.raw_text || msg.text) : msg.text;
+      appendHighlightedMentions(bubble, displayMode === 'raw' ? (msg.raw_text || msg.text) : msg.text);
 
       if (msg.is_pasted || msg.is_copied) {
         const label = document.createElement('span');
