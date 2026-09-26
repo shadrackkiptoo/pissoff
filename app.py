@@ -427,10 +427,10 @@ def telegram_devices_text():
 
 def normalize_version(value):
     if value is None:
-        return (0, 0, 0, 0)
-    match = re.search(r"(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?", str(value).strip())
+        return (0, 0, 0, 0, 0)
+    match = re.search(r"(?:v)?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?", str(value).strip())
     if not match:
-        return (0, 0, 0, 0)
+        return (0, 0, 0, 0, 0)
     return tuple(int(part or 0) for part in match.groups())
 
 

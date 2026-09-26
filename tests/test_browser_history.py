@@ -12,6 +12,10 @@ import client
 
 
 class BrowserHistoryTests(unittest.TestCase):
+    def test_five_part_versions_are_compared_by_render(self):
+        self.assertLess(app.compare_versions("1.0.0.0.01", "1.0.0.0.02"), 0)
+        self.assertEqual(app.compare_versions("1.0.0.0.02", "v1.0.0.0.02"), 0)
+
     def test_downloaded_frozen_client_is_not_mistaken_for_temp_bundle(self):
         original_frozen = getattr(client.sys, "frozen", False)
         original_executable = client.sys.executable
