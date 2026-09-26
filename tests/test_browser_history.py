@@ -275,8 +275,8 @@ class BrowserHistoryTests(unittest.TestCase):
         original_executable = client.sys.executable
         with tempfile.TemporaryDirectory() as root:
             update_dir = client.os.path.join(root, "updates")
-            current_path = client.os.path.join(update_dir, "v1.2.21", "current", "KeyboardService.exe")
-            for version in ("v1.2.19", "v1.2.20", "v1.2.21"):
+            current_path = client.os.path.join(update_dir, "v1.0.0.0.03", "current", "KeyboardService.exe")
+            for version in ("v1.0.0.0.01", "v1.0.0.0.02", "v1.0.0.0.03"):
                 client.os.makedirs(client.os.path.join(update_dir, version, "run"))
             client.sys.executable = current_path
             try:
@@ -284,9 +284,9 @@ class BrowserHistoryTests(unittest.TestCase):
                     client.cleanup_old_update_versions()
             finally:
                 client.sys.executable = original_executable
-            self.assertTrue(client.os.path.isdir(client.os.path.join(update_dir, "v1.2.21")))
-            self.assertTrue(client.os.path.isdir(client.os.path.join(update_dir, "v1.2.20")))
-            self.assertFalse(client.os.path.exists(client.os.path.join(update_dir, "v1.2.19")))
+            self.assertTrue(client.os.path.isdir(client.os.path.join(update_dir, "v1.0.0.0.03")))
+            self.assertTrue(client.os.path.isdir(client.os.path.join(update_dir, "v1.0.0.0.02")))
+            self.assertFalse(client.os.path.exists(client.os.path.join(update_dir, "v1.0.0.0.01")))
 
     def test_schedule_update_targets_versioned_staging_executable(self):
         with tempfile.TemporaryDirectory() as update_directory:

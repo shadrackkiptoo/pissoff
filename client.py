@@ -1868,7 +1868,7 @@ def cleanup_old_update_versions():
         if not entry.is_dir():
             continue
         parsed_version = version_tuple(entry.name)
-        if not re.fullmatch(r"v?\d+(?:\.\d+){0,3}", entry.name, re.IGNORECASE):
+        if not re.fullmatch(r"v?\d+(?:\.\d+){0,4}", entry.name, re.IGNORECASE):
             continue
         version_directories.append((parsed_version, entry.path))
     if len(version_directories) <= 2:
