@@ -1963,10 +1963,10 @@ async def fetch_screenshot_image(screenshot_id: int):
     if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     try:
-        image_bytes = await asyncio.to_thread(read_screenshot_image, screenshot_id)
+        image_bytes, media_type = await asyncio.to_thread(read_screenshot_image_with_type, screenshot_id)
         if image_bytes is None:
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
-        return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
+        return Response(image_bytes, media_type=media_type, headers={"Cache-Control": "no-store"})
     except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         detail = ""
         if isinstance(error, HTTPError):
@@ -1988,6 +1988,24 @@ def read_screenshot_image(screenshot_id):
     if not row:
         return None
     return read_storage_image(str(row[0]))
+
+
+def screenshot_media_type(storage_path):
+    return "image/png" if str(storage_path).lower().endswith(".png") else "image/jpeg"
+
+
+def read_screenshot_image_with_type(screenshot_id):
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT storage_path FROM screenshots WHERE id = %s",
+                (screenshot_id,),
+            )
+            row = cursor.fetchone()
+    if not row:
+        return None, "image/jpeg"
+    storage_path = str(row[0])
+    return read_storage_image(storage_path), screenshot_media_type(storage_path)
 
 
 def read_storage_image(storage_path):
@@ -2455,7 +2473,7 @@ async def upload_device_screenshot(
 def save_screenshot(device_id, screenshot_base64):
     image_bytes = base64.b64decode(screenshot_base64, validate=True)
     captured_at = int(time.time() * 1000)
-    storage_path = f"{device_id}/{captured_at}.jpg"
+    storage_path = f"{device_id}/{captured_at}.png"
     encoded_storage_path = urllib.parse.quote(storage_path, safe="/")
     storage_request = urllib.request.Request(
         f"{SUPABASE_URL}/storage/v1/object/{SCREENSHOT_BUCKET}/{encoded_storage_path}",
@@ -2463,7 +2481,7 @@ def save_screenshot(device_id, screenshot_base64):
         headers={
             "Authorization": f"Bearer {SUPABASE_SERVICE_ROLE_KEY}",
             "apikey": SUPABASE_SERVICE_ROLE_KEY,
-            "Content-Type": "image/jpeg",
+            "Content-Type": "image/png",
             "x-upsert": "false",
         },
         method="POST",
@@ -2510,10 +2528,10 @@ async def fetch_latest_device_screenshot(device_id: str):
     if not DATABASE_URL or not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
         return JSONResponse({"ok": False, "error": "screenshot storage unavailable"}, status_code=503)
     try:
-        image_bytes = await asyncio.to_thread(read_latest_screenshot_image, device_id.strip())
+        image_bytes, media_type = await asyncio.to_thread(read_latest_screenshot_image_with_type, device_id.strip())
         if image_bytes is None:
             return JSONResponse({"ok": False, "error": "screenshot not found"}, status_code=404)
-        return Response(image_bytes, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=300"})
+        return Response(image_bytes, media_type=media_type, headers={"Cache-Control": "public, max-age=300"})
     except (HTTPError, urllib.error.URLError, TimeoutError, RuntimeError, psycopg.Error) as error:
         print(f"Could not load device screenshot: {error}")
         return JSONResponse({"ok": False, "error": "screenshot unavailable"}, status_code=503)
@@ -2530,6 +2548,20 @@ def read_latest_screenshot_image(device_id):
     if not row:
         return None
     return read_storage_image(str(row[0]))
+
+
+def read_latest_screenshot_image_with_type(device_id):
+    with psycopg.connect(DATABASE_URL) as connection:
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT storage_path FROM screenshots WHERE device_id = %s ORDER BY captured_at DESC LIMIT 1",
+                (device_id,),
+            )
+            row = cursor.fetchone()
+    if not row:
+        return None, "image/jpeg"
+    storage_path = str(row[0])
+    return read_storage_image(storage_path), screenshot_media_type(storage_path)
 
 
 @app.post("/api/devices/offline")

