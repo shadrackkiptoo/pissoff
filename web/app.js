@@ -1307,7 +1307,6 @@ const feed = document.getElementById('feed');
         controlsStatusEl.textContent = 'No online clients with a known version are available.';
         return;
       }
-      if (!window.confirm(`Check ${eligibleDevices.length} online client(s) for updates?`)) return;
       button.disabled = true;
       controlsStatusEl.textContent = `Checking ${eligibleDevices.length} client(s) for updates...`;
       try {
