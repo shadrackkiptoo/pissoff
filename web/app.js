@@ -40,6 +40,10 @@ const feed = document.getElementById('feed');
     const rawStartFilterEl = document.getElementById('rawStartFilter');
     const rawEndFilterEl = document.getElementById('rawEndFilter');
     const controlsPanelEl = document.getElementById('controlsPanel');
+    const constellationPanelEl = document.getElementById('constellationPanel');
+    const constellationStageEl = document.getElementById('constellationStage');
+    const constellationLegendEl = document.getElementById('constellationLegend');
+    const constellationSummaryEl = document.getElementById('constellationSummary');
     const controlsDeviceEl = document.getElementById('controlsDevice');
     const captureScreenshotButtonEl = document.getElementById('captureScreenshotButton');
     const screenshotOverlayEl = document.getElementById('screenshotOverlay');
@@ -585,10 +589,92 @@ const feed = document.getElementById('feed');
       syncScreenshotPreviewState(selectedDevice, status, message);
     }
 
+    function renderConstellation(devices) {
+      if (!constellationStageEl) return;
+      constellationStageEl.innerHTML = '';
+      constellationLegendEl.innerHTML = '';
+      const onlineDevices = devices.filter((device) => device.online);
+      constellationSummaryEl.textContent = `${onlineDevices.length} online / ${devices.length} registered`;
+      if (!devices.length) {
+        constellationStageEl.innerHTML = '<span class="constellation-empty">No devices registered yet.</span>';
+        return;
+      }
+
+      const width = 760;
+      const height = 360;
+      const center = { x: width / 2, y: height / 2 };
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('aria-hidden', 'true');
+      const links = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      links.classList.add('constellation-links');
+      const nodes = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      const radius = Math.max(110, Math.min(width, height) * 0.36);
+      devices.forEach((device, index) => {
+        const angle = (Math.PI * 2 * index / Math.max(devices.length, 1)) - Math.PI / 2;
+        const x = center.x + Math.cos(angle) * radius;
+        const y = center.y + Math.sin(angle) * radius;
+        const color = device.online ? '#d9f06d' : '#8d9890';
+        const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+        line.setAttribute('x1', center.x);
+        line.setAttribute('y1', center.y);
+        line.setAttribute('x2', x);
+        line.setAttribute('y2', y);
+        line.setAttribute('class', device.online ? 'constellation-link online' : 'constellation-link');
+        links.appendChild(line);
+
+        const group = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        group.setAttribute('class', `constellation-node${device.online ? ' online' : ' offline'}`);
+        group.setAttribute('transform', `translate(${x} ${y})`);
+        const halo = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        halo.setAttribute('r', device.online ? '25' : '19');
+        halo.setAttribute('class', 'constellation-node-halo');
+        const dot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+        dot.setAttribute('r', device.online ? '9' : '7');
+        dot.setAttribute('fill', color);
+        const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        label.setAttribute('y', '42');
+        label.setAttribute('text-anchor', 'middle');
+        label.textContent = String(device.name || device.id || 'Unknown').slice(0, 22);
+        group.append(halo, dot, label);
+        group.addEventListener('click', () => selectDevice(String(device.id)));
+        nodes.appendChild(group);
+
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = `constellation-device${device.online ? ' online' : ' offline'}`;
+        const itemDot = document.createElement('span');
+        itemDot.className = 'constellation-device-dot';
+        const itemName = document.createElement('span');
+        itemName.textContent = device.name || device.id || 'Unknown';
+        const itemMeta = document.createElement('small');
+        const batteryLabel = device.battery_percent == null ? 'Battery n/a' : `${device.battery_percent}% battery`;
+        itemMeta.textContent = `${device.online ? 'Online' : 'Offline'} / v${device.client_version || 'unknown'} / ${batteryLabel}`;
+        item.append(itemDot, itemName, itemMeta);
+        item.addEventListener('click', () => selectDevice(String(device.id)));
+        constellationLegendEl.appendChild(item);
+      });
+      const server = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      server.setAttribute('class', 'constellation-server');
+      server.setAttribute('transform', `translate(${center.x} ${center.y})`);
+      const serverHalo = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      serverHalo.setAttribute('r', '32');
+      const serverDot = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      serverDot.setAttribute('r', '12');
+      const serverLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      serverLabel.setAttribute('y', '52');
+      serverLabel.setAttribute('text-anchor', 'middle');
+      serverLabel.textContent = 'Dashboard';
+      server.append(serverHalo, serverDot, serverLabel);
+      svg.append(links, server, nodes);
+      constellationStageEl.appendChild(svg);
+    }
+
     async function loadDevices() {
       try {
         const devices = await fetchJson('/api/devices');
         latestDevices = devices;
+        renderConstellation(devices);
         renderOpenApps(devices);
         deviceCountEl.textContent = devices.length;
         onlineCountEl.textContent = `${devices.filter((device) => device.online).length} online`;
@@ -1008,11 +1094,13 @@ const feed = document.getElementById('feed');
 
     function updateViewVisibility() {
       const isControlsView = displayMode === 'controls';
+      const isConstellationView = displayMode === 'constellation';
       const isFeedView = !isControlsView;
       rawHistoryControlsEl.hidden = displayMode !== 'raw-history';
       controlsPanelEl.hidden = !isControlsView;
+      constellationPanelEl.hidden = !isConstellationView;
       activityPanelEl.hidden = true;
-      feed.hidden = !isFeedView;
+      feed.hidden = !isFeedView || isConstellationView;
       if (!isFeedView) {
         feed.innerHTML = '';
       }
@@ -1035,6 +1123,10 @@ const feed = document.getElementById('feed');
           if (eventSource) eventSource.close();
           statusEl.textContent = 'Device controls';
           await loadCommandHistory();
+        } else if (displayMode === 'constellation') {
+          if (eventSource) eventSource.close();
+          statusEl.textContent = 'Device constellation';
+          renderConstellation(latestDevices);
         } else if (displayMode === 'activity') {
           if (eventSource) eventSource.close();
           await loadActivity();

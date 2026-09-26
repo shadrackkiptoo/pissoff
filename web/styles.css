@@ -810,6 +810,114 @@
       max-height: calc(100% - 110px);
       overflow-y: auto;
     }
+    .constellation-panel {
+      display: grid;
+      grid-template-rows: auto minmax(260px, 1fr) auto;
+      gap: 12px;
+      min-height: 0;
+      margin: 14px 20px 0;
+      padding: 18px;
+      border: 1px solid rgba(217, 240, 109, 0.2);
+      border-radius: 10px;
+      background: radial-gradient(circle at 50% 48%, rgba(217, 240, 109, 0.08), transparent 30%), rgba(10, 19, 31, 0.65);
+      overflow-y: auto;
+    }
+    .constellation-heading {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .constellation-heading h2 {
+      margin: 5px 0 0;
+      color: var(--accent);
+      font-size: 1rem;
+    }
+    .constellation-summary {
+      color: var(--muted);
+      font-size: 0.68rem;
+    }
+    .constellation-stage {
+      display: grid;
+      min-height: 280px;
+      place-items: center;
+      overflow: hidden;
+    }
+    .constellation-stage svg {
+      width: min(100%, 760px);
+      height: 100%;
+      min-height: 280px;
+    }
+    .constellation-link {
+      stroke: rgba(141, 152, 144, 0.22);
+      stroke-width: 1;
+      stroke-dasharray: 3 8;
+    }
+    .constellation-link.online {
+      stroke: rgba(217, 240, 109, 0.46);
+      animation: constellation-pulse 2.8s linear infinite;
+    }
+    .constellation-node,
+    .constellation-server { cursor: pointer; }
+    .constellation-node-halo {
+      fill: transparent;
+      stroke: rgba(141, 152, 144, 0.26);
+      stroke-width: 1;
+    }
+    .constellation-node.online .constellation-node-halo {
+      stroke: rgba(217, 240, 109, 0.42);
+      animation: constellation-glow 2.2s ease-in-out infinite;
+    }
+    .constellation-node text,
+    .constellation-server text {
+      fill: var(--muted);
+      font: 700 11px "Trebuchet MS", sans-serif;
+      pointer-events: none;
+    }
+    .constellation-server circle:first-child {
+      fill: rgba(217, 240, 109, 0.08);
+      stroke: rgba(217, 240, 109, 0.55);
+      stroke-width: 1;
+    }
+    .constellation-server circle:nth-child(2) { fill: var(--accent); }
+    .constellation-server text { fill: var(--accent); }
+    @keyframes constellation-pulse { to { stroke-dashoffset: -22; } }
+    @keyframes constellation-glow {
+      0%, 100% { opacity: 0.55; transform: scale(0.94); }
+      50% { opacity: 1; transform: scale(1.08); }
+    }
+    .constellation-legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 7px;
+    }
+    .constellation-device {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr);
+      align-items: center;
+      gap: 3px 8px;
+      min-width: 0;
+      padding: 8px 10px;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      background: rgba(217, 240, 109, 0.04);
+      cursor: pointer;
+      font: inherit;
+      text-align: left;
+    }
+    .constellation-device:hover { border-color: var(--accent); background: rgba(217, 240, 109, 0.1); }
+    .constellation-device-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #8d9890;
+      grid-row: span 2;
+    }
+    .constellation-device.online .constellation-device-dot { background: var(--accent); box-shadow: 0 0 9px rgba(217, 240, 109, 0.75); }
+    .constellation-device span:not(.constellation-device-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; font-weight: 700; }
+    .constellation-device small { color: var(--muted); font-size: 0.58rem; }
+    .constellation-empty { color: var(--muted); font-size: 0.75rem; }
     .controls-kicker {
       color: var(--muted);
       font-size: 0.62rem;
@@ -871,6 +979,8 @@
     .device-detail p { margin: 5px 0; }
     @media (max-width: 700px) {
       .activity-stats, .activity-columns { grid-template-columns: 1fr; }
+      .constellation-panel { margin: 10px 14px 0; padding: 12px; }
+      .constellation-stage, .constellation-stage svg { min-height: 240px; }
     }
     .controls-actions {
       display: flex;

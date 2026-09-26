@@ -65,6 +65,7 @@
             <button type="button" data-mode="raw">Unfiltered</button>
             <button type="button" data-mode="raw-history">Local saved</button>
             <button type="button" data-mode="screenshots">Screenshots</button>
+            <button type="button" data-mode="constellation">Constellation</button>
             <button type="button" data-mode="controls">Device controls</button>
           </div>
         </div>
@@ -105,6 +106,17 @@
           <input id="clientDocument" type="file" accept=".pdf,.docx,.rtf,.txt" hidden aria-label="Choose a document to send" />
           <p class="controls-status" id="controlsStatus" role="status">Choose an action.</p>
           <div class="command-history" id="commandHistory"></div>
+        </section>
+        <section class="constellation-panel" id="constellationPanel" hidden aria-label="Device constellation">
+          <div class="constellation-heading">
+            <div>
+              <span class="controls-kicker">Live topology</span>
+              <h2>Device constellation</h2>
+            </div>
+            <span class="constellation-summary" id="constellationSummary">Waiting for devices...</span>
+          </div>
+          <div class="constellation-stage" id="constellationStage" role="img" aria-label="Live map of connected devices"></div>
+          <div class="constellation-legend" id="constellationLegend"></div>
         </section>
         <dialog class="message-dialog" id="cameraDialog" aria-labelledby="cameraDialogTitle">
           <form class="message-compose" id="cameraForm" method="dialog">
