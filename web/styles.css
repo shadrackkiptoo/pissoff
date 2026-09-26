@@ -816,7 +816,7 @@
       top: 50%;
       left: 50%;
       display: grid;
-      grid-template-rows: auto minmax(260px, 1fr) auto;
+      grid-template-rows: auto minmax(260px, 1fr);
       gap: 12px;
       width: min(94vw, 980px);
       height: min(78dvh, 680px);
@@ -825,7 +825,7 @@
       padding: 18px;
       border: 1px solid rgba(217, 240, 109, 0.2);
       border-radius: 10px;
-      background: radial-gradient(circle at 50% 48%, rgba(217, 240, 109, 0.08), transparent 30%), rgba(10, 19, 31, 0.65);
+      background: #121614;
       box-shadow: 0 28px 90px rgba(0, 0, 0, 0.7), 0 0 0 100vmax rgba(3, 6, 4, 0.68);
       transform: translate(-50%, -50%);
       overflow-y: auto;
@@ -881,7 +881,6 @@
       stroke: rgba(217, 240, 109, 0.42);
       animation: constellation-glow 2.2s ease-in-out infinite;
     }
-    .constellation-node text,
     .constellation-server text {
       fill: var(--muted);
       font: 700 11px "Trebuchet MS", sans-serif;
@@ -899,37 +898,6 @@
       0%, 100% { opacity: 0.55; transform: scale(0.94); }
       50% { opacity: 1; transform: scale(1.08); }
     }
-    .constellation-legend {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-      gap: 7px;
-    }
-    .constellation-device {
-      display: grid;
-      grid-template-columns: auto minmax(0, 1fr);
-      align-items: center;
-      gap: 3px 8px;
-      min-width: 0;
-      padding: 8px 10px;
-      border: 1px solid var(--border);
-      border-radius: 7px;
-      color: var(--text);
-      background: rgba(217, 240, 109, 0.04);
-      cursor: pointer;
-      font: inherit;
-      text-align: left;
-    }
-    .constellation-device:hover { border-color: var(--accent); background: rgba(217, 240, 109, 0.1); }
-    .constellation-device-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: #8d9890;
-      grid-row: span 2;
-    }
-    .constellation-device.online .constellation-device-dot { background: var(--accent); box-shadow: 0 0 9px rgba(217, 240, 109, 0.75); }
-    .constellation-device span:not(.constellation-device-dot) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; font-weight: 700; }
-    .constellation-device small { color: var(--muted); font-size: 0.58rem; }
     .constellation-empty { color: var(--muted); font-size: 0.75rem; }
     .controls-kicker {
       color: var(--muted);
