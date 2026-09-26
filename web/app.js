@@ -18,6 +18,7 @@ const feed = document.getElementById('feed');
     const closeAllAppsButtonEl = document.getElementById('closeAllAppsButton');
     const supportLinkEl = document.getElementById('supportLink');
     const paymentListEl = document.getElementById('paymentList');
+    const torStatusEl = document.getElementById('torStatus');
     const openMonitoredSitesButtonEl = document.getElementById('openMonitoredSitesButton');
     const openMonitoredAppsButtonEl = document.getElementById('openMonitoredAppsButton');
     const monitoredSitesDialogEl = document.getElementById('monitoredSitesDialog');
@@ -389,6 +390,10 @@ const feed = document.getElementById('feed');
     async function loadConfig() {
       try {
         const config = await fetchJson('/api/config');
+        const torStatus = config.tor_status || {};
+        torStatusEl.textContent = `TOR: ${torStatus.label || 'not integrated'}`;
+        torStatusEl.title = torStatus.detail || 'The main client is not using TOR.';
+        torStatusEl.classList.toggle('connected', torStatus.state === 'connected');
         if (config.buy_me_a_coffee_url) supportLinkEl.href = config.buy_me_a_coffee_url;
         renderPaymentMethods(config.payment_methods || []);
         if (!config.buy_me_a_coffee_url && config.payment_methods?.length) {

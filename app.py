@@ -1734,6 +1734,11 @@ async def update_website_history_status(
 @app.get("/api/config")
 async def fetch_config():
     return JSONResponse({
+        "tor_status": {
+            "state": "not_integrated",
+            "label": "not integrated",
+            "detail": "The standalone TOR demo is not used by the main client uploads.",
+        },
         "buy_me_a_coffee_url": BUY_ME_A_COFFEE_URL if not SUPPORT_METHODS else "",
         "payment_methods": SUPPORT_METHODS,
         "monitored_sites": list(MONITORED_SITE_PATTERNS),
